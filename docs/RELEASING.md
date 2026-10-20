@@ -92,9 +92,11 @@ about to release.
 
 ## When something fails
 
-- **Before `go-live`:** the release is still a draft. Fix the cause on `main` if needed, then
-  run `mode=recover` with the tag. Assets are uploaded with `--clobber`, so the draft is
-  overwritten.
+- **Before `go-live`:** the release is still a draft. `mode=recover` with the tag rebuilds the
+  commit the release was created from and re-uploads the assets with `--clobber`. Run it from
+  `main`, so a fix to the workflow itself, or a retry after a flaky runner, takes effect. A fix
+  to the code is not picked up, because recover does not build newer commits; for that,
+  bump the version and release again.
 - **After `go-live`:** the tag exists and can never be deleted or moved (the `tags.json`
   ruleset). Bump the patch version and release again.
 - **`release-current` says the release exists:** bump the version; a version is released at
