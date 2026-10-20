@@ -1,0 +1,5 @@
+---
+source: crates/prm-domain/src/snapshot/tests.rs
+expression: classified(&rec).fingerprint.to_string()
+---
+d5f21d3db8219e1f

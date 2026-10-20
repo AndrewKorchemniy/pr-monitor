@@ -1,0 +1,52 @@
+name: Security audit
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  pull_request:
+    paths: ["**/Cargo.lock", "**/Cargo.toml", "deny.toml", "about.toml", "about*.hbs"]
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  advisories:
+    name: advisories (cargo deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny
+      - run: cargo deny --all-features --locked check advisories
+
+  notices:
+    name: third-party notices (cargo about, strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-about
+      - run: |
+          mkdir -p notices
+          cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.html about.hbs
+          cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.txt about-text.hbs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: third-party-notices
+          path: notices/
+          retention-days: 7

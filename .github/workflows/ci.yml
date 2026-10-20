@@ -1,0 +1,219 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  RUST_BACKTRACE: short
+  RUSTDOCFLAGS: -D warnings        # CARGO_BUILD_WARNINGS (set by setup-rust-toolchain) does not cover rustdoc
+  INSTA_UPDATE: "no"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - run: cargo fmt --all --check
+
+  check:
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Linux'
+        uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest
+      - run: cargo lint
+      - run: cargo t --profile ci
+      - run: cargo test --workspace --doc --all-features --locked
+      - if: runner.os == 'Linux'
+        run: cargo doc --workspace --no-deps --all-features --locked
+
+  msrv:
+    name: msrv (1.95, windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          toolchain: "1.95.0"        # rustup override beats rust-toolchain.toml
+          build-warnings: ""         # build.warnings is respected only from 1.97
+          cache-key: msrv
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo check --workspace --all-targets --all-features --locked
+
+  hygiene:
+    name: hygiene (typos, deny, shear, zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny,cargo-shear
+      - name: cargo deny (bans, licenses, sources) per target
+        run: |
+          for t in x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu aarch64-apple-darwin; do
+            echo "::group::cargo deny --target $t"
+            cargo deny --all-features --locked --target "$t" check bans licenses sources
+            echo "::endgroup::"
+          done
+      - run: cargo shear --deny-warnings
+      - name: Style greps (docs/RUST_STYLE.md)
+        run: |
+          if grep -rnE '^\s*mod tests\s*\{' crates --include=*.rs; then echo "::error::tests must live in <module>/tests.rs"; exit 1; fi
+          if grep -rn "thread::sleep" crates --include=tests.rs; then echo "::error::no sleeps in tests"; exit 1; fi
+          if find crates -name mod.rs | grep .; then echo "::error::use foo.rs + foo/, not mod.rs"; exit 1; fi
+      - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        with:
+          advanced-security: false   # fail the job on findings
+
+  build-windows:
+    name: build (windows-x64, release)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-key: release
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build
+        env:
+          PRM_BUILD_SHA: ${{ github.sha }}
+        run: cargo build --release --locked -p pr-monitor
+      - name: Verify (PE, size budget, static CRT, self-test)
+        shell: pwsh
+        run: ./.github/scripts/verify-exe.ps1 -Exe target/release/pr-monitor.exe -Arch x64 -SizeJson size-x64.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pr-monitor-windows-x64
+          path: target/release/pr-monitor.exe
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: size-x64
+          path: size-x64.json
+          retention-days: 90
+
+  build-windows-arm64:
+    name: build (windows-arm64, release)
+    if: github.event_name != 'pull_request'     # main only; arm runner queues are slower
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-key: release
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build
+        env:
+          PRM_BUILD_SHA: ${{ github.sha }}
+        run: cargo build --release --locked -p pr-monitor
+      - name: Verify (PE, size budget, static CRT, self-test)
+        shell: pwsh
+        run: ./.github/scripts/verify-exe.ps1 -Exe target/release/pr-monitor.exe -Arch arm64
+
+  size-report:                     # informational; not part of ci-ok
+    name: size report
+    if: github.event_name == 'pull_request'
+    needs: build-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read                # baseline artifact from the latest green main run
+      pull-requests: write         # sticky size comment
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: size-x64
+          path: head
+      - name: Baseline from latest green main run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          id=$(gh run list -R "$REPO" -w ci.yml -b main -e push -s success -L 1 --json databaseId -q '.[0].databaseId')
+          if [ -n "$id" ]; then gh run download "$id" -R "$REPO" -n size-x64 -D base || true; fi
+      - name: Render
+        run: |
+          head=$(jq .bytes head/size-x64.json); base=$(jq .bytes base/size-x64.json 2>/dev/null || echo 0)
+          d=$((head - base))
+          { echo "### Binary size (x64 release)"; echo
+            echo "| | bytes | KiB |"; echo "|---|---:|---:|"
+            echo "| main | $base | $((base / 1024)) |"
+            echo "| this PR | $head | $((head / 1024)) |"
+            echo "| Δ | $d | $((d / 1024)) |"; } | tee comment.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true      # Dependabot PRs get a read-only token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: gh pr comment "$PR" -R "$REPO" --edit-last --create-if-none --body-file comment.md
+
+  ci-ok:                           # the ONLY required check from this workflow
+    name: ci-ok
+    if: always()
+    needs: [fmt, check, msrv, hygiene, build-windows, build-windows-arm64]
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            [[ "$r" == success || "$r" == skipped ]] || { echo "::error::a required job finished with '$r'"; exit 1; }
+          done

@@ -1,0 +1,25 @@
+/target/
+/dist/
+/out/
+/notices/
+**/*.rs.bk
+*.pdb
+*.snap.new
+*.pending-snap
+junit.xml
+size-*.json
+/THIRD-PARTY-LICENSES.*
+*.cdx.json
+# local design specs (never published)
+.specs/
+# secrets that must never be committed (release-app key, certs)
+*.pem
+*.pfx
+.env
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.profraw

@@ -1,0 +1,86 @@
+[workspace]
+resolver = "3"                      # MSRV-aware resolution against rust-version
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"               # eframe/egui 0.37 MSRV
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/AndrewKorchemniy/pr-monitor"
+homepage = "https://github.com/AndrewKorchemniy/pr-monitor"
+authors = ["Andrew Korchemniy"]
+publish = false
+
+[workspace.dependencies]
+# ---- internal (path-only, never published) ----
+prm-domain   = { path = "crates/prm-domain" }
+prm-theme    = { path = "crates/prm-theme" }
+prm-config   = { path = "crates/prm-config" }
+prm-auth     = { path = "crates/prm-auth" }
+prm-ado      = { path = "crates/prm-ado" }
+prm-service  = { path = "crates/prm-service" }
+prm-platform = { path = "crates/prm-platform" }
+prm-ui       = { path = "crates/prm-ui" }
+# ---- external: added per milestone, only when first used (cargo shear --deny-warnings) ----
+winresource  = "0.1.34"
+serde        = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json   = "1.0.154"
+time         = { version = "0.3.55", features = ["serde", "formatting", "parsing", "macros"] }
+uuid         = { version = "1.28.0", features = ["serde", "v4"] }
+url          = { version = "2.5.8", features = ["serde"] }
+thiserror    = "2.0.21"
+zeroize      = "1.9.1"
+insta        = { version = "1.49.0", features = ["json", "redactions"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"                # prm-platform opts in per module with #[allow(unsafe_code)] + SAFETY comments
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+similar_names = "allow"
+struct_excessive_bools = "allow"
+cast_precision_loss = "allow"
+doc_markdown = "allow"
+needless_pass_by_value = "allow"
+items_after_statements = "allow"
+return_self_not_must_use = "allow"
+missing_fields_in_debug = "allow"
+implicit_hasher = "allow"
+match_same_arms = "allow"
+struct_field_names = "allow"
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+undocumented_unsafe_blocks = "warn"
+# docs/RUST_STYLE.md enforcement
+expect_used = "warn"
+mod_module_files = "warn"
+allow_attributes_without_reason = "warn"
+multiple_unsafe_ops_per_block = "warn"
+excessive_nesting = "warn"
+wildcard_enum_match_arm = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"                    # a panicking tokio task must not kill the tray app
+debug = "line-tables-only"          # MSVC: goes to the .pdb; exe barely grows
+strip = "none"                      # symbols live in the PDB, published per release
+incremental = false
+
+# Local UI iteration only (`cargo app`): optimized deps, debuggable workspace crates.
+[profile.dev-ui]
+inherits = "dev"
+
+[profile.dev-ui.package."*"]
+opt-level = 2

@@ -1,0 +1,11 @@
+[files]
+extend-exclude = [
+  "CHANGELOG.md", "Cargo.lock", "LICENSE-*", "*.svg",
+  "crates/*/assets/**", "crates/*/tests/fixtures/**", "**/snapshots/**",
+]
+
+[default]
+extend-ignore-re = ["(?Rm)^.*(#|//)\\s*spellchecker:disable-line$"]
+
+[default.extend-words]
+# Add domain false positives here, one per line, with a comment.

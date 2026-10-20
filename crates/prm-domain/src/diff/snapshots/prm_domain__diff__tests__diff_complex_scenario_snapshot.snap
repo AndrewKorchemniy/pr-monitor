@@ -1,0 +1,47 @@
+---
+source: crates/prm-domain/src/diff/tests.rs
+expression: summary
+---
+{
+  "contoso/00000000-0000-0000-0000-000000000001/1": [
+    {
+      "type": "reviewed",
+      "headline": "rejected"
+    },
+    {
+      "type": "changes_requested",
+      "by": {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "name": "Rev"
+      },
+      "vote": "rejected"
+    }
+  ],
+  "contoso/00000000-0000-0000-0000-000000000001/2": [
+    {
+      "type": "needs_re_review"
+    },
+    {
+      "type": "new_comments",
+      "count": 1,
+      "authors": [
+        "Sam"
+      ],
+      "snippet": "comment 2"
+    },
+    {
+      "type": "new_push"
+    }
+  ],
+  "contoso/00000000-0000-0000-0000-000000000001/3": [
+    {
+      "type": "closed",
+      "outcome": "completed"
+    }
+  ],
+  "contoso/00000000-0000-0000-0000-000000000001/4": [
+    {
+      "type": "new_pr"
+    }
+  ]
+}

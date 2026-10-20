@@ -1,0 +1,11 @@
+PR Monitor - third-party software notices
+=========================================
+PR Monitor is licensed under MIT OR Apache-2.0 and includes the software below.
+{{#each licenses}}
+
+--------------------------------------------------------------------------------
+{{name}}
+Used by: {{#each used_by}}{{crate.name}} {{crate.version}}{{#unless @last}}, {{/unless}}{{/each}}
+--------------------------------------------------------------------------------
+{{{text}}}
+{{/each}}

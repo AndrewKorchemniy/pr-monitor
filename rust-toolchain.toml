@@ -1,0 +1,5 @@
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
+# no `targets`: arm64 is built natively on windows-11-arm

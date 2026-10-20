@@ -1,0 +1,12 @@
+# Static MSVC CRT -> single exe, no VC++ redistributable (asserted by .github/scripts/verify-exe.ps1).
+# Never set RUSTFLAGS in CI or locally: a set RUSTFLAGS env var REPLACES these.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[alias]   # single source of truth for flags, used locally and in CI
+lint = ["clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"]
+t    = ["nextest", "run", "--workspace", "--all-features", "--locked"]
+app  = ["run", "-p", "pr-monitor", "--profile", "dev-ui", "--"]

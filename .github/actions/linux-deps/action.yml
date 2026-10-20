@@ -1,0 +1,17 @@
+name: Linux GUI build deps
+description: >-
+  System packages for the egui/eframe (glow + wgpu, x11 + wayland) and tray-icon (ksni, pure-Rust zbus)
+  stack on Ubuntu. Mirrors egui's 2026 CI list minus libssl-dev (openssl is banned) and libgtk-3-dev (rfd example only).
+  libwayland-dev: with eframe default-features = false, winit links libwayland-client at build time.
+runs:
+  using: composite
+  steps:
+    - name: apt-get install
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q --no-install-recommends \
+          pkg-config \
+          libxkbcommon-dev \
+          libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+          libwayland-dev

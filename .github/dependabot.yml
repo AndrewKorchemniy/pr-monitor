@@ -1,0 +1,51 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7          # zizmor dependabot-cooldown threshold is 7
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope           # -> "chore(deps): …"
+    labels: [dependencies]
+    groups:                    # first matching group wins; specific groups before the catch-all
+      egui:
+        patterns: ["eframe", "egui*", "epaint*", "emath", "ecolor", "wgpu*", "winit"]
+      windows-rs:
+        patterns: ["windows", "windows-core", "windows-registry", "windows-result", "windows-strings",
+                   "windows-sys", "windows-link", "windows-future", "windows-collections", "windows-numerics"]
+      tokio-tracing:
+        patterns: ["tokio", "tokio-*", "tracing", "tracing-*"]
+      cargo-minor-patch:
+        update-types: [minor, patch]
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    labels: [dependencies]
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    labels: [dependencies]

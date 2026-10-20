@@ -1,0 +1,10 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+avoid-breaking-exported-api = false
+doc-valid-idents = ["DevOps", "AzureDevOps", "PowerShell", "WinRT", "WinHTTP", "SChannel", "AppUserModelID", ".."]
+# docs/RUST_STYLE.md thresholds
+too-many-lines-threshold = 60
+too-many-arguments-threshold = 5
+excessive-nesting-threshold = 4

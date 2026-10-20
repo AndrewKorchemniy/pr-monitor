@@ -1,0 +1,53 @@
+# CI runs bans/licenses/sources once per target with `--target` (as egui's CI does, to avoid
+# target-specific-feature false positives, cargo-deny#324). These targets are the default for
+# local `cargo deny check` and for `check advisories`.
+[graph]
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+]
+all-features = true
+
+[advisories]
+unmaintained = "workspace"   # only direct deps; egui's graph has transitive unmaintained advisories (ttf-parser, zvariant…)
+yanked = "deny"
+ignore = []                  # format: { id = "RUSTSEC-YYYY-NNNN", reason = "…" }
+
+[licenses]
+confidence-threshold = 0.93
+private = { ignore = true }          # our publish = false crates
+unused-allowed-license = "allow"     # the allowlist is shared across 4 targets
+allow = [
+  "MIT", "MIT-0", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "BSL-1.0", "CC0-1.0", "0BSD",
+  "Unicode-3.0", "Unicode-DFS-2016",
+  "CDLA-Permissive-2.0",             # webpki-roots / webpki-root-certs
+  "MPL-2.0",                         # option-ext (via dirs); file-level copyleft, fine for binaries
+  "OFL-1.1", "Ubuntu-font-1.0",      # egui default fonts (epaint_default_fonts) + embedded OFL UI/mono fonts
+  "Unlicense",                       # ksni (tray-icon `ksni` backend on Linux)
+]
+exceptions = []
+# No [[licenses.clarify]] needed as of 2026-10-19: ring 0.17.14 = "Apache-2.0 AND ISC";
+# aws-lc-sys 0.46.0 has no OpenSSL term. Add "OpenSSL" + a clarify only if an older ring/aws-lc appears.
+# GPL / LGPL / AGPL are rejected by omission.
+
+[bans]
+multiple-versions = "warn"           # GUI stacks always duplicate windows-sys etc.
+wildcards = "deny"
+allow-wildcard-paths = true          # internal path deps
+highlight = "simplest-path"
+deny = [
+  { crate = "openssl", use-instead = "SChannel (native-tls) on Windows, rustls elsewhere" },
+  { crate = "openssl-sys", reason = "no OpenSSL anywhere in the graph" },
+  { crate = "gtk-sys", reason = "tray-icon must use default-features = false + features = [\"ksni\"] on Linux; remove this ban AND add libgtk-3-dev to linux-deps only if a dependency truly needs GTK" },
+]
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

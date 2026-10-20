@@ -1,0 +1,361 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Recovery only: existing tag whose DRAFT release should be rebuilt and published (e.g. v0.3.0)"
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  release-pr:
+    name: release-plz PR
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'AndrewKorchemniy/pr-monitor' &&
+      vars.RELEASE_APP_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read               # all writes use the GitHub App token (so CI runs on the release PR)
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: false
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/linux-deps    # insurance in case release-plz compiles the crate [UNVERIFIED]
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  release:
+    name: release-plz release
+    if: github.repository == 'AndrewKorchemniy/pr-monitor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write              # push tag + create draft release
+      pull-requests: read          # detect the merged release PR
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      ref: ${{ steps.meta.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - id: rp
+        if: github.event_name == 'push'
+        uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASES: ${{ steps.rp.outputs.releases }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::bad tag '$INPUT_TAG'"; exit 1; }
+            tag="$INPUT_TAG"; ref="refs/tags/$INPUT_TAG"
+          else
+            tag=$(jq -r '[.[] | select(.package_name == "pr-monitor") | .tag][0] // empty' <<<"${RELEASES:-[]}")
+            ref="$SHA"
+          fi
+          { echo "tag=$tag"; echo "version=${tag#v}"; echo "ref=$ref"; } >> "$GITHUB_OUTPUT"
+          echo "release tag: '${tag:-<none>}'" >> "$GITHUB_STEP_SUMMARY"
+
+  notices:
+    name: notices + SBOM
+    needs: release
+    if: needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-about,cargo-cyclonedx
+      - run: |
+          set -euo pipefail
+          mkdir -p notices
+          cargo about generate --locked -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.html about.hbs
+          cargo about generate --locked -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.txt about-text.hbs
+          for pair in x64:x86_64-pc-windows-msvc arm64:aarch64-pc-windows-msvc; do
+            arch=${pair%%:*}; triple=${pair#*:}
+            cargo cyclonedx --manifest-path crates/pr-monitor/Cargo.toml --format json --spec-version 1.5 \
+              --target "$triple" --override-filename "pr-monitor-windows-$arch.cdx"
+            mv "crates/pr-monitor/pr-monitor-windows-$arch.cdx.json" notices/
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notices
+          path: notices/
+          if-no-files-found: error
+
+  build:
+    name: build (windows-${{ matrix.arch }})
+    needs: [release, notices]
+    if: needs.release.outputs.tag != ''
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { arch: x64, target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { arch: arm64, target: aarch64-pc-windows-msvc, os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false                 # zizmor cache-poisoning: never restore caches in release builds
+          target: ${{ matrix.target }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-auditable        # prebuilt exists for aarch64_windows (verified)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notices
+          path: notices
+      - name: Build (auditable)
+        env:
+          PRM_THIRD_PARTY_LICENSES: ${{ github.workspace }}/notices/THIRD-PARTY-LICENSES.txt
+        run: |
+          export PRM_BUILD_SHA="$(git rev-parse HEAD)"
+          cargo auditable build --release --locked -p pr-monitor --target "$TARGET"
+      - name: Verify (PE, size, static CRT, ProductVersion, self-test)
+        shell: pwsh
+        run: ./.github/scripts/verify-exe.ps1 -Exe "target/$env:TARGET/release/pr-monitor.exe" -Arch $env:ARCH -ExpectedVersion $env:VERSION
+      - name: Stage
+        run: |
+          mkdir -p out/exe out/pdb
+          cp "target/$TARGET/release/pr-monitor.exe" "out/exe/pr-monitor-windows-$ARCH.exe"
+          cp "target/$TARGET/release/pr_monitor.pdb" "out/pdb/pr-monitor-$VERSION-windows-$ARCH.pdb"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exe-${{ matrix.arch }}
+          path: out/exe/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pdb-${{ matrix.arch }}
+          path: out/pdb/
+          if-no-files-found: error
+
+  sign:                                       # phase hook; skipped while SIGNING_PROVIDER is none/unset
+    name: sign
+    needs: [release, build]
+    if: vars.SIGNING_PROVIDER == 'signpath' || vars.SIGNING_PROVIDER == 'azure'
+    runs-on: windows-latest                   # Azure signing action requires Windows x64
+    timeout-minutes: 60
+    environment: release                      # signing secrets/vars live here
+    permissions:
+      contents: read
+      actions: read                           # SignPath reads the to-sign artifact
+      id-token: write                         # azure/login OIDC
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: exe-*
+          merge-multiple: true
+          path: unsigned
+      # --- SignPath Foundation ---
+      - id: to-sign
+        if: vars.SIGNING_PROVIDER == 'signpath'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: to-sign
+          path: unsigned/
+      - if: vars.SIGNING_PROVIDER == 'signpath'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: pr-monitor
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-exes
+          github-artifact-id: ${{ steps.to-sign.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      # --- Azure Artifact Signing ---
+      - if: vars.SIGNING_PROVIDER == 'azure'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - if: vars.SIGNING_PROVIDER == 'azure'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\unsigned
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - if: vars.SIGNING_PROVIDER == 'azure'
+        shell: pwsh
+        run: Move-Item unsigned signed
+      - name: Verify Authenticode
+        shell: pwsh
+        run: |
+          Get-ChildItem signed/*.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            if ($s.Status -ne 'Valid') { throw "$($_.Name): $($s.Status)" } }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-exes
+          path: signed/
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: [release, notices, build, sign]
+    if: >-
+      !cancelled() && needs.build.result == 'success' &&
+      (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write              # upload assets, publish the draft
+      id-token: write              # Sigstore OIDC for attestations
+      attestations: write          # persist attestations
+      artifact-metadata: write     # actions/attest v4 storage records
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      VERSION: ${{ needs.release.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "${{ needs.sign.result == 'success' && 'signed-exes' || 'exe-*' }}"
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pdb-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notices
+          path: dist
+      - name: Zips + checksums (sign -> zip -> checksum -> attest)
+        run: |
+          set -euo pipefail
+          cd dist
+          for a in x64 arm64; do
+            d="pr-monitor-$VERSION-windows-$a"
+            mkdir -p "$d/licenses"
+            cp "pr-monitor-windows-$a.exe" "$d/pr-monitor.exe"
+            cp ../LICENSE-MIT ../LICENSE-APACHE ../README.md THIRD-PARTY-LICENSES.html "$d/"
+            shopt -s nullglob; for f in ../crates/prm-ui/assets/fonts/*.txt; do cp "$f" "$d/licenses/"; done; shopt -u nullglob
+            (cd "$d" && zip -9 -r -X "../$d.zip" .)
+            rm -rf "$d"
+          done
+          rm -f THIRD-PARTY-LICENSES.txt          # embedded in the exe
+          sha256sum -- *.exe *.zip *.pdb *.cdx.json THIRD-PARTY-LICENSES.html > SHA256SUMS.txt
+          ls -la
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.pdb
+      - name: Attest SBOM (x64)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/pr-monitor-windows-x64.exe
+          sbom-path: dist/pr-monitor-windows-x64.cdx.json
+      - name: Attest SBOM (arm64)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/pr-monitor-windows-arm64.exe
+          sbom-path: dist/pr-monitor-windows-arm64.cdx.json
+      - name: Upload to draft, then publish
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" -R "$REPO" --clobber \
+            dist/*.exe dist/*.zip dist/*.pdb dist/*.cdx.json dist/THIRD-PARTY-LICENSES.html dist/SHA256SUMS.txt
+          if [[ "$VERSION" == *-* ]]; then gh release edit "$TAG" -R "$REPO" --draft=false --prerelease
+          else gh release edit "$TAG" -R "$REPO" --draft=false --latest; fi
+
+  winget:
+    name: winget
+    needs: [release, publish]
+    if: vars.WINGET_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions: {}
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2 (== main HEAD on 2026-10-19)
+        with:
+          identifier: AndrewKorchemniy.PRMonitor
+          release-tag: ${{ needs.release.outputs.tag }}
+          installers-regex: '^pr-monitor-windows-(x64|arm64)\.exe$'
+          max-versions-to-keep: 5
+          token: ${{ secrets.WINGET_TOKEN }}   # classic PAT: public_repo + workflow

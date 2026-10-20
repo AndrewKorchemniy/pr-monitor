@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in PR Monitor is broken or behaves unexpectedly
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste tokens, PATs or secrets.** Logs are in `%LOCALAPPDATA%\PRMonitor\logs`; redact confidential org/project/repo names.
+  - type: input
+    id: version
+    attributes: { label: PR Monitor version, description: "Tray menu → About, or `pr-monitor.exe --version`", placeholder: "0.3.1" }
+    validations: { required: true }
+  - type: dropdown
+    id: arch
+    attributes: { label: Architecture, options: [x64, arm64] }
+    validations: { required: true }
+  - type: input
+    id: windows
+    attributes: { label: Windows version and build, description: "Run `winver`", placeholder: "Windows 11 24H2 (26100.4061)" }
+    validations: { required: true }
+  - type: dropdown
+    id: session
+    attributes: { label: Session type, options: ["Local desktop", "Remote Desktop (RDP)", "Other"] }
+    validations: { required: true }
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Sign-in method of the affected organization(s)
+      multiple: true
+      options: ["Azure CLI session (auto-detected)", "Sign in with Microsoft (az login)", "Personal access token", "Entra app (advanced)"]
+  - type: input
+    id: orgs
+    attributes: { label: Number of Azure DevOps organizations configured, placeholder: "1" }
+  - type: dropdown
+    id: renderer
+    attributes: { label: Renderer (shown in About), options: ["Auto", "GPU (wgpu)", "OpenGL (glow)", "Low-power mode", "Don't know"] }
+  - type: textarea
+    id: what-happened
+    attributes: { label: What happened?, description: "Steps to reproduce, expected vs actual." }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes: { label: Relevant log lines, render: text }
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed tokens, PATs and other secrets from everything above.
+          required: true

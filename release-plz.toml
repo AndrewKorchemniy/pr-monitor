@@ -1,0 +1,48 @@
+[workspace]
+git_only = true                 # versions from git tags; nothing goes to crates.io
+publish = false
+release = false                 # opt in per package
+semver_check = false
+dependencies_update = false
+changelog_update = false
+git_tag_enable = false
+git_release_enable = false
+release_always = false          # release only when the release PR is merged
+features_always_increment_minor = true   # 0.x: feat -> minor, fix -> patch
+release_commits = '^(feat|fix|perf)[(:!]|^\w+(\(.+\))?!:'   # deps/ci/chore alone never open a release PR
+pr_name = "chore: release v{{ version }}"
+pr_labels = ["release"]
+
+[[package]]
+name = "pr-monitor"
+release = true
+changelog_update = true
+changelog_path = "./CHANGELOG.md"
+changelog_include = ["prm-domain", "prm-theme", "prm-config", "prm-auth", "prm-ado", "prm-service", "prm-platform", "prm-ui"]
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_name = "PR Monitor v{{ version }}"
+git_release_draft = true        # assets attached before publish (immutable releases)
+git_release_type = "auto"       # -alpha/-beta -> pre-release
+git_release_body = """
+{{ changelog }}
+
+---
+Verify: `gh attestation verify pr-monitor-windows-x64.exe -R AndrewKorchemniy/pr-monitor` · checksums in `SHA256SUMS.txt` · PDBs attached for crash symbolization.
+"""
+
+[changelog]
+protect_breaking_commits = true
+sort_commits = "newest"
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^fix", group = "<!-- 1 -->Fixed" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Changed" },
+  { message = "^docs", group = "<!-- 4 -->Documentation" },
+  { message = "^chore\\(deps\\)", group = "<!-- 5 -->Dependencies" },
+  { message = "^revert", group = "<!-- 6 -->Reverted" },
+  { message = "^(chore|ci|build|test|style)", skip = true },
+  { message = ".*", group = "<!-- 9 -->Other" },
+]

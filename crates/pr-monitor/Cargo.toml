@@ -1,0 +1,21 @@
+[package]
+name = "pr-monitor"
+version = "0.1.0"
+description = "Tiny, fast tray app that tracks your team's Azure DevOps pull requests"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pr-monitor"
+path = "src/main.rs"
+
+[build-dependencies]
+winresource = { workspace = true }
+
+[lints]
+workspace = true

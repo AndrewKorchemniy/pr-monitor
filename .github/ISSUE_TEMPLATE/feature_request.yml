@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an improvement to PR Monitor
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste tokens, PATs or secrets.** Redact confidential org/project/repo names.
+  - type: textarea
+    id: problem
+    attributes: { label: What problem are you trying to solve? }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposal, description: "What should PR Monitor do?" }
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes: { label: Alternatives considered }
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options: ["Dashboard/table", "Notifications", "Tray", "Sign-in", "Configuration", "Themes", "Other"]
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues.
+          required: true
