@@ -222,6 +222,39 @@ pub(crate) fn frame_sunken(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE.fill(theme.colors.surface_sunken)
 }
 
+/// The window background behind content (the dashboard body, settings pages).
+pub(crate) fn frame_canvas(theme: &UiTheme) -> egui::Frame {
+    egui::Frame::NONE.fill(theme.colors.surface_canvas)
+}
+
+/// The table area: the canvas, with room on the right so the last column clears the edge.
+pub(crate) fn frame_table(theme: &UiTheme) -> egui::Frame {
+    frame_canvas(theme).inner_margin(Margin {
+        right: px(theme.tokens.metrics.space.md),
+        ..Margin::ZERO
+    })
+}
+
+/// A standalone card with a hairline border, like a dialog (first run).
+pub(crate) fn frame_card(theme: &UiTheme) -> egui::Frame {
+    let m = &theme.tokens.metrics;
+    egui::Frame::NONE
+        .fill(theme.colors.surface_raised)
+        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_default))
+        .corner_radius(CornerRadius::same(m.radius.lg))
+        .inner_margin(Margin::same(px(m.space.xxl)))
+}
+
+/// One group of settings: a bordered box under its title.
+pub(crate) fn frame_section(theme: &UiTheme) -> egui::Frame {
+    let m = &theme.tokens.metrics;
+    egui::Frame::NONE
+        .fill(theme.colors.surface_raised)
+        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_subtle))
+        .corner_radius(CornerRadius::same(m.radius.lg))
+        .inner_margin(Margin::symmetric(px(m.space.xl), px(m.space.lg)))
+}
+
 /// A banner strip in the given tone.
 pub(crate) fn frame_banner(theme: &UiTheme, tone: Tone) -> egui::Frame {
     let m = &theme.tokens.metrics;

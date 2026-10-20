@@ -55,17 +55,21 @@ pub(crate) const CLEAR_FILTER: &str = "Clear filter";
 pub(crate) const SHOW_ALL: &str = "Show all";
 pub(crate) const NOTHING_CHANGED: &str = "Nothing changed since you last looked.";
 
-pub(crate) const FIRST_RUN_HEADLINE: &str = "See whose move it is.";
-pub(crate) const FIRST_RUN_SUB: &str = "PR Monitor watches your team's pull requests in Azure DevOps and shows which ones need a review.";
-pub(crate) const STEP_CONNECT: &str = "Connect an organization";
+pub(crate) const APP_NAME: &str = "PR Monitor";
 pub(crate) const ORG_URL_LABEL: &str = "Organization URL";
 pub(crate) const ORG_URL_HINT: &str = "https://dev.azure.com/your-org";
-pub(crate) const ORG_URL_HELP: &str = "Paste any Azure DevOps link from your organization.";
 pub(crate) const CONNECT: &str = "Connect";
 pub(crate) const BAD_ORG_URL: &str =
     "That isn't an Azure DevOps organization URL. Try https://dev.azure.com/your-org.";
 pub(crate) const STEP_REPOS: &str = "Choose repositories";
-pub(crate) const STEP_PEOPLE: &str = "Choose people";
+pub(crate) const REPOSITORIES: &str = "Repositories";
+pub(crate) const PEOPLE: &str = "People";
+pub(crate) const CONTINUE: &str = "Continue";
+pub(crate) const PREVIOUS: &str = "Back";
+pub(crate) const DONE: &str = "Done";
+pub(crate) const CHOOSE: &str = "Choose";
+pub(crate) const EDIT: &str = "Edit";
+pub(crate) const NOBODY_YET: &str = "Nobody yet";
 pub(crate) const TRACK_FROM: &str = "Track pull requests from";
 pub(crate) const COUNT_REVIEWS_FROM: &str = "Count reviews from";
 pub(crate) const REVIEWERS_EMPTY_HELP: &str =
@@ -94,7 +98,7 @@ pub(crate) const ENTRA_HELP: &str = "Ask your admin for a public client app regi
 pub(crate) const ADMIN_TITLE: &str = "Ask your admin for access";
 pub(crate) const COPY_MESSAGE: &str = "Copy message";
 
-pub(crate) const BACK: &str = "Back to pull requests";
+pub(crate) const BACK: &str = "Back";
 pub(crate) const UNSAVED: &str = "You have unsaved changes.";
 pub(crate) const DISCARD: &str = "Discard";
 pub(crate) const SAVE_CHANGES: &str = "Save changes";
@@ -111,6 +115,21 @@ pub(crate) const REFRESH_HELP: &str = "5–10 minutes is plenty for large organi
 pub(crate) const ORG_COLUMN: &str = "Organization column";
 pub(crate) const RELATIVE_TIMES: &str = "Show relative times (2h) instead of dates";
 pub(crate) const ADD_ORG: &str = "Add organization";
+pub(crate) const NO_ORGS: &str =
+    "No organizations yet. Add one to start watching its pull requests.";
+pub(crate) const ORGANIZATION: &str = "Organization";
+pub(crate) const SECTION_REFRESH: &str = "Refresh";
+pub(crate) const SECTION_WINDOW: &str = "Window and tray";
+pub(crate) const SECTION_TABLE: &str = "Table";
+pub(crate) const SECTION_NETWORK: &str = "Network";
+pub(crate) const SECTION_DELIVERY: &str = "Delivery";
+pub(crate) const SECTION_EVENTS: &str = "Events";
+pub(crate) const SECTION_TRY: &str = "Test and pause";
+pub(crate) const SECTION_LAYOUT: &str = "Layout";
+pub(crate) const SECTION_MOTION: &str = "Motion and power";
+pub(crate) const SECTION_CUSTOM_THEMES: &str = "Custom themes";
+pub(crate) const SECTION_PRIVACY: &str = "Privacy";
+pub(crate) const SECTION_LINKS: &str = "Links";
 pub(crate) const NAME: &str = "Name";
 pub(crate) const URL: &str = "URL";
 pub(crate) const WATCH_ORG: &str = "Watch this organization";
@@ -144,7 +163,6 @@ pub(crate) const WHILE_IN_FRONT: &str = "While PR Monitor is in front";
 pub(crate) const DONT_NOTIFY: &str = "Don't notify";
 pub(crate) const NOTIFY_ANYWAY: &str = "Notify anyway";
 pub(crate) const PLAY_SOUND: &str = "Play a sound";
-pub(crate) const NOTIFY_ABOUT: &str = "Notify me about:";
 pub(crate) const SEND_TEST: &str = "Send a test notification";
 pub(crate) const TEST_SENT: &str = "Test notification sent.";
 pub(crate) const PAUSE_HOUR: &str = "Pause for 1 hour";
@@ -343,6 +361,14 @@ pub(crate) fn remove_org_title(org: &str) -> String {
     format!("Remove {org}?")
 }
 
+pub(crate) fn whole_project(project: &str) -> String {
+    format!("{project} (all repositories)")
+}
+
+pub(crate) fn step_of(step: usize, total: usize) -> String {
+    format!("Step {step} of {total}")
+}
+
 pub(crate) fn repos_selected(k: usize, n: usize) -> String {
     format!("{k} of {n} repositories")
 }
@@ -472,8 +498,7 @@ pub(crate) const ALL: &[&str] = &[
     EMPTY_NOBODY,
     EMPTY_NO_PRS,
     NOTHING_CHANGED,
-    FIRST_RUN_HEADLINE,
-    FIRST_RUN_SUB,
+    NO_ORGS,
     BAD_ORG_URL,
     WAITING_SIGN_IN,
     PAT_HELP,

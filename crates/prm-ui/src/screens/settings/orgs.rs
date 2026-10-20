@@ -1,21 +1,30 @@
-//! Organizations: the list, adding one by URL, and for the selected org its connection,
-//! repositories and people.
+//! Organizations: a breadcrumb and tabs for the selected org, its connection, details,
+//! repositories and people in sections, and dialogs for adding an org and editing its lists.
 
 mod sign_in;
 
 use eframe::egui::{self, RichText};
 use prm_config::OrgProfile;
-use prm_domain::{OrgId, classify::EmptyReviewerPolicy, ids::parse_org_input, plan::DraftPolicy};
-use prm_service::Command;
+use prm_domain::{
+    OrgId, Person, auth::SettingsSection, classify::EmptyReviewerPolicy, ids::parse_org_input,
+    plan::DraftPolicy,
+};
+use prm_service::{AuthStateView, Command};
 
 use crate::{
     actions::UiAction,
     copy,
     frame::FrameCx,
     route::ModalKind,
-    screens::settings::SettingsState,
-    theme::UiTheme,
-    widgets::{self, people_picker::people_picker, scope_picker::scope_picker},
+    screens::settings::{Editor, SettingsState},
+    theme::{Tone, UiTheme, icons::Icon},
+    widgets::{
+        self, card,
+        controls::{self, ActionField},
+        modal::{self, ModalOutcome, ModalSpec},
+        people_picker::{self, people_picker},
+        scope_picker::{self, scope_picker},
+    },
 };
 
 /// A profile for an org URL as typed by the user.
@@ -31,80 +40,158 @@ pub(crate) fn new_profile(input: &str) -> Option<OrgProfile> {
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
-    org_list(ui, cx, st);
+    header(ui, &theme, st);
+    org_tabs(ui, cx, st);
     ui.add_space(theme.tokens.metrics.space.xl);
     if st.org >= st.draft.orgs.len() {
+        widgets::muted(ui, &theme, copy::NO_ORGS);
         return;
     }
-    let saved = st.draft.orgs[st.org]
-        .org_id()
-        .is_some_and(|id| st.base.org(id).is_some());
-    let space = theme.tokens.metrics.space.xl;
-    details(ui, &theme, &mut st.draft.orgs[st.org]);
-    ui.add_space(space);
-    widgets::heading(ui, &theme, copy::SIGN_IN_METHOD);
-    sign_in::section(ui, cx, st, saved);
-    ui.add_space(space);
-    widgets::heading(ui, &theme, copy::STEP_REPOS);
-    repositories(ui, cx, st);
-    ui.add_space(space);
-    widgets::heading(ui, &theme, copy::STEP_PEOPLE);
-    people(ui, cx, st, saved);
-    ui.add_space(space);
+    let saved = saved(st);
+    card::section(ui, &theme, copy::SIGN_IN_METHOD, None, |ui| {
+        sign_in::section(ui, cx, st, saved);
+    });
+    card::section(ui, &theme, copy::ORGANIZATION, None, |ui| {
+        details(ui, &theme, &mut st.draft.orgs[st.org]);
+    });
+    card::section(ui, &theme, copy::REPOSITORIES, None, |ui| {
+        repositories(ui, cx, st);
+    });
+    card::section(ui, &theme, copy::PEOPLE, None, |ui| people(ui, &theme, st));
     if ui.button(copy::REMOVE_ORG).clicked() {
         cx.push(UiAction::Modal(ModalKind::RemoveOrg(st.org)));
     }
 }
 
-fn org_list(ui: &mut egui::Ui, cx: &FrameCx<'_>, st: &mut SettingsState) {
+/// The selected org is in the saved config (so it can sign in and search people).
+fn saved(st: &SettingsState) -> bool {
+    st.draft
+        .orgs
+        .get(st.org)
+        .and_then(OrgProfile::org_id)
+        .is_some_and(|id| st.base.org(id).is_some())
+}
+
+/// "Organizations › contoso" with Add organization on the right.
+fn header(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
+    let current = st.draft.orgs.get(st.org).map(OrgProfile::display_label);
+    let mut crumbs = vec![copy::settings_section(SettingsSection::Organizations)];
+    if let Some(label) = current.as_deref() {
+        crumbs.push(label);
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
+        card::breadcrumb(ui, theme, &crumbs);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if controls::icon_text_button(ui, theme, Icon::Plus, copy::ADD_ORG, None).clicked() {
+                st.new_org_url.clear();
+                st.url_error = false;
+                st.editing = Some(Editor::AddOrg);
+            }
+        });
+    });
+    ui.add_space(theme.tokens.metrics.space.md);
+}
+
+/// One tab per org with its sign-in state as a dot; the selected one is outlined in the accent.
+fn org_tabs(ui: &mut egui::Ui, cx: &FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
+    let mut picked = None;
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
         for (index, org) in st.draft.orgs.iter().enumerate() {
-            let label = RichText::new(org.display_label().as_ref()).font(theme.fonts.body.clone());
-            if ui
-                .add(egui::Button::selectable(st.org == index, label))
-                .clicked()
-                && st.org != index
-            {
-                st.org = index;
-                st.pickers = super::Pickers::default();
+            let tone = org
+                .org_id()
+                .and_then(|id| cx.state.org(id))
+                .map_or(Tone::Neutral, |o| auth_tone(&o.auth.state));
+            let label = org.display_label();
+            if org_tab(ui, &theme, (&label, tone), st.org == index).clicked() {
+                picked = Some(index);
             }
         }
     });
-    ui.horizontal(|ui| {
-        let edit = egui::TextEdit::singleline(&mut st.new_org_url)
-            .hint_text(copy::ORG_URL_HINT)
-            .desired_width(320.0);
-        let response = ui.add(edit);
-        let submitted = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if (ui.button(copy::ADD_ORG).clicked() || submitted) && !st.new_org_url.trim().is_empty() {
-            add_org(st);
-        }
-    });
-    if st.url_error {
-        let danger = theme.colors.tone(crate::theme::Tone::Danger).fg;
-        ui.label(RichText::new(copy::BAD_ORG_URL).color(danger));
+    if let Some(index) = picked
+        && index != st.org
+    {
+        st.org = index;
+        st.pickers = super::Pickers::default();
     }
 }
 
-fn add_org(st: &mut SettingsState) {
-    match new_profile(&st.new_org_url) {
-        Some(profile) => {
-            let existing = st
-                .draft
-                .orgs
-                .iter()
-                .position(|o| o.org_id() == profile.id.as_ref());
-            st.org = existing.unwrap_or_else(|| {
-                st.draft.orgs.push(profile);
-                st.draft.orgs.len() - 1
-            });
-            st.new_org_url.clear();
-            st.url_error = false;
-            st.pickers = super::Pickers::default();
-        }
-        None => st.url_error = true,
+const fn auth_tone(state: &AuthStateView) -> Tone {
+    match state {
+        AuthStateView::SignedIn => Tone::Success,
+        AuthStateView::NeedsSignIn { .. } => Tone::Warning,
+        AuthStateView::Blocked { .. } => Tone::Danger,
+        AuthStateView::Unknown
+        | AuthStateView::Checking
+        | AuthStateView::SigningIn { .. }
+        | AuthStateView::SignedOut
+        | AuthStateView::Disabled => Tone::Neutral,
     }
+}
+
+fn org_tab(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (label, tone): (&str, Tone),
+    selected: bool,
+) -> egui::Response {
+    let m = &theme.tokens.metrics;
+    let c = &theme.colors;
+    let text = if selected {
+        c.text_primary
+    } else {
+        c.text_secondary
+    };
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), theme.fonts.body.clone(), text);
+    let pad = m.space.lg;
+    let width = pad + 8.0 + m.space.sm + galley.size().x + pad;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(width, m.row.control_height),
+        egui::Sense::click(),
+    );
+    let (fill, border) = match (selected, response.hovered()) {
+        (true, _) => (c.accent_subtle, c.accent_base),
+        (false, true) => (c.control_hover, c.border_default),
+        (false, false) => (c.control_bg, c.border_subtle),
+    };
+    let radius = egui::CornerRadius::same(m.radius.md);
+    let stroke = egui::Stroke::new(m.stroke.hairline, border);
+    ui.painter()
+        .rect(rect, radius, fill, stroke, egui::StrokeKind::Inside);
+    let dot = egui::pos2(rect.left() + pad + 4.0, rect.center().y);
+    ui.painter().circle_filled(dot, 3.5, c.tone(tone).solid);
+    let at = egui::pos2(
+        dot.x + 4.0 + m.space.sm,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(at, galley, text);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, label));
+    response
+}
+
+/// Adds (or selects) the org typed in the field; true when the URL was valid.
+fn add_org(st: &mut SettingsState) -> bool {
+    let Some(profile) = new_profile(&st.new_org_url) else {
+        st.url_error = true;
+        return false;
+    };
+    let existing = st
+        .draft
+        .orgs
+        .iter()
+        .position(|o| o.org_id() == profile.id.as_ref());
+    st.org = existing.unwrap_or_else(|| {
+        st.draft.orgs.push(profile);
+        st.draft.orgs.len() - 1
+    });
+    st.new_org_url.clear();
+    st.url_error = false;
+    st.pickers = super::Pickers::default();
+    true
 }
 
 fn details(ui: &mut egui::Ui, theme: &UiTheme, org: &mut OrgProfile) {
@@ -136,19 +223,12 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState)
     {
         request_catalog(ui, cx, id, false);
     }
-    let reload = scope_picker(
-        ui,
-        &theme,
-        &mut st.scope_filter,
-        catalog.as_deref(),
-        &mut org.scope,
-    );
-    if reload && let Some(id) = &id {
-        cx.push(UiAction::Send(Command::LoadCatalog {
-            org: id.clone(),
-            force: true,
-        }));
+    let summary = scope_picker::summary(catalog.as_deref(), &org.scope);
+    let detail = scope_picker::detail(&org.scope);
+    if row_with_button(ui, &theme, (&summary, Some(&detail)), copy::CHOOSE) {
+        st.editing = Some(Editor::Repositories);
     }
+    ui.separator();
     let mut drafts = org.drafts == DraftPolicy::Show;
     if ui.checkbox(&mut drafts, copy::INCLUDE_DRAFTS).changed() {
         org.drafts = if drafts {
@@ -158,6 +238,28 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState)
         };
     }
     ui.checkbox(&mut org.org_wide_query, copy::ORG_WIDE_QUERY);
+}
+
+/// A title (and an optional muted line) on the left, a button on the right; true when clicked.
+fn row_with_button(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (title, detail): (&str, Option<&str>),
+    button: &str,
+) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
+            if let Some(detail) = detail.filter(|d| !d.is_empty()) {
+                widgets::muted(ui, theme, detail);
+            }
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            clicked = ui.button(button).clicked();
+        });
+    });
+    clicked
 }
 
 /// Asks for the catalog once per org per settings visit.
@@ -173,47 +275,176 @@ fn request_catalog(ui: &egui::Ui, cx: &mut FrameCx<'_>, org: &OrgId, force: bool
     }
 }
 
-fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState, saved: bool) {
-    let theme = cx.theme.clone();
+/// The people lists the People section shows, with their titles and help.
+const PEOPLE_LISTS: [(Editor, &str, Option<&str>); 3] = [
+    (Editor::Tracked, copy::TRACK_FROM, None),
+    (
+        Editor::Reviewers,
+        copy::REVIEWERS_COUNT,
+        Some(copy::REVIEWERS_HELP),
+    ),
+    (Editor::Ignored, copy::IGNORE_FROM, Some(copy::IGNORE_HELP)),
+];
+
+fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
     let org = &mut st.draft.orgs[st.org];
-    let id = saved.then(|| org.org_id().cloned()).flatten();
-    widgets::field_label(ui, &theme, copy::TRACK_FROM);
-    people_picker(
-        ui,
-        cx,
-        &mut st.pickers.tracked,
-        id.as_ref(),
-        &mut org.people.tracked_authors,
-    );
-    ui.checkbox(&mut org.include_me, copy::INCLUDE_ME);
-    ui.add_space(theme.tokens.metrics.space.lg);
-    widgets::field_label(ui, &theme, copy::REVIEWERS_COUNT);
-    widgets::muted(ui, &theme, copy::REVIEWERS_HELP);
-    people_picker(
-        ui,
-        cx,
-        &mut st.pickers.reviewers,
-        id.as_ref(),
-        &mut org.people.reviewers,
-    );
-    if org.people.reviewers.is_empty() {
-        widgets::field_label(ui, &theme, copy::EMPTY_LIST_POLICY);
-        let policy = &mut org.review.empty_reviewer_list;
-        ui.radio_value(
-            policy,
-            EmptyReviewerPolicy::AnyNonAuthorVote,
-            copy::ANY_NON_AUTHOR,
-        );
-        ui.radio_value(policy, EmptyReviewerPolicy::Nobody, copy::NO_VOTES);
+    for (index, (editor, title, help)) in PEOPLE_LISTS.into_iter().enumerate() {
+        if index > 0 {
+            ui.separator();
+        }
+        if row_with_button(ui, theme, (title, help), copy::EDIT) {
+            st.editing = Some(editor);
+        }
+        let list = people_list(org, editor);
+        if list.is_empty() {
+            widgets::muted(ui, theme, copy::NOBODY_YET);
+        } else {
+            people_picker::chips(ui, theme, list);
+        }
+        match editor {
+            Editor::Tracked => {
+                ui.checkbox(&mut org.include_me, copy::INCLUDE_ME);
+            }
+            Editor::Reviewers if org.people.reviewers.is_empty() => {
+                reviewer_policy(ui, theme, &mut org.review.empty_reviewer_list);
+            }
+            Editor::Reviewers | Editor::Ignored | Editor::AddOrg | Editor::Repositories => {}
+        }
     }
-    ui.add_space(theme.tokens.metrics.space.lg);
-    widgets::field_label(ui, &theme, copy::IGNORE_FROM);
-    widgets::muted(ui, &theme, copy::IGNORE_HELP);
-    people_picker(
-        ui,
-        cx,
-        &mut st.pickers.ignored,
-        id.as_ref(),
-        &mut org.people.ignored_comment_authors,
+}
+
+fn reviewer_policy(ui: &mut egui::Ui, theme: &UiTheme, policy: &mut EmptyReviewerPolicy) {
+    widgets::field_label(ui, theme, copy::EMPTY_LIST_POLICY);
+    ui.radio_value(
+        policy,
+        EmptyReviewerPolicy::AnyNonAuthorVote,
+        copy::ANY_NON_AUTHOR,
     );
+    ui.radio_value(policy, EmptyReviewerPolicy::Nobody, copy::NO_VOTES);
+}
+
+/// The list a people editor edits (tracked authors for the non-people editors).
+fn people_list(org: &mut OrgProfile, editor: Editor) -> &mut Vec<Person> {
+    let people = &mut org.people;
+    match editor {
+        Editor::Reviewers => &mut people.reviewers,
+        Editor::Ignored => &mut people.ignored_comment_authors,
+        Editor::Tracked | Editor::AddOrg | Editor::Repositories => &mut people.tracked_authors,
+    }
+}
+
+/// The open dialog over the page, if any: add an org, choose repositories, or edit people.
+pub(crate) fn editor(ctx: &egui::Context, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
+    let Some(editor) = st.editing else {
+        return;
+    };
+    let outcome = match editor {
+        Editor::AddOrg => add_org_dialog(ctx, &cx.theme.clone(), st),
+        Editor::Repositories => repositories_dialog(ctx, cx, st),
+        Editor::Tracked | Editor::Reviewers | Editor::Ignored => people_dialog(ctx, cx, st, editor),
+    };
+    if outcome != ModalOutcome::Open {
+        st.editing = None;
+    }
+}
+
+fn add_org_dialog(ctx: &egui::Context, theme: &UiTheme, st: &mut SettingsState) -> ModalOutcome {
+    let spec = ModalSpec {
+        id: "add_org",
+        title: copy::ADD_ORG,
+        buttons: &[],
+        danger: false,
+        width: modal::WIDTH,
+    };
+    let mut added = false;
+    let outcome = modal::modal(ctx, theme, &spec, |ui| {
+        widgets::field_label(ui, theme, copy::ORG_URL_LABEL);
+        let field = ActionField {
+            id: egui::Id::unique("add_org_url"),
+            hint: copy::ORG_URL_HINT,
+            action: copy::ADD_ORG,
+            icon: Icon::ArrowRight,
+            error: st.url_error,
+        };
+        if controls::action_field(ui, theme, &mut st.new_org_url, &field)
+            && !st.new_org_url.trim().is_empty()
+        {
+            added = add_org(st);
+        }
+        if st.url_error {
+            widgets::error_text(ui, theme, copy::BAD_ORG_URL);
+        }
+    });
+    if added {
+        ModalOutcome::Button(0)
+    } else {
+        outcome
+    }
+}
+
+fn repositories_dialog(
+    ctx: &egui::Context,
+    cx: &mut FrameCx<'_>,
+    st: &mut SettingsState,
+) -> ModalOutcome {
+    let theme = cx.theme.clone();
+    let spec = ModalSpec {
+        id: "choose_repositories",
+        title: copy::STEP_REPOS,
+        buttons: &[copy::DONE],
+        danger: false,
+        width: 560.0,
+    };
+    let Some(org) = st.draft.orgs.get_mut(st.org) else {
+        return ModalOutcome::Dismissed;
+    };
+    let id = org.org_id().cloned();
+    let catalog = id
+        .as_ref()
+        .and_then(|id| cx.state.org(id))
+        .and_then(|o| o.catalog.clone());
+    let filter = &mut st.scope_filter;
+    let mut reload = false;
+    let outcome = modal::modal(ctx, &theme, &spec, |ui| {
+        reload = scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope);
+    });
+    if reload && let Some(id) = id {
+        cx.push(UiAction::Send(Command::LoadCatalog {
+            org: id,
+            force: true,
+        }));
+    }
+    outcome
+}
+
+fn people_dialog(
+    ctx: &egui::Context,
+    cx: &mut FrameCx<'_>,
+    st: &mut SettingsState,
+    editor: Editor,
+) -> ModalOutcome {
+    let theme = cx.theme.clone();
+    let saved = saved(st);
+    let Some(org) = st.draft.orgs.get_mut(st.org) else {
+        return ModalOutcome::Dismissed;
+    };
+    let id = saved.then(|| org.org_id().cloned()).flatten();
+    let (title, picker) = match editor {
+        Editor::Reviewers => (copy::REVIEWERS_COUNT, &mut st.pickers.reviewers),
+        Editor::Ignored => (copy::IGNORE_FROM, &mut st.pickers.ignored),
+        Editor::Tracked | Editor::AddOrg | Editor::Repositories => {
+            (copy::TRACK_FROM, &mut st.pickers.tracked)
+        }
+    };
+    let spec = ModalSpec {
+        id: "edit_people",
+        title,
+        buttons: &[copy::DONE],
+        danger: false,
+        width: 480.0,
+    };
+    let list = people_list(org, editor);
+    modal::modal(ctx, &theme, &spec, |ui| {
+        people_picker(ui, cx, picker, id.as_ref(), list);
+    })
 }

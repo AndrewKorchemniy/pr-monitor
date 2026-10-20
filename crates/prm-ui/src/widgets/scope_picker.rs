@@ -9,7 +9,11 @@ use prm_domain::{
     scope::{ProjectScope, RepoSel, ScopeSpec},
 };
 
-use crate::{copy, theme::UiTheme, widgets};
+use crate::{
+    copy,
+    theme::{UiTheme, adapter, icons::Icon},
+    widgets::{self, controls},
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScopeFilter {
@@ -27,39 +31,92 @@ pub(crate) fn scope_picker(
     let mut reload = false;
     ui.horizontal(|ui| {
         ui.checkbox(&mut scope.all_projects, copy::WATCH_ALL_PROJECTS);
-        reload = ui.button(copy::REFRESH_LIST).clicked();
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            reload = controls::icon_button(ui, theme, Icon::Refresh, copy::REFRESH_LIST)
+                .on_hover_text(copy::REFRESH_LIST)
+                .clicked();
+            widgets::muted(ui, theme, &summary(catalog, scope));
+        });
     });
     let Some(catalog) = catalog else {
-        widgets::muted(ui, theme, copy::LOADING_PROJECTS);
         return reload;
     };
-    let total = catalog.repos.len();
     if scope.all_projects {
-        widgets::muted(ui, theme, &copy::repos_selected(total, total));
         return reload;
     }
-    widgets::muted(
+    ui.add_space(theme.tokens.metrics.space.xs);
+    let hint = copy::search_scope(catalog.projects.len(), catalog.repos.len());
+    let id = ui.make_persistent_id("scope_search");
+    controls::search_field(
         ui,
         theme,
-        &copy::repos_selected(chosen(catalog, scope), total),
+        &mut filter.text,
+        (id, &hint),
+        ui.available_width(),
     );
-    ui.add(
-        egui::TextEdit::singleline(&mut filter.text)
-            .hint_text(copy::search_scope(catalog.projects.len(), total))
-            .desired_width(320.0),
-    );
+    ui.add_space(theme.tokens.metrics.space.xs);
     let needle = filter.text.trim().to_lowercase();
-    egui::ScrollArea::vertical()
-        .max_height(320.0)
+    adapter::frame_sunken(theme)
+        .corner_radius(egui::CornerRadius::same(theme.tokens.metrics.radius.md))
+        .inner_margin(egui::Margin::symmetric(8, 6))
         .show(ui, |ui| {
-            for project in &catalog.projects {
-                let repos = matching_repos(catalog, project, &needle);
-                if !repos.is_empty() || project.name.to_lowercase().contains(&needle) {
-                    project_row(ui, theme, project, &repos, scope);
-                }
-            }
+            ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xs;
+            egui::ScrollArea::vertical()
+                .max_height(300.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
         });
     reload
+}
+
+/// Projects (and their repositories) matching the search.
+fn project_list(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    catalog: &Catalog,
+    needle: &str,
+    scope: &mut ScopeSpec,
+) {
+    for project in &catalog.projects {
+        let repos = matching_repos(catalog, project, needle);
+        if !repos.is_empty() || project.name.to_lowercase().contains(needle) {
+            project_row(ui, theme, project, &repos, scope);
+        }
+    }
+}
+
+/// "2 of 10 repositories", or that projects are still loading.
+pub(crate) fn summary(catalog: Option<&Catalog>, scope: &ScopeSpec) -> String {
+    let Some(catalog) = catalog else {
+        return copy::LOADING_PROJECTS.to_owned();
+    };
+    let total = catalog.repos.len();
+    let chosen = if scope.all_projects {
+        total
+    } else {
+        chosen(catalog, scope)
+    };
+    copy::repos_selected(chosen, total)
+}
+
+/// "Platform: pr-monitor, build-tools · Identity (all repositories)".
+pub(crate) fn detail(scope: &ScopeSpec) -> String {
+    if scope.all_projects {
+        return copy::WATCH_ALL_PROJECTS.to_owned();
+    }
+    scope
+        .projects
+        .iter()
+        .map(|p| {
+            if p.all_repos {
+                copy::whole_project(&p.name)
+            } else {
+                let names: Vec<&str> = p.repos.iter().map(|r| r.name.as_ref()).collect();
+                format!("{}: {}", p.name, names.join(", "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 /// Repositories the scope covers.

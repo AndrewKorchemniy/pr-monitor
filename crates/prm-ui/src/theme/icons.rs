@@ -24,6 +24,11 @@ pub(crate) enum Icon {
     ChevronRight,
     ChevronDown,
     ChevronUp,
+    /// Continue or submit.
+    ArrowRight,
+    /// Back.
+    ArrowLeft,
+    Plus,
     /// Merge conflicts or warnings: a triangle with a bar.
     Warning,
     Info,
@@ -95,6 +100,20 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::ChevronUp => {
             painter.line_segment([at(-0.6, 0.3), at(0.0, -0.3)], s);
             painter.line_segment([at(0.0, -0.3), at(0.6, 0.3)], s);
+        }
+        Icon::ArrowRight => {
+            painter.line_segment([at(-0.7, 0.0), at(0.7, 0.0)], s);
+            painter.line_segment([at(0.15, -0.55), at(0.7, 0.0)], s);
+            painter.line_segment([at(0.7, 0.0), at(0.15, 0.55)], s);
+        }
+        Icon::ArrowLeft => {
+            painter.line_segment([at(0.7, 0.0), at(-0.7, 0.0)], s);
+            painter.line_segment([at(-0.15, -0.55), at(-0.7, 0.0)], s);
+            painter.line_segment([at(-0.7, 0.0), at(-0.15, 0.55)], s);
+        }
+        Icon::Plus => {
+            painter.line_segment([at(-0.7, 0.0), at(0.7, 0.0)], s);
+            painter.line_segment([at(0.0, -0.7), at(0.0, 0.7)], s);
         }
         Icon::Warning => {
             let triangle = vec![at(0.0, -0.85), at(0.9, 0.75), at(-0.9, 0.75)];

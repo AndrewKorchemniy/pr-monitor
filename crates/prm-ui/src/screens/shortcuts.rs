@@ -29,6 +29,7 @@ pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
         title: copy::SHORTCUTS_TITLE,
         buttons: &[copy::CLOSE],
         danger: false,
+        width: 560.0,
     };
     let outcome = modal(ctx, &theme, &spec, |ui| {
         egui::ScrollArea::vertical()

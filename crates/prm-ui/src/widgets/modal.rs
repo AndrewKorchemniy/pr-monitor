@@ -19,7 +19,11 @@ pub(crate) struct ModalSpec<'a> {
     /// Button labels; the first is the primary action.
     pub buttons: &'a [&'a str],
     pub danger: bool,
+    pub width: f32,
 }
+
+/// The usual dialog width.
+pub(crate) const WIDTH: f32 = 420.0;
 
 pub(crate) fn modal(
     ctx: &egui::Context,
@@ -31,10 +35,13 @@ pub(crate) fn modal(
     let response = egui::Modal::new(egui::Id::unique(spec.id))
         .frame(crate::theme::adapter::frame_popup(theme, theme.policy))
         .show(ctx, |ui| {
-            ui.set_width(420.0);
+            ui.set_width(spec.width);
             widgets::heading(ui, theme, spec.title);
             ui.add_space(theme.tokens.metrics.space.md);
             body(ui);
+            if spec.buttons.is_empty() {
+                return;
+            }
             ui.add_space(theme.tokens.metrics.space.lg);
             let right = egui::Layout::right_to_left(egui::Align::Center);
             if let Some(index) = ui.with_layout(right, |ui| buttons(ui, theme, spec)).inner {

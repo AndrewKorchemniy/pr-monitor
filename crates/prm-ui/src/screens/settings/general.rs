@@ -6,7 +6,11 @@ use prm_config::{
     schema::{OrgColumn, ProxyConfig},
 };
 
-use crate::{copy, frame::FrameCx, widgets};
+use crate::{
+    copy,
+    frame::FrameCx,
+    widgets::{self, card::section},
+};
 
 const ORG_COLUMN: [(OrgColumn, &str); 3] = [
     (OrgColumn::Auto, "When watching more than one organization"),
@@ -16,33 +20,38 @@ const ORG_COLUMN: [(OrgColumn, &str); 3] = [
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) {
     let theme = cx.theme.clone();
-    let space = theme.tokens.metrics.space.lg;
-    let label = copy::refresh_every(draft.refresh.interval_minutes);
-    ui.add(
-        egui::Slider::new(
-            &mut draft.refresh.interval_minutes,
-            limits::INTERVAL_MINUTES,
-        )
-        .text(label.trim()),
-    );
-    widgets::muted(ui, &theme, copy::REFRESH_HELP);
-    ui.add_space(space);
+    section(ui, &theme, copy::SECTION_REFRESH, None, |ui| {
+        let label = copy::refresh_every(draft.refresh.interval_minutes);
+        ui.add(
+            egui::Slider::new(
+                &mut draft.refresh.interval_minutes,
+                limits::INTERVAL_MINUTES,
+            )
+            .text(label.trim()),
+        );
+        widgets::muted(ui, &theme, copy::REFRESH_HELP);
+    });
     let prefs = &mut draft.ui;
-    ui.checkbox(&mut prefs.start_minimized, copy::START_MINIMIZED);
-    ui.checkbox(&mut prefs.close_to_tray, copy::CLOSE_TO_TRAY);
-    ui.checkbox(&mut prefs.minimize_to_tray, copy::MINIMIZE_TO_TRAY);
-    ui.checkbox(&mut prefs.launch_at_login, copy::LAUNCH_AT_LOGIN);
-    if let Some(error) = &cx.state.autostart.error {
-        widgets::muted(ui, &theme, error);
-    }
-    ui.add_space(space);
-    widgets::field_label(ui, &theme, copy::ORG_COLUMN);
-    for (value, label) in ORG_COLUMN {
-        ui.radio_value(&mut prefs.show_org_column, value, label);
-    }
-    ui.checkbox(&mut prefs.relative_times, copy::RELATIVE_TIMES);
-    ui.add_space(space);
-    proxy(ui, &theme, &mut draft.network.proxy);
+    section(ui, &theme, copy::SECTION_WINDOW, None, |ui| {
+        ui.checkbox(&mut prefs.start_minimized, copy::START_MINIMIZED);
+        ui.checkbox(&mut prefs.close_to_tray, copy::CLOSE_TO_TRAY);
+        ui.checkbox(&mut prefs.minimize_to_tray, copy::MINIMIZE_TO_TRAY);
+        ui.checkbox(&mut prefs.launch_at_login, copy::LAUNCH_AT_LOGIN);
+        if let Some(error) = &cx.state.autostart.error {
+            widgets::error_text(ui, &theme, error);
+        }
+    });
+    section(ui, &theme, copy::SECTION_TABLE, None, |ui| {
+        widgets::field_label(ui, &theme, copy::ORG_COLUMN);
+        for (value, label) in ORG_COLUMN {
+            ui.radio_value(&mut prefs.show_org_column, value, label);
+        }
+        ui.separator();
+        ui.checkbox(&mut prefs.relative_times, copy::RELATIVE_TIMES);
+    });
+    section(ui, &theme, copy::SECTION_NETWORK, None, |ui| {
+        proxy(ui, &theme, &mut draft.network.proxy);
+    });
 }
 
 fn proxy(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, proxy: &mut ProxyConfig) {

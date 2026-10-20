@@ -19,7 +19,8 @@ use crate::{
     copy,
     deps::BuildInfo,
     frame::FrameCx,
-    widgets::{self, people_picker::PeoplePicker, scope_picker::ScopeFilter},
+    theme::icons::Icon,
+    widgets::{self, controls, people_picker::PeoplePicker, scope_picker::ScopeFilter},
 };
 
 /// The pages in the sidebar (org sub-sections all open Organizations).
@@ -69,6 +70,16 @@ impl Page {
     }
 }
 
+/// A dialog open over the Organizations page.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Editor {
+    AddOrg,
+    Repositories,
+    Tracked,
+    Reviewers,
+    Ignored,
+}
+
 /// People pickers per org page: tracked authors, reviewers, ignored comment authors.
 pub(crate) struct Pickers {
     pub tracked: PeoplePicker,
@@ -95,6 +106,7 @@ pub(crate) struct SettingsState {
     pub scope_filter: ScopeFilter,
     pub new_org_url: String,
     pub url_error: bool,
+    pub editing: Option<Editor>,
     /// A save is in flight; the base updates when the service confirms.
     pub saving: bool,
     /// A save waits for the service's confirmation notice.
@@ -112,6 +124,7 @@ impl SettingsState {
             scope_filter: ScopeFilter::default(),
             new_org_url: String::new(),
             url_error: false,
+            editing: None,
             saving: false,
             confirm_pending: false,
         }
@@ -186,8 +199,12 @@ pub(crate) fn settings_screen(
             .auto_shrink(false)
             .show(ui, |ui| {
                 ui.set_max_width(720.0);
-                widgets::heading(ui, &theme, st.page.title());
-                ui.add_space(theme.tokens.metrics.space.lg);
+                ui.add_space(theme.tokens.metrics.space.sm);
+                // why: Organizations shows a breadcrumb with the selected org instead.
+                if st.page != Page::Organizations {
+                    widgets::heading(ui, &theme, st.page.title());
+                    ui.add_space(theme.tokens.metrics.space.lg);
+                }
                 match st.page {
                     Page::General => general::page(ui, cx, &mut st.draft),
                     Page::Organizations => orgs::page(ui, cx, st),
@@ -197,24 +214,24 @@ pub(crate) fn settings_screen(
                 }
             });
     });
+    orgs::editor(ui.ctx(), cx, st);
 }
 
 fn nav(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
-    ui.add_space(theme.tokens.metrics.space.md);
-    if ui.button(copy::BACK).clicked() {
+    let m = &theme.tokens.metrics;
+    let width = ui.available_width();
+    ui.add_space(m.space.md);
+    if controls::icon_text_button(ui, &theme, Icon::ArrowLeft, copy::BACK, Some(width)).clicked() {
         cx.push(UiAction::LeaveSettings);
     }
-    ui.add_space(theme.tokens.metrics.space.lg);
+    ui.add_space(m.space.lg);
+    ui.spacing_mut().item_spacing.y = m.space.xxs;
     for page in PAGES {
         let text = RichText::new(page.title()).font(theme.fonts.body.clone());
-        if ui
-            .add_sized(
-                [180.0, 28.0],
-                egui::Button::selectable(st.page == page, text),
-            )
-            .clicked()
-        {
+        let button = egui::Button::selectable(st.page == page, text)
+            .min_size(egui::vec2(width, m.row.control_height));
+        if ui.add(button).clicked() {
             st.page = page;
         }
     }

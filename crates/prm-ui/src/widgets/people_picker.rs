@@ -115,7 +115,7 @@ pub(crate) fn people_picker(
         egui::TextEdit::singleline(&mut picker.query)
             .id(egui::Id::unique(("people", picker.id)))
             .hint_text(copy::ADD_PEOPLE)
-            .desired_width(320.0),
+            .desired_width(f32::INFINITY),
     );
     if response.changed() {
         start_search(cx, picker, org);
@@ -157,7 +157,8 @@ fn status_line(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, picker: &People
     widgets::muted(ui, theme, &text);
 }
 
-fn chips(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, people: &mut Vec<Person>) {
+/// The chosen people as removable chips.
+pub(crate) fn chips(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, people: &mut Vec<Person>) {
     let mut remove = None;
     ui.horizontal_wrapped(|ui| {
         for (index, person) in people.iter().enumerate() {

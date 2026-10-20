@@ -9,8 +9,8 @@ use crate::{
     commands::CommandId,
     copy,
     frame::FrameCx,
-    theme::icons::{self, Icon},
-    widgets,
+    theme::icons::Icon,
+    widgets::{self, controls},
 };
 
 pub(crate) const FILTER_ID: &str = "filter";
@@ -46,18 +46,15 @@ pub(crate) fn toolbar(
     let rect = ui.max_rect();
     let mut focused = false;
     ui.horizontal_centered(|ui| {
-        icons::show(ui, Icon::Search, 14.0, theme.colors.text_muted);
-        let edit = egui::TextEdit::singleline(filter)
-            .id(filter_id())
-            .hint_text(copy::FILTER_HINT)
-            .desired_width((ui.available_width() - 260.0).max(160.0))
-            .frame(egui::Frame::NONE);
-        let response = ui.add(edit);
+        let width = (ui.available_width() - 280.0).clamp(160.0, 520.0);
+        let response =
+            controls::search_field(ui, &theme, filter, (filter_id(), copy::FILTER_HINT), width);
         if response.changed() {
             cx.push(UiAction::SetFilterText(filter.clone()));
         }
         focused = response.has_focus();
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
             icon_button(ui, cx, Icon::Gear, CommandId::SettingsOpen);
             icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
             group_menu(ui, cx, group);
@@ -70,30 +67,27 @@ pub(crate) fn toolbar(
 }
 
 fn icon_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, icon: Icon, command: CommandId) {
-    let color = cx.theme.colors.text_secondary;
+    let theme = cx.theme.clone();
     let title = cx.titled(command);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::click());
-    if response.hovered() {
-        ui.painter()
-            .rect_filled(rect, 4.0, cx.theme.colors.control_hover);
-    }
-    icons::paint(ui.painter(), rect.shrink(6.0), icon, color);
-    let response = response.on_hover_text(&title);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, command.title()));
+    let response = controls::icon_button(ui, &theme, icon, command.title()).on_hover_text(&title);
     if response.clicked() {
         cx.run(command);
     }
 }
 
 fn group_menu(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, group: GroupBy) {
-    let text = RichText::new(group_label(group)).font(cx.theme.fonts.label.clone());
-    egui::ComboBox::new("group", copy::GROUP)
-        .selected_text(text)
-        .show_ui(ui, |ui| {
-            for (value, label, command) in GROUPS {
-                if ui.selectable_label(value == group, label).clicked() {
-                    cx.run(command);
-                }
+    let theme = cx.theme.clone();
+    let response = controls::menu_button(ui, &theme, copy::GROUP, group_label(group));
+    egui::Popup::menu(&response).show(|ui| {
+        ui.set_min_width(response.rect.width().max(160.0));
+        for (value, label, command) in GROUPS {
+            let text = RichText::new(label).font(theme.fonts.body.clone());
+            if ui
+                .add(egui::Button::selectable(value == group, text))
+                .clicked()
+            {
+                cx.run(command);
             }
-        });
+        }
+    });
 }

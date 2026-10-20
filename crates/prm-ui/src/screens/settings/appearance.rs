@@ -8,7 +8,13 @@ use prm_config::{
 };
 use prm_theme::registry::SYSTEM;
 
-use crate::{actions::UiAction, copy, frame::FrameCx, screens::settings::SettingsEnv, widgets};
+use crate::{
+    actions::UiAction,
+    copy,
+    frame::FrameCx,
+    screens::settings::SettingsEnv,
+    widgets::{self, card::section},
+};
 
 const TRISTATE: [(Tristate, &str); 3] = [
     (Tristate::Auto, "Automatic"),
@@ -35,42 +41,45 @@ pub(crate) fn page(
     env: &SettingsEnv<'_>,
 ) {
     let theme = cx.theme.clone();
-    let space = theme.tokens.metrics.space.lg;
     let prefs = &mut draft.ui;
-    widgets::field_label(ui, &theme, copy::THEME);
-    let before = prefs.theme.clone();
-    let system = copy::match_windows(
-        theme_name(env, &prefs.theme_dark),
-        theme_name(env, &prefs.theme_light),
-    );
-    ui.radio_value(&mut prefs.theme, SYSTEM.to_owned(), system);
-    for (id, name) in &env.themes {
-        ui.radio_value(&mut prefs.theme, id.clone(), name.as_str());
-    }
-    if prefs.theme != before {
-        cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
-    }
-    issues(ui, &theme, &env.theme_issues);
-    ui.add_space(space);
-    widgets::field_label(ui, &theme, copy::DENSITY);
-    ui.horizontal(|ui| {
-        ui.radio_value(&mut prefs.density, Density::Compact, "Compact");
-        ui.radio_value(&mut prefs.density, Density::Comfortable, "Comfortable");
+    section(ui, &theme, copy::THEME, None, |ui| {
+        let before = prefs.theme.clone();
+        let system = copy::match_windows(
+            theme_name(env, &prefs.theme_dark),
+            theme_name(env, &prefs.theme_light),
+        );
+        ui.radio_value(&mut prefs.theme, SYSTEM.to_owned(), system);
+        for (id, name) in &env.themes {
+            ui.radio_value(&mut prefs.theme, id.clone(), name.as_str());
+        }
+        if prefs.theme != before {
+            cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
+        }
+        issues(ui, &theme, &env.theme_issues);
     });
-    ui.add(egui::Slider::new(&mut prefs.font_scale, limits::FONT_SCALE).text(copy::TEXT_SIZE));
-    ui.add_space(space);
-    tristate(ui, &theme, copy::ANIMATIONS, &mut prefs.animations);
-    widgets::muted(ui, &theme, copy::ANIMATIONS_HELP);
-    tristate(ui, &theme, copy::LOW_POWER, &mut prefs.low_power);
-    ui.add_space(space);
-    widgets::field_label(ui, &theme, copy::RENDERER);
-    for (value, label) in RENDERERS {
-        ui.radio_value(&mut prefs.renderer, value, label);
-    }
-    widgets::muted(ui, &theme, env.renderer_line);
-    widgets::muted(ui, &theme, copy::RESTART_HELP);
-    ui.add_space(space);
-    authoring(ui, cx, env);
+    section(ui, &theme, copy::SECTION_LAYOUT, None, |ui| {
+        widgets::field_label(ui, &theme, copy::DENSITY);
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut prefs.density, Density::Compact, "Compact");
+            ui.radio_value(&mut prefs.density, Density::Comfortable, "Comfortable");
+        });
+        ui.add(egui::Slider::new(&mut prefs.font_scale, limits::FONT_SCALE).text(copy::TEXT_SIZE));
+    });
+    section(ui, &theme, copy::SECTION_MOTION, None, |ui| {
+        tristate(ui, &theme, copy::ANIMATIONS, &mut prefs.animations);
+        widgets::muted(ui, &theme, copy::ANIMATIONS_HELP);
+        ui.separator();
+        tristate(ui, &theme, copy::LOW_POWER, &mut prefs.low_power);
+    });
+    section(ui, &theme, copy::RENDERER, Some(env.renderer_line), |ui| {
+        for (value, label) in RENDERERS {
+            ui.radio_value(&mut prefs.renderer, value, label);
+        }
+        widgets::muted(ui, &theme, copy::RESTART_HELP);
+    });
+    section(ui, &theme, copy::SECTION_CUSTOM_THEMES, None, |ui| {
+        authoring(ui, cx, env);
+    });
 }
 
 /// Theme files that failed to load or to pass the contrast checks.

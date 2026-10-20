@@ -1,7 +1,9 @@
 //! Reusable widgets. Each reads colors from the theme and reports intent through `UiAction`s.
 
 pub(crate) mod banner;
+pub(crate) mod card;
 pub(crate) mod chip;
+pub(crate) mod controls;
 pub(crate) mod empty_state;
 pub(crate) mod modal;
 pub(crate) mod notice_stack;
@@ -34,6 +36,15 @@ pub(crate) fn heading(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::R
         RichText::new(text)
             .font(theme.fonts.title.clone())
             .color(theme.colors.text_primary),
+    )
+}
+
+/// A validation or failure message in the danger tone.
+pub(crate) fn error_text(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Response {
+    ui.label(
+        RichText::new(text)
+            .font(theme.fonts.small.clone())
+            .color(theme.colors.tone(crate::theme::Tone::Danger).fg),
     )
 }
 

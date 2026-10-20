@@ -129,7 +129,14 @@ fn buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
             org: org.clone(),
             method: SignInMethod::AzLogin { broker },
         };
-        if widgets::primary_button(ui, &theme, copy::SIGN_IN_MICROSOFT).clicked() {
+        let signed_in = matches!(status.auth.state, AuthStateView::SignedIn);
+        // why: once signed in, signing in again is a secondary action.
+        let microsoft = if signed_in {
+            ui.button(copy::SIGN_IN_MICROSOFT)
+        } else {
+            widgets::primary_button(ui, &theme, copy::SIGN_IN_MICROSOFT)
+        };
+        if microsoft.clicked() {
             cx.push(UiAction::Send(az_login(AzBroker::Default)));
         }
         if ui.button(copy::SIGN_IN_BROWSER).clicked() {
@@ -138,9 +145,7 @@ fn buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
         if ui.button(copy::USE_PAT).clicked() {
             cx.push(UiAction::Modal(ModalKind::Pat(org.clone())));
         }
-        if matches!(status.auth.state, AuthStateView::SignedIn)
-            && ui.button(copy::SIGN_OUT).clicked()
-        {
+        if signed_in && ui.button(copy::SIGN_OUT).clicked() {
             cx.push(UiAction::Send(Command::SignOut { org: org.clone() }));
         }
     });

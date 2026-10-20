@@ -38,7 +38,7 @@ eframe = { workspace = true, features = ["x11", "wayland"] }
 tray-icon = { workspace = true, features = ["ksni"] }
 
 [dev-dependencies]
-egui_kittest = { workspace = true }
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 tempfile = { workspace = true }
 prm-domain = { workspace = true, features = ["test-support"] }
 prm-service = { workspace = true, features = ["test-support"] }

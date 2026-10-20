@@ -269,6 +269,11 @@ impl eframe::App for PrMonitorApp {
         }
     }
 
+    /// The theme's canvas, so nothing shows through in light themes.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         let current = collect(
             &self.dash.view,
