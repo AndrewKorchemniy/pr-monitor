@@ -71,6 +71,11 @@ pub(crate) fn panic_dialog(
     })
 }
 
+/// No panic dialogs from now on (console-only modes, which also run unattended in CI).
+pub(crate) fn suppress_dialogs() {
+    SHOWN.store(true, Ordering::Relaxed);
+}
+
 /// Crash reports go to `logs` from now on (the first call wins).
 pub(crate) fn set_log_dir(logs: &Path) {
     let _ = LOG_DIR.set(logs.to_path_buf());

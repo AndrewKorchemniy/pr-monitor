@@ -148,11 +148,11 @@ pub(crate) fn run() -> ExitCode {
     }
     match plan(&args) {
         StartupPlan::Print(text) => {
-            quiet_panics(&launch);
+            panic::suppress_dialogs();
             print_line(&text)
         }
         StartupPlan::SelfTest => {
-            quiet_panics(&launch);
+            panic::suppress_dialogs();
             self_test::run()
         }
         StartupPlan::Unregister { purge } => match data_root(&args) {
@@ -172,11 +172,6 @@ pub(crate) fn run() -> ExitCode {
             Err(error) => fatal(&error),
         },
     }
-}
-
-/// Console-only modes (also run unattended by release checks) never show a panic dialog.
-fn quiet_panics(launch: &Launch) {
-    launch.init_phase.store(false, Ordering::Relaxed);
 }
 
 fn print_line(text: &str) -> ExitCode {
