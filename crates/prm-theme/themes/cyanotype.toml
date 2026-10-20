@@ -1,0 +1,26 @@
+# PR Monitor theme. See graphite.toml for how to make your own.
+schema = 1
+id = "cyanotype"
+name = "Cyanotype"
+appearance = "dark"
+description = "A blueprint: Prussian field, white chalk, square corners."
+
+[seeds]
+base = "#0E2C49"
+ink = "#EAF3FB"
+accent = "#F4F8FC"
+contrast = 0.1
+
+[seeds.status]
+needs_review = "#FFD36E"
+active_comments = "#FF8C7A"
+reviewed = "#8FE3B4"
+
+[seeds.feedback]
+danger = "#FF7A93"
+warning = "#FFD36E"
+success = "#8FE3B4"
+
+[metrics]
+radius_scale = 0.0
+stripes = false

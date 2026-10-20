@@ -1,0 +1,33 @@
+# PR Monitor theme. One file = one theme.
+# To make your own, copy this file to %LOCALAPPDATA%\PRMonitor\themes\<your-id>.toml,
+# change `id` to match the file name, and pick it in Settings › Appearance.
+schema = 1
+id = "graphite"
+name = "Graphite"
+appearance = "dark"                 # "dark" | "light"
+description = "Graphite pencil on a dark drafting table. The default."
+
+[seeds]
+base = "#16181C"                    # Graphite: window and panels
+ink = "#DFE2E7"                     # Chalk: primary text
+accent = "#86C8EA"                  # Blue pencil: focus, selection tint, links, the change bar
+contrast = 0.0                      # -1.0..=1.0; raises borders and secondary text
+
+[seeds.status]
+needs_review = "#E7B551"            # Highlighter
+active_comments = "#EF8467"         # Redline
+reviewed = "#82C79D"                # Stet
+
+[seeds.feedback]
+danger = "#F2697C"
+warning = "#E7B551"
+success = "#82C79D"
+# info = accent when omitted
+
+[metrics]
+radius_scale = 1.0                  # 0 = square corners, 2 = extra round
+stripes = true                      # alternating row tint
+
+[overrides]
+# Any palette key from Settings › Appearance › "Copy theme as TOML", e.g.
+# "row.selected" = "#25313A"

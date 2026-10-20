@@ -1,0 +1,26 @@
+# PR Monitor theme. See graphite.toml for how to make your own.
+schema = 1
+id = "vellum"
+name = "Vellum"
+appearance = "light"
+description = "Drafting film and blue ink. The light theme."
+
+[seeds]
+base = "#EEF1F4"
+ink = "#1A1E24"
+accent = "#1D6CB0"
+contrast = 0.0
+
+[seeds.status]
+needs_review = "#B07A0A"
+active_comments = "#C2502F"
+reviewed = "#2E7D52"
+
+[seeds.feedback]
+danger = "#C2334B"
+warning = "#B07A0A"
+success = "#2E7D52"
+
+[metrics]
+radius_scale = 1.0
+stripes = true
