@@ -46,3 +46,51 @@ fn app_uri_rejects_overlong() {
     let long = format!("prmonitor://show?{}", "x".repeat(MAX_URI_LEN));
     assert_eq!(AppUri::parse(&long), Err(AppUriError::TooLong));
 }
+
+/// Characters a mutation may insert: URI syntax, percent escapes, whitespace and non-ASCII.
+const MUTATION_ALPHABET: &str = "aZ09:/?&=%#@+.-_ \t\n\0\u{7f}\u{e9}\u{2028}\u{1f600}\u{fffd}";
+
+/// One random edit: insert, delete, replace, duplicate a run, or truncate.
+fn mutate(rng: &mut fastrand::Rng, text: &mut Vec<char>) {
+    let at = rng.usize(..=text.len());
+    let alphabet: Vec<char> = MUTATION_ALPHABET.chars().collect();
+    let pick = |rng: &mut fastrand::Rng| alphabet[rng.usize(..alphabet.len())];
+    match rng.u8(..5) {
+        0 => text.insert(at, pick(rng)),
+        1 if at < text.len() => drop(text.remove(at)),
+        2 if at < text.len() => text[at] = pick(rng),
+        3 => {
+            let end = rng.usize(at..=text.len());
+            let run: Vec<char> = text[at..end].to_vec();
+            text.splice(at..at, run);
+        }
+        _ => text.truncate(at),
+    }
+}
+
+#[test]
+fn app_uri_never_panics_on_mutations() {
+    let seeds = [
+        "prmonitor://refresh".to_owned(),
+        "prmonitor://show".to_owned(),
+        AppUri::Show {
+            key: Some(key("contoso", 7, 4711)),
+        }
+        .to_string(),
+    ];
+    let mut rng = fastrand::Rng::with_seed(0x5eed);
+    for _ in 0..2000 {
+        let mut text: Vec<char> = seeds[rng.usize(..seeds.len())].chars().collect();
+        for _ in 0..rng.usize(1..=4) {
+            mutate(&mut rng, &mut text);
+        }
+        let input: String = text.into_iter().collect();
+        if let Ok(uri) = AppUri::parse(&input) {
+            assert_eq!(
+                AppUri::parse(&uri.to_string()),
+                Ok(uri.clone()),
+                "{input:?}"
+            );
+        }
+    }
+}

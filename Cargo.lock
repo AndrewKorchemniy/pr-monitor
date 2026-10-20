@@ -3834,6 +3834,7 @@ dependencies = [
 name = "prm-domain"
 version = "0.0.0"
 dependencies = [
+ "fastrand",
  "insta",
  "serde",
  "serde_json",
@@ -3850,6 +3851,7 @@ version = "0.0.0"
 dependencies = [
  "apple-native-keyring-store",
  "auto-launch",
+ "fastrand",
  "insta",
  "interprocess",
  "keyring-core",

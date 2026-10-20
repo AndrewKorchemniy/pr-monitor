@@ -48,13 +48,25 @@ pub(crate) fn rect_plausible(rect: &WindowRect) -> bool {
     coords_ok && size_ok
 }
 
+/// Plausible, and not known to be off every connected monitor (`visible` asks the OS, which
+/// may not know).
+pub(crate) fn rect_on_screen(
+    rect: &WindowRect,
+    visible: impl FnOnce(&WindowRect) -> Option<bool>,
+) -> bool {
+    rect_plausible(rect) && visible(rect) != Some(false)
+}
+
 pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
     let spec = LaunchSpec {
         renderer: ctx.choice.kind,
         start_hidden: ctx.start_hidden,
         hide_offscreen: !cfg!(windows),
         window: ctx.window,
-        rect_on_screen: ctx.window.as_ref().is_some_and(rect_plausible),
+        rect_on_screen: ctx
+            .window
+            .as_ref()
+            .is_some_and(|r| rect_on_screen(r, |r| ctx.shell.rect_visible(r.x, r.y, r.w, r.h))),
         icon: Arc::new(prm_ui::window_icon()),
     };
     let marker = Arc::clone(&ctx.marker);

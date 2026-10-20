@@ -15,12 +15,13 @@ use prm_domain::ports::{PortError, PortErrorKind};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::{
     Win32::{
-        Foundation::{E_INVALIDARG, HWND},
+        Foundation::{E_INVALIDARG, HWND, RECT},
         Graphics::Dwm::{
             DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_COLOR_DEFAULT,
             DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWINDOWATTRIBUTE,
             DwmSetWindowAttribute,
         },
+        Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromRect},
         UI::WindowsAndMessaging::{
             SPI_GETCLIENTAREAANIMATION, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
         },
@@ -36,7 +37,7 @@ use crate::{
         os_desc::{OsFacts, format_os_description},
         session_kind::SessionInfo,
     },
-    shell::DesktopShell,
+    shell::{DesktopShell, title_bar_probe},
 };
 
 pub(crate) struct WinShell {
@@ -157,6 +158,19 @@ impl DesktopShell for WinShell {
         }
         .ok()
         .map(|()| enabled.as_bool())
+    }
+
+    fn rect_visible(&self, x: f32, y: f32, w: f32, _h: f32) -> Option<bool> {
+        let [left, top, right, bottom] = title_bar_probe(x, y, w);
+        let probe = RECT {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        // SAFETY: the pointer is to a local RECT that outlives the call; the API only reads it.
+        let monitor = unsafe { MonitorFromRect(&raw const probe, MONITOR_DEFAULTTONULL) };
+        Some(!monitor.is_invalid())
     }
 }
 

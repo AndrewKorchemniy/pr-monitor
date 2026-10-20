@@ -120,3 +120,48 @@ fn handoff_wire_snapshot() {
     .map(|bytes| String::from_utf8(bytes).unwrap());
     insta::assert_snapshot!(lines.concat());
 }
+
+/// Bytes a mutation may insert: JSON syntax, quotes, escapes, NUL, newline and invalid UTF-8.
+const MUTATION_BYTES: &[u8] = b"{}[]\":,\\/ \n\0x1v0cmdurishow\x7f\xc3\xa9\xff\xfe";
+
+/// One random edit: insert, delete, replace, duplicate a run, or truncate.
+fn mutate(rng: &mut fastrand::Rng, frame: &mut Vec<u8>) {
+    let at = rng.usize(..=frame.len());
+    let pick = |rng: &mut fastrand::Rng| MUTATION_BYTES[rng.usize(..MUTATION_BYTES.len())];
+    match rng.u8(..5) {
+        0 => frame.insert(at, pick(rng)),
+        1 if at < frame.len() => drop(frame.remove(at)),
+        2 if at < frame.len() => frame[at] = pick(rng),
+        3 => {
+            let end = rng.usize(at..=frame.len());
+            let run = frame[at..end].to_vec();
+            frame.splice(at..at, run);
+        }
+        _ => frame.truncate(at),
+    }
+}
+
+#[test]
+fn handoff_never_panics_on_mutations() {
+    let seeds = [
+        encode_request(&HandoffRequest::Show),
+        encode_request(&HandoffRequest::Quit),
+        encode_request(&HandoffRequest::Activate(show_uri())),
+        encode_reply(&HandoffReply::Ok),
+        encode_reply(&HandoffReply::Rejected("invalid uri".into())),
+    ];
+    let mut rng = fastrand::Rng::with_seed(0x5eed);
+    for _ in 0..2000 {
+        let mut frame = seeds[rng.usize(..seeds.len())].clone();
+        for _ in 0..rng.usize(1..=4) {
+            mutate(&mut rng, &mut frame);
+        }
+        if let Ok(request) = decode_request(&frame) {
+            let again = decode_request(&encode_request(&request));
+            assert_eq!(again, Ok(request), "{frame:?}");
+        }
+        if let Ok(reply) = decode_reply(&frame) {
+            assert_eq!(decode_reply(&encode_reply(&reply)), Ok(reply), "{frame:?}");
+        }
+    }
+}
