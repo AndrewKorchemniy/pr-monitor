@@ -11,7 +11,7 @@ use crate::{
     frame::FrameCx,
     theme::UiTheme,
     widgets::{
-        self,
+        self, controls,
         status_pill::status_pill,
         vote_tally::{vote_color, vote_icon},
     },
@@ -27,19 +27,26 @@ pub(crate) fn peek(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, pr: Option<&PrRow>) 
         .auto_shrink(false)
         .show(ui, |ui| {
             header(ui, cx, &theme, pr);
-            ui.add_space(theme.tokens.metrics.space.lg);
+            ui.add_space(theme.tokens.metrics.space.xl);
             reviewers(ui, &theme, pr);
-            ui.add_space(theme.tokens.metrics.space.lg);
+            ui.add_space(theme.tokens.metrics.space.xl);
             threads(ui, cx, &theme, pr);
         });
 }
 
 fn header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme, pr: &PrRow) {
-    ui.label(
-        RichText::new(pr.number_text.as_ref())
-            .font(theme.fonts.mono_strong.clone())
-            .color(theme.colors.text_secondary),
-    );
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(pr.number_text.as_ref())
+                .font(theme.fonts.mono_strong.clone())
+                .color(theme.colors.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if controls::close_button(ui, theme, copy::CLOSE).clicked() {
+                cx.run(CommandId::PrPeek);
+            }
+        });
+    });
     ui.add(
         egui::Label::new(RichText::new(pr.title.as_ref()).font(theme.fonts.title.clone())).wrap(),
     );
@@ -81,6 +88,9 @@ fn header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme, pr: &PrRow) 
 
 fn reviewers(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
     widgets::field_label(ui, theme, copy::REVIEWS);
+    if pr.reviewers.is_empty() {
+        widgets::muted(ui, theme, copy::NO_REVIEWS);
+    }
     for reviewer in pr.reviewers.iter() {
         ui.horizontal(|ui| {
             let color = vote_color(theme, reviewer.vote);
@@ -113,11 +123,12 @@ fn reviewers(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
 }
 
 fn threads(ui: &mut egui::Ui, cx: &FrameCx<'_>, theme: &UiTheme, pr: &PrRow) {
-    widgets::field_label(
-        ui,
-        theme,
-        &copy::open_threads(pr.active_threads, pr.total_threads),
-    );
+    if pr.total_threads == 0 {
+        widgets::field_label(ui, theme, copy::OPEN_THREADS);
+    } else {
+        let title = copy::open_threads(pr.active_threads, pr.total_threads);
+        widgets::field_label(ui, theme, &title);
+    }
     if pr.threads_preview.is_empty() {
         widgets::muted(ui, theme, copy::NO_OPEN_THREADS);
         return;

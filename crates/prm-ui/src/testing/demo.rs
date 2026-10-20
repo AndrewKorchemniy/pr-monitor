@@ -36,6 +36,10 @@ fn people() -> [Person; 6] {
     ]
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one record per demo pull request reads best as a list"
+)]
 /// Twelve PRs across four repositories: every status, drafts, conflicts, votes and threads.
 fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
     let [maya, jonas, priya, leo, rita, sam] = people();
@@ -107,15 +111,9 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
         ),
         record(
             named(
-                pr(
-                    3,
-                    4688,
-                    "Draft: OKLab contrast guard for borders",
-                    &jonas,
-                    5,
-                )
-                .draft()
-                .build(),
+                pr(3, 4688, "OKLab contrast guard for borders", &jonas, 5)
+                    .draft()
+                    .build(),
             ),
             vec![],
         ),

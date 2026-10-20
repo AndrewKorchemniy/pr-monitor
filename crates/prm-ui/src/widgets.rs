@@ -30,6 +30,20 @@ pub(crate) fn muted(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Res
     )
 }
 
+/// A page title: the title face at a larger size.
+pub(crate) fn page_title_font(theme: &UiTheme) -> egui::FontId {
+    egui::FontId::new(20.0, theme.fonts.title.family.clone())
+}
+
+/// A page title.
+pub(crate) fn page_title(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Response {
+    ui.label(
+        RichText::new(text)
+            .font(page_title_font(theme))
+            .color(theme.colors.text_primary),
+    )
+}
+
 /// A section heading.
 pub(crate) fn heading(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Response {
     ui.label(
@@ -68,10 +82,10 @@ pub(crate) fn primary_button(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> 
 /// A key cap ("Ctrl+K").
 pub(crate) fn kbd(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Response {
     egui::Frame::NONE
-        .fill(theme.colors.control_bg)
-        .stroke(egui::Stroke::new(1.0, theme.colors.border_subtle))
-        .corner_radius(egui::CornerRadius::same(3))
-        .inner_margin(egui::Margin::symmetric(4, 1))
+        .fill(theme.colors.surface_sunken)
+        .stroke(egui::Stroke::new(1.0, theme.colors.border_default))
+        .corner_radius(egui::CornerRadius::same(theme.tokens.metrics.radius.sm))
+        .inner_margin(egui::Margin::symmetric(6, 2))
         .show(ui, |ui| {
             ui.label(
                 RichText::new(text)

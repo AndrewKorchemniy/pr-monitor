@@ -61,10 +61,10 @@ fn scenes() -> Vec<Scene> {
     let mut all = vec![
         scene("first-run-connect", Shown::FirstRun, empty_state, nothing),
         scene("first-run-repositories", Shown::FirstRun, demo_state, |f| {
-            first_run_step(f, Step::Repositories)
+            first_run_step(f, Step::Repositories);
         }),
         scene("first-run-people", Shown::FirstRun, demo_state, |f| {
-            first_run_step(f, Step::People)
+            first_run_step(f, Step::People);
         }),
         scene("dashboard", Shown::Dashboard, demo_state, nothing),
         scene("dashboard-peek", Shown::Dashboard, demo_state, |f| {
@@ -79,7 +79,7 @@ fn scenes() -> Vec<Scene> {
         }),
         scene("dashboard-empty", Shown::Dashboard, empty_state, nothing),
         scene("palette", Shown::Palette, demo_state, |f| {
-            f.palette.query = "sign".to_owned()
+            f.palette.query = "sign".to_owned();
         }),
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
@@ -98,7 +98,7 @@ fn scenes() -> Vec<Scene> {
     let dialogs: [Named; 3] = [
         ("settings-add-org", |f| editing(f, Editor::AddOrg)),
         ("settings-choose-repositories", |f| {
-            editing(f, Editor::Repositories)
+            editing(f, Editor::Repositories);
         }),
         ("settings-edit-people", |f| editing(f, Editor::Tracked)),
     ];

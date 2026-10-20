@@ -12,8 +12,17 @@ use crate::{
     copy,
     frame::FrameCx,
     theme::UiTheme,
-    widgets::{self, card::section},
+    widgets::{
+        self,
+        card::section,
+        controls::{self, setting_row, toggle_row},
+    },
 };
+
+const WHEN_FOCUSED: [(WhenFocused, &str); 2] = [
+    (WhenFocused::Suppress, copy::DONT_NOTIFY),
+    (WhenFocused::Show, copy::NOTIFY_ANYWAY),
+];
 
 /// Every toggle with its label, in display order.
 fn toggles(events: &mut EventToggles) -> [(&mut bool, &'static str); 12] {
@@ -72,28 +81,32 @@ fn events(ui: &mut egui::Ui, events: &mut EventToggles) {
 }
 
 fn delivery(ui: &mut egui::Ui, theme: &UiTheme, prefs: &mut NotificationPrefs) {
-    ui.checkbox(&mut prefs.enabled, copy::SHOW_NOTIFICATIONS);
+    toggle_row(
+        ui,
+        theme,
+        &mut prefs.enabled,
+        (copy::SHOW_NOTIFICATIONS, None),
+    );
     ui.add_enabled_ui(prefs.enabled, |ui| {
         ui.separator();
-        widgets::field_label(ui, theme, copy::WHILE_IN_FRONT);
-        ui.radio_value(
-            &mut prefs.when_focused,
-            WhenFocused::Suppress,
-            copy::DONT_NOTIFY,
-        );
-        ui.radio_value(
-            &mut prefs.when_focused,
-            WhenFocused::Show,
-            copy::NOTIFY_ANYWAY,
+        setting_row(ui, theme, (copy::WHILE_IN_FRONT, None), |ui| {
+            controls::segmented(ui, theme, &mut prefs.when_focused, &WHEN_FOCUSED);
+        });
+        ui.separator();
+        toggle_row(ui, theme, &mut prefs.sound, (copy::PLAY_SOUND, None));
+        ui.separator();
+        toggle_row(
+            ui,
+            theme,
+            &mut prefs.include_drafts,
+            (copy::INCLUDE_DRAFTS, None),
         );
         ui.separator();
-        ui.checkbox(&mut prefs.sound, copy::PLAY_SOUND);
-        ui.checkbox(&mut prefs.include_drafts, copy::INCLUDE_DRAFTS);
-        let n = prefs.max_per_refresh;
-        ui.add(
-            egui::Slider::new(&mut prefs.max_per_refresh, limits::MAX_PER_REFRESH)
-                .text(copy::max_per_refresh(n)),
-        );
+        let label = copy::max_per_refresh(prefs.max_per_refresh);
+        setting_row(ui, theme, (&label, None), |ui| {
+            let range = limits::MAX_PER_REFRESH;
+            controls::slider(ui, theme, &mut prefs.max_per_refresh, range, &label);
+        });
     });
 }
 

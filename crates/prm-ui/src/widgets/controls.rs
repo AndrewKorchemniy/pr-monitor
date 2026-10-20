@@ -1,8 +1,9 @@
 //! Controls that share the bordered button look: icon buttons, a labeled menu button, the
-//! seamless search field and a text field with a flush action button.
+//! seamless search field, a text field with a flush action button, and settings rows
+//! (switches, sliders, segmented options).
 
 use eframe::egui::{
-    self, CornerRadius, Rect, Sense, Shape, Stroke, StrokeKind, TextEdit, pos2, vec2,
+    self, CornerRadius, Rect, RichText, Sense, Shape, Stroke, StrokeKind, TextEdit, pos2, vec2,
 };
 
 use crate::theme::{
@@ -241,11 +242,10 @@ pub(crate) fn action_field(
         border,
     ));
     ui.painter().set(background, Shape::Vec(shapes));
-    let ready = !text.trim().is_empty();
-    let arrow = if ready {
-        theme.colors.accent_base
-    } else {
+    let arrow = if text.trim().is_empty() {
         theme.colors.text_muted
+    } else {
+        theme.colors.accent_base
     };
     let glyph = Rect::from_center_size(button_rect.center(), vec2(GLYPH, GLYPH));
     icons::paint(ui.painter(), glyph, spec.icon, arrow);
@@ -264,4 +264,253 @@ fn field_border(theme: &UiTheme, error: bool, focused: bool) -> Stroke {
     } else {
         Stroke::new(m.stroke.hairline, theme.colors.border_control)
     }
+}
+
+/// A slider with a visible rail, an accent fill up to the value and a round knob. The caller
+/// states the value once, in the row's label.
+pub(crate) fn slider<N: egui::emath::Numeric>(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    value: &mut N,
+    range: std::ops::RangeInclusive<N>,
+    name: &str,
+) -> egui::Response {
+    ui.scope(|ui| {
+        let style = ui.style_mut();
+        let c = &theme.colors;
+        style.visuals.widgets.inactive.bg_fill = c.border_default;
+        style.visuals.widgets.inactive.fg_stroke = Stroke::new(2.0, c.accent_base);
+        style.visuals.selection.bg_fill = c.accent_base;
+        style.spacing.interact_size.y = 16.0;
+        style.spacing.slider_width = 180.0;
+        style.spacing.slider_rail_height = 4.0;
+        let slider = egui::Slider::new(value, range)
+            .show_value(false)
+            .trailing_fill(true)
+            .handle_shape(egui::style::HandleShape::Circle);
+        let response = ui.add(slider);
+        let enabled = ui.is_enabled();
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, enabled, name));
+        response
+    })
+    .inner
+}
+
+/// A label and an optional muted description on the left, `add`'s control on the right.
+pub(crate) fn setting_row<R>(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (label, description): (&str, Option<&str>),
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let m = &theme.tokens.metrics;
+    ui.horizontal(|ui| {
+        ui.set_min_height(m.row.control_height + m.space.md);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = m.space.xxs;
+            ui.label(
+                RichText::new(label)
+                    .font(theme.fonts.body.clone())
+                    .color(theme.colors.text_primary),
+            );
+            if let Some(description) = description {
+                crate::widgets::muted(ui, theme, description);
+            }
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add)
+            .inner
+    })
+    .inner
+}
+
+/// One clickable row: label and optional description on the left, a switch on the right.
+pub(crate) fn toggle_row(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    value: &mut bool,
+    (label, description): (&str, Option<&str>),
+) -> egui::Response {
+    let m = &theme.tokens.metrics;
+    let width = ui.available_width();
+    let switch = vec2(34.0, 18.0);
+    let wrap = (width - switch.x - m.space.xl).max(80.0);
+    let painter = ui.painter().clone();
+    let primary = theme.colors.text_primary;
+    let secondary = theme.colors.text_secondary;
+    let label_g = painter.layout(label.to_owned(), theme.fonts.body.clone(), primary, wrap);
+    let desc_g = description
+        .map(|d| painter.layout(d.to_owned(), theme.fonts.small.clone(), secondary, wrap));
+    let desc_h = desc_g.as_ref().map_or(0.0, |g| g.size().y + m.space.xxs);
+    let text_h = label_g.size().y + desc_h;
+    let height = (text_h + 2.0 * m.space.sm).max(m.row.control_height + m.space.md);
+    let (rect, mut response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
+    if response.clicked() {
+        *value = !*value;
+        response.mark_changed();
+    }
+    let top = rect.center().y - text_h / 2.0;
+    let below = top + label_g.size().y + m.space.xxs;
+    painter.galley(pos2(rect.left(), top), label_g, primary);
+    if let Some(g) = desc_g {
+        painter.galley(pos2(rect.left(), below), g, secondary);
+    }
+    let center = pos2(rect.right() - switch.x / 2.0, rect.center().y);
+    let track = Rect::from_center_size(center, switch);
+    paint_switch(ui, theme, track, *value, &response);
+    let enabled = ui.is_enabled();
+    let on = *value;
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, on, label));
+    response
+}
+
+fn paint_switch(ui: &egui::Ui, theme: &UiTheme, track: Rect, on: bool, response: &egui::Response) {
+    let c = &theme.colors;
+    let t = ui
+        .ctx()
+        .animate_bool_responsive(response.id.with("switch"), on);
+    let border = Stroke::new(theme.tokens.metrics.stroke.hairline, c.border_control);
+    let (fill, stroke, knob) = if on {
+        (c.accent_base, Stroke::NONE, c.text_on_accent)
+    } else if response.hovered() {
+        (c.control_hover, border, c.text_secondary)
+    } else {
+        (c.control_bg, border, c.text_muted)
+    };
+    let radius = track.height() / 2.0;
+    ui.painter()
+        .rect(track, radius, fill, stroke, StrokeKind::Inside);
+    let x = egui::lerp((track.left() + radius)..=(track.right() - radius), t);
+    ui.painter()
+        .circle_filled(pos2(x, track.center().y), radius - 3.0, knob);
+}
+
+/// Joined segments for a small set of options; each segment is a radio button for screen
+/// readers. Returns true when the value changed.
+pub(crate) fn segmented<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    value: &mut T,
+    options: &[(T, &str)],
+) -> bool {
+    let m = &theme.tokens.metrics;
+    let background = ui.painter().add(Shape::Noop);
+    let mut changed = false;
+    let mut outer = Rect::NOTHING;
+    // why: segments read left to right even inside a right-aligned row.
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for &(option, text) in options {
+            let selected = *value == option;
+            let (rect, response) = segment(ui, theme, text, selected);
+            outer = outer.union(rect);
+            if response.clicked() && !selected {
+                *value = option;
+                changed = true;
+            }
+        }
+    });
+    let radius = CornerRadius::same(m.radius.md);
+    let border = Stroke::new(m.stroke.hairline, theme.colors.border_subtle);
+    let shapes = vec![
+        Shape::rect_filled(outer, radius, theme.colors.control_bg),
+        Shape::rect_stroke(outer, radius, border, StrokeKind::Inside),
+    ];
+    ui.painter().set(background, Shape::Vec(shapes));
+    changed
+}
+
+fn segment(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    text: &str,
+    selected: bool,
+) -> (Rect, egui::Response) {
+    let m = &theme.tokens.metrics;
+    let c = &theme.colors;
+    let color = if selected {
+        c.text_primary
+    } else {
+        c.text_secondary
+    };
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), theme.fonts.label.clone(), color);
+    let size = vec2(galley.size().x + 2.0 * m.space.lg, m.row.control_height);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let inner = rect.shrink(3.0);
+    if selected {
+        let border = Stroke::new(m.stroke.hairline, c.border_default);
+        ui.painter().rect(
+            inner,
+            m.radius.sm,
+            c.surface_raised,
+            border,
+            StrokeKind::Inside,
+        );
+    } else if response.hovered() {
+        ui.painter()
+            .rect_filled(inner, m.radius.sm, c.control_hover);
+    }
+    ui.painter()
+        .galley(rect.center() - galley.size() / 2.0, galley, color);
+    let enabled = ui.is_enabled();
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::RadioButton, enabled, selected, text)
+    });
+    (rect, response)
+}
+
+/// A row that shows or hides extra settings, with a chevron that turns when open.
+pub(crate) fn disclosure(ui: &mut egui::Ui, theme: &UiTheme, label: &str, open: &mut bool) {
+    let m = &theme.tokens.metrics;
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        theme.fonts.label.clone(),
+        theme.colors.text_secondary,
+    );
+    let size = vec2(GLYPH + m.space.sm + galley.size().x, m.row.control_height);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    if response.clicked() {
+        *open = !*open;
+    }
+    let icon = if *open {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    };
+    let color = hover_color(theme, &response);
+    let center = pos2(rect.left() + GLYPH / 2.0, rect.center().y);
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(center, vec2(9.0, 9.0)),
+        icon,
+        color,
+    );
+    let at = pos2(
+        rect.left() + GLYPH + m.space.sm,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(at, galley, color);
+    let state = *open;
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, state, label));
+}
+
+/// A borderless square button with a cross, for closing dialogs and drawers.
+pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> egui::Response {
+    let m = &theme.tokens.metrics;
+    let side = m.row.control_height - 2.0;
+    let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, m.radius.md, theme.colors.control_hover);
+    }
+    let glyph = Rect::from_center_size(rect.center(), vec2(10.0, 10.0));
+    icons::paint(
+        ui.painter(),
+        glyph,
+        Icon::Cross,
+        hover_color(theme, &response),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    response.on_hover_text(name)
 }

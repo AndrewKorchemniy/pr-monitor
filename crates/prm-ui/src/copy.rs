@@ -29,6 +29,8 @@ pub(crate) const MARKDOWN_COPIED: &str = "Markdown link copied";
 pub(crate) const TITLE_COPIED: &str = "Title copied";
 pub(crate) const REVIEWS: &str = "Reviews";
 pub(crate) const NO_OPEN_THREADS: &str = "No open threads.";
+pub(crate) const OPEN_THREADS: &str = "Open threads";
+pub(crate) const NO_REVIEWS: &str = "No reviews yet.";
 pub(crate) const GROUP_TAG: &str = "group";
 pub(crate) const REQUIRED_TAG: &str = "required";
 pub(crate) const OPEN_IN_BROWSER: &str = "Open in browser";
@@ -82,6 +84,7 @@ pub(crate) const SIGN_IN_BROWSER: &str = "Sign in with the browser instead";
 pub(crate) const USE_PAT: &str = "Use a personal access token";
 pub(crate) const SIGN_IN_ENTRA: &str = "Sign in with your organization's app";
 pub(crate) const SIGN_OUT: &str = "Sign out";
+pub(crate) const CHANGE_SIGN_IN: &str = "Change sign-in";
 pub(crate) const SAVE_ORG_FIRST: &str = "Save this organization to sign in.";
 pub(crate) const CHECKING_SIGN_IN: &str = "Checking sign-in…";
 pub(crate) const WAITING_SIGN_IN: &str = "Waiting for you to finish signing in in your browser…";
@@ -113,6 +116,10 @@ pub(crate) const MINIMIZE_TO_TRAY: &str = "Hide to the tray when minimized";
 pub(crate) const LAUNCH_AT_LOGIN: &str = "Start PR Monitor when I sign in to Windows";
 pub(crate) const REFRESH_HELP: &str = "5–10 minutes is plenty for large organizations.";
 pub(crate) const ORG_COLUMN: &str = "Organization column";
+pub(crate) const ORG_COLUMN_HELP: &str =
+    "Automatic shows it when you watch more than one organization.";
+pub(crate) const PROXY: &str = "Proxy";
+pub(crate) const PROXY_HINT: &str = "system, none, pac or http://proxy:8080";
 pub(crate) const RELATIVE_TIMES: &str = "Show relative times (2h) instead of dates";
 pub(crate) const ADD_ORG: &str = "Add organization";
 pub(crate) const NO_ORGS: &str =
@@ -126,12 +133,11 @@ pub(crate) const SECTION_DELIVERY: &str = "Delivery";
 pub(crate) const SECTION_EVENTS: &str = "Events";
 pub(crate) const SECTION_TRY: &str = "Test and pause";
 pub(crate) const SECTION_LAYOUT: &str = "Layout";
-pub(crate) const SECTION_MOTION: &str = "Motion and power";
+pub(crate) const SECTION_PERFORMANCE: &str = "Performance";
 pub(crate) const SECTION_CUSTOM_THEMES: &str = "Custom themes";
 pub(crate) const SECTION_PRIVACY: &str = "Privacy";
 pub(crate) const SECTION_LINKS: &str = "Links";
 pub(crate) const NAME: &str = "Name";
-pub(crate) const URL: &str = "URL";
 pub(crate) const WATCH_ORG: &str = "Watch this organization";
 pub(crate) const MUTE_ORG: &str = "Mute notifications from this organization";
 pub(crate) const SIGN_IN_METHOD: &str = "Sign-in method";
@@ -143,6 +149,8 @@ pub(crate) const REMOVE_ORG_BODY: &str = "PR Monitor stops watching it and forge
 pub(crate) const REMOVE: &str = "Remove";
 pub(crate) const WATCH_ALL_PROJECTS: &str = "Watch all projects";
 pub(crate) const REFRESH_LIST: &str = "Refresh list";
+pub(crate) const EXPAND: &str = "Expand";
+pub(crate) const COLLAPSE: &str = "Collapse";
 pub(crate) const INCLUDE_DRAFTS: &str = "Include draft pull requests";
 pub(crate) const ORG_WIDE_QUERY: &str = "Use one request for the whole organization (experimental)";
 pub(crate) const INCLUDE_ME: &str = "Include my own pull requests";
@@ -169,7 +177,6 @@ pub(crate) const PAUSE_HOUR: &str = "Pause for 1 hour";
 pub(crate) const RESUME: &str = "Resume";
 pub(crate) const THEME: &str = "Theme";
 pub(crate) const DENSITY: &str = "Density";
-pub(crate) const TEXT_SIZE: &str = "Text size";
 pub(crate) const ANIMATIONS: &str = "Animations";
 pub(crate) const ANIMATIONS_HELP: &str = "Automatic turns animations off over Remote Desktop, with software rendering, and when Windows animations are off.";
 pub(crate) const LOW_POWER: &str = "Low-power mode";
@@ -322,12 +329,25 @@ pub(crate) const fn status_empty(status: PrStatus) -> &'static str {
     }
 }
 
-pub(crate) fn all_repos(n: u32, org: &str) -> String {
-    format!("All {n} repositories in {org}")
+pub(crate) fn signed_in_as(name: &str) -> String {
+    format!("Signed in as {name}")
 }
 
-pub(crate) fn signed_in_as(name: &str, method: &str) -> String {
-    format!("Signed in as {name} · {method}")
+/// A one-word sign-in state for tooltips.
+pub(crate) const fn auth_state_short(state: &prm_service::AuthStateView) -> &'static str {
+    use prm_service::AuthStateView;
+    match state {
+        AuthStateView::SignedIn => "Signed in",
+        AuthStateView::NeedsSignIn { .. } => "Sign-in needed",
+        AuthStateView::Blocked { .. } => "Blocked",
+        AuthStateView::Unknown | AuthStateView::Checking => "Checking sign-in",
+        AuthStateView::SigningIn { .. } => "Signing in",
+        AuthStateView::SignedOut | AuthStateView::Disabled => "Signed out",
+    }
+}
+
+pub(crate) fn via(method: &str) -> String {
+    format!("via {method}")
 }
 
 pub(crate) fn sign_in_needed(title: &str) -> String {
@@ -365,6 +385,10 @@ pub(crate) fn whole_project(project: &str) -> String {
     format!("{project} (all repositories)")
 }
 
+pub(crate) fn text_size(scale: f32) -> String {
+    format!("Text size {:.0}%", scale * 100.0)
+}
+
 pub(crate) fn step_of(step: usize, total: usize) -> String {
     format!("Step {step} of {total}")
 }
@@ -400,10 +424,6 @@ pub(crate) fn using_renderer(api: &str, adapter: &str, software: bool) -> String
         ""
     };
     format!("Using {api} on {adapter}{suffix}")
-}
-
-pub(crate) fn version_line(version: &str) -> String {
-    format!("PR Monitor {version}")
 }
 
 pub(crate) fn more_banners(n: usize) -> String {

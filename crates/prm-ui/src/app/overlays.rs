@@ -91,6 +91,7 @@ impl PrMonitorApp {
                 let spec = ModalSpec {
                     id: "discard",
                     title: copy::DISCARD_TITLE,
+                    subtitle: None,
                     buttons: &[copy::DISCARD, copy::KEEP_EDITING],
                     danger: true,
                     width: widgets::modal::WIDTH,
@@ -109,6 +110,7 @@ impl PrMonitorApp {
                 let spec = ModalSpec {
                     id: "admin",
                     title: copy::ADMIN_TITLE,
+                    subtitle: None,
                     buttons: &[copy::COPY_MESSAGE, copy::CLOSE],
                     danger: false,
                     width: widgets::modal::WIDTH,
@@ -148,6 +150,7 @@ impl PrMonitorApp {
         let spec = ModalSpec {
             id: "remove_org",
             title: &title,
+            subtitle: None,
             buttons: &[copy::REMOVE, copy::CANCEL],
             danger: true,
             width: widgets::modal::WIDTH,
@@ -177,6 +180,7 @@ impl PrMonitorApp {
         let spec = ModalSpec {
             id: "pat",
             title: &title,
+            subtitle: None,
             buttons: &[copy::SAVE_TOKEN, copy::CANCEL],
             danger: false,
             width: widgets::modal::WIDTH,
@@ -222,6 +226,7 @@ impl PrMonitorApp {
         let spec = ModalSpec {
             id: "auth_menu",
             title: copy::TRAY_SIGN_IN.trim_end_matches('…'),
+            subtitle: None,
             buttons: &[copy::CLOSE],
             danger: false,
             width: widgets::modal::WIDTH,

@@ -3,7 +3,7 @@
 
 use eframe::egui::{self, Align, Layout, Rect, RichText, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBody, TableBuilder, TableRow};
-use prm_domain::view::{PrRow, age::AgeCache};
+use prm_domain::view::{GroupBy, PrRow, age::AgeCache};
 
 use crate::{
     actions::UiAction,
@@ -58,7 +58,10 @@ pub(crate) fn pr_table(
 ) -> TableOut {
     let theme = cx.theme.clone();
     let metrics = &theme.tokens.metrics.row;
-    let columns = visible_columns(ui.available_width(), input.show_org, &view.hidden_columns);
+    let mut columns = visible_columns(ui.available_width(), input.show_org, &view.hidden_columns);
+    if view.group == GroupBy::Status {
+        compact_status(&mut columns);
+    }
     let span = ui.available_rect_before_wrap().x_range();
     // why: column resize lines show only while hovered or dragged, not as permanent rules.
     ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::NONE;
@@ -100,6 +103,16 @@ pub(crate) fn pr_table(
             row_height,
             ppp,
         )),
+    }
+}
+
+/// Grouped by status, the group header already names it: the status cell shows only its glyph.
+fn compact_status(columns: &mut [ColumnSpec]) {
+    for spec in columns.iter_mut().filter(|c| c.id == ColumnId::Status) {
+        spec.key = "status_glyph";
+        spec.header = "";
+        spec.width = Width::Initial(28.0);
+        spec.min = 24.0;
     }
 }
 
@@ -518,14 +531,14 @@ fn change_bar(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow) {
     }
     let cell = ui.max_rect();
     let width = theme.tokens.metrics.row.revision_bar;
-    let top = cell.top() + 2.0;
-    let bottom = top + (cell.height() - 4.0) * t;
+    let top = cell.top() + 4.0;
+    let bottom = top + (cell.height() - 8.0) * t;
     let bar = Rect::from_min_max(
         egui::pos2(cell.left() + 1.0, top),
         egui::pos2(cell.left() + 1.0 + width, bottom),
     );
     ui.painter()
-        .rect_filled(bar, 1.0, theme.colors.signature_revision);
+        .rect_filled(bar, width / 2.0, theme.colors.signature_revision);
     let _ = ui
         .allocate_rect(bar, Sense::hover())
         .on_hover_text(copy::CHANGED_TOOLTIP);

@@ -14,12 +14,20 @@ use crate::{
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, env: &SettingsEnv<'_>) {
     let theme = cx.theme.clone();
-    section(ui, &theme, copy::APP_NAME, None, |ui| {
-        ui.label(
-            RichText::new(copy::version_line(env.build.version))
-                .font(theme.fonts.display.clone())
-                .color(theme.colors.text_primary),
-        );
+    crate::theme::adapter::frame_section(&theme).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(copy::APP_NAME)
+                    .font(theme.fonts.display.clone())
+                    .color(theme.colors.text_primary),
+            );
+            ui.label(
+                RichText::new(env.build.version)
+                    .font(theme.fonts.title.clone())
+                    .color(theme.colors.text_secondary),
+            );
+        });
         widgets::muted(ui, &theme, copy::ABOUT_LINE);
         let build = format!("{} · {}", env.build.git_sha, env.build.target);
         ui.label(
@@ -29,12 +37,13 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, env: &SettingsEnv<'_
         );
         widgets::muted(ui, &theme, env.renderer_line);
     });
+    ui.add_space(theme.tokens.metrics.space.xl);
     section(ui, &theme, copy::SECTION_PRIVACY, None, |ui| {
         ui.add(egui::Label::new(copy::PRIVACY).wrap());
     });
     section(ui, &theme, copy::SECTION_LINKS, None, |ui| links(ui, cx));
     section(ui, &theme, copy::LICENSES, None, |ui| {
-        licenses(ui, &theme, env)
+        licenses(ui, &theme, env);
     });
 }
 

@@ -44,15 +44,10 @@ impl FirstRun {
 
 pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     let theme = cx.theme.clone();
-    let width = if fr.step == Step::Connect {
-        460.0
-    } else {
-        620.0
-    };
     egui::CentralPanel::no_frame()
         .frame(adapter::frame_canvas(&theme))
         .show(ui, |ui| {
-            card::centered_card(ui, &theme, "first_run", width, |ui| {
+            card::anchored_card(ui, &theme, "first_run", 560.0, |ui| {
                 header(ui, &theme, fr.step);
                 match fr.step {
                     Step::Connect => connect(ui, cx, fr),
@@ -63,23 +58,20 @@ pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstR
         });
 }
 
-/// "PR Monitor" with the step dots on the right.
+/// "PR Monitor", then "Step 2 of 3 · Repositories".
 fn header(ui: &mut egui::Ui, theme: &UiTheme, step: Step) {
-    let index = match step {
-        Step::Connect => 0,
-        Step::Repositories => 1,
-        Step::People => 2,
+    let (index, name) = match step {
+        Step::Connect => (1, copy::ORG_URL_LABEL),
+        Step::Repositories => (2, copy::REPOSITORIES),
+        Step::People => (3, copy::PEOPLE),
     };
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(copy::APP_NAME)
-                .font(theme.fonts.display.clone())
-                .color(theme.colors.text_primary),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            card::step_dots(ui, theme, index, 3);
-        });
-    });
+    ui.label(
+        RichText::new(copy::APP_NAME)
+            .font(theme.fonts.display.clone())
+            .color(theme.colors.text_primary),
+    );
+    let caption = format!("{} · {name}", copy::step_of(index, 3));
+    widgets::muted(ui, theme, &caption);
     ui.add_space(theme.tokens.metrics.space.xl);
 }
 
@@ -143,11 +135,15 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
             force: true,
         }));
     }
-    footer(ui, &theme, false, |ui| {
-        if widgets::primary_button(ui, &theme, copy::CONTINUE).clicked() {
-            fr.step = Step::People;
-        }
+    let mut next = false;
+    let back = footer(ui, &theme, |ui| {
+        next = widgets::primary_button(ui, &theme, copy::CONTINUE).clicked();
     });
+    if back {
+        fr.step = Step::Connect;
+    } else if next {
+        fr.step = Step::People;
+    }
 }
 
 fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
@@ -168,7 +164,7 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
     });
     let mut finish = None;
-    let back = footer(ui, &theme, true, |ui| {
+    let back = footer(ui, &theme, |ui| {
         if widgets::primary_button(ui, &theme, copy::START_MONITORING).clicked() {
             finish = Some(true);
         }
@@ -190,14 +186,12 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     }
 }
 
-/// A Back button on the left (when `back`), the step's buttons right-aligned; true on Back.
-fn footer(ui: &mut egui::Ui, theme: &UiTheme, back: bool, add: impl FnOnce(&mut egui::Ui)) -> bool {
+/// A Back button on the left, the step's buttons right-aligned; true on Back.
+fn footer(ui: &mut egui::Ui, theme: &UiTheme, add: impl FnOnce(&mut egui::Ui)) -> bool {
     let mut went_back = false;
     ui.add_space(theme.tokens.metrics.space.xs);
     ui.horizontal(|ui| {
-        if back {
-            went_back = ui.button(copy::PREVIOUS).clicked();
-        }
+        went_back = ui.button(copy::PREVIOUS).clicked();
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
     });
     went_back
