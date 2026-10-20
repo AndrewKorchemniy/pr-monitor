@@ -425,7 +425,10 @@ jobs:
   go-live:                         # human gate: the `release` environment requires a reviewer
     name: go-live
     needs: [release, publish]
-    if: needs.release.outputs.dry_run != 'true'
+    # why: explicit result checks; the implicit success() also fails on the always-skipped sign job upstream
+    if: >-
+      !cancelled() && needs.publish.result == 'success' &&
+      needs.release.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release
@@ -450,7 +453,9 @@ jobs:
   winget:
     name: winget
     needs: [release, go-live]
-    if: vars.WINGET_ENABLED == 'true' && needs.release.outputs.dry_run != 'true'
+    if: >-
+      !cancelled() && needs.go-live.result == 'success' &&
+      vars.WINGET_ENABLED == 'true' && needs.release.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: release
