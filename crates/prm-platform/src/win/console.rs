@@ -9,17 +9,26 @@ use std::io::Write;
 
 use windows::{
     Win32::{
-        System::Console::{ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole},
+        Foundation::ERROR_ACCESS_DENIED,
+        System::Console::{ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, GetConsoleWindow},
         UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW},
     },
     core::HSTRING,
 };
 
 /// Attaches to the launching terminal; allocates a new console when there is none and
-/// `alloc_if_none` is set. `true` when a console is available.
+/// `alloc_if_none` is set. `true` when a console is available, including one the process
+/// already has (a console-subsystem debug build, where `AttachConsole` fails with
+/// `ERROR_ACCESS_DENIED`).
 pub(crate) fn attach_parent_console(alloc_if_none: bool) -> bool {
     // SAFETY: no memory preconditions.
-    if unsafe { AttachConsole(ATTACH_PARENT_PROCESS) }.is_ok() {
+    match unsafe { AttachConsole(ATTACH_PARENT_PROCESS) } {
+        Ok(()) => return true,
+        Err(error) if error.code() == ERROR_ACCESS_DENIED.to_hresult() => return true,
+        Err(_) => {}
+    }
+    // SAFETY: no memory preconditions; returns null when the process has no console.
+    if !unsafe { GetConsoleWindow() }.is_invalid() {
         return true;
     }
     // SAFETY: no memory preconditions.

@@ -21,6 +21,7 @@ zeroize = { workspace = true }
 [dev-dependencies]
 serde_json = { workspace = true }
 insta = { workspace = true }
+fastrand = { workspace = true }
 
 [lints]
 workspace = true
