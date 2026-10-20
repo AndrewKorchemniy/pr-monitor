@@ -1,0 +1,9 @@
+{
+  "count": 2,
+  "value": [
+    { "pullRequestId": 1, "status": "active", "title": "One", "createdBy": { "id": "00000000-0000-4000-8000-000000000001" }, "creationDate": "2026-01-01T00:00:00Z",
+      "repository": { "id": "00000000-0000-4000-8000-0000000000b1", "name": "api", "project": { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Payments" } } },
+    { "pullRequestId": 2, "status": "active", "title": "Two", "createdBy": { "id": "00000000-0000-4000-8000-000000000001" }, "creationDate": "2026-01-01T00:00:00Z",
+      "repository": { "id": "00000000-0000-4000-8000-0000000000b4", "name": "gateway", "project": { "id": "00000000-0000-4000-8000-0000000000a2", "name": "Platform" } } }
+  ]
+}

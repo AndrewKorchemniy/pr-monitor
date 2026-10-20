@@ -1,0 +1,6 @@
+{
+  "pullRequestId": 99, "status": "superseded", "title": "Odd", "mergeStatus": "rebasing",
+  "createdBy": { "id": "00000000-0000-4000-8000-000000000001" }, "creationDate": "2026-01-01T00:00:00Z",
+  "repository": { "id": "00000000-0000-4000-8000-0000000000b1", "name": "api", "project": { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Payments" } },
+  "reviewers": [ { "id": "00000000-0000-4000-8000-000000000002", "vote": 15 } ]
+}

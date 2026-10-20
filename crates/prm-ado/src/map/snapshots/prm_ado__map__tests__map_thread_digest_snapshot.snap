@@ -1,0 +1,261 @@
+---
+source: crates/prm-ado/src/map/tests.rs
+expression: threads
+---
+[
+  {
+    "id": 143,
+    "status": "missing",
+    "deleted": false,
+    "system_type": "VoteUpdate",
+    "file_path": null,
+    "last_updated": "2016-11-01T16:30:36.58Z",
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "system",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000041",
+          "name": "Project Collection Service Accounts",
+          "group": true
+        },
+        "published": null,
+        "snippet": null
+      }
+    ]
+  },
+  {
+    "id": 148,
+    "status": "active",
+    "deleted": false,
+    "system_type": null,
+    "file_path": "/new_feature.cpp",
+    "last_updated": "2016-11-01T16:30:52.48Z",
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": "Ann Bell"
+        },
+        "published": "2016-11-01T16:30:50Z",
+        "snippet": "Should we add a comment about what this value means?"
+      },
+      {
+        "id": 2,
+        "parent": 1,
+        "kind": "text",
+        "deleted": true,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": null
+      }
+    ]
+  },
+  {
+    "id": 149,
+    "status": "pending",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": "Pending one"
+      }
+    ]
+  },
+  {
+    "id": 150,
+    "status": "fixed",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": "Fixed"
+      }
+    ]
+  },
+  {
+    "id": 151,
+    "status": "by_design",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": "By design"
+      }
+    ]
+  },
+  {
+    "id": 152,
+    "status": "missing",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": "No status"
+      }
+    ]
+  },
+  {
+    "id": 153,
+    "status": "active",
+    "deleted": true,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": true,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": null
+      }
+    ]
+  },
+  {
+    "id": 154,
+    "status": "active",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": true,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": ""
+        },
+        "published": null,
+        "snippet": null
+      }
+    ]
+  },
+  {
+    "id": 155,
+    "status": "active",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "text",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000007",
+          "name": "SonarQube"
+        },
+        "published": null,
+        "snippet": "Bot finding"
+      }
+    ]
+  },
+  {
+    "id": 156,
+    "status": "active",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "code_change",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "name": ""
+        },
+        "published": null,
+        "snippet": "Suggested change"
+      }
+    ]
+  },
+  {
+    "id": 157,
+    "status": "active",
+    "deleted": false,
+    "system_type": null,
+    "file_path": null,
+    "last_updated": null,
+    "comments": [
+      {
+        "id": 1,
+        "parent": 0,
+        "kind": "unknown",
+        "deleted": false,
+        "author": {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "name": ""
+        },
+        "published": null,
+        "snippet": "AI says"
+      }
+    ]
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "count": 5,
+  "value": [
+    { "id": "00000000-0000-4000-8000-0000000000b1", "name": "api", "project": { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Payments" }, "webUrl": "https://dev.azure.com/contoso/Payments/_git/api" },
+    { "id": "00000000-0000-4000-8000-0000000000b2", "name": "web app", "project": { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Payments" } },
+    { "id": "00000000-0000-4000-8000-0000000000b3", "name": "old", "project": { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Payments" }, "isDisabled": true },
+    { "id": "00000000-0000-4000-8000-0000000000b4", "name": "gateway", "project": { "id": "00000000-0000-4000-8000-0000000000a2", "name": "Platform" } },
+    { "id": "00000000-0000-4000-8000-0000000000b5", "name": "auth", "project": { "id": "00000000-0000-4000-8000-0000000000a2", "name": "Platform" }, "isInMaintenance": true }
+  ]
+}

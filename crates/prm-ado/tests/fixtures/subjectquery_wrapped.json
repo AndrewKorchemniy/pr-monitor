@@ -1,0 +1,4 @@
+{ "count": 2, "value": [
+  { "subjectKind": "user", "descriptor": "aad.AAA", "displayName": "Jane Doe", "mailAddress": "jane@contoso.com", "origin": "aad" },
+  { "subjectKind": "group", "descriptor": "vssgp.BBB", "displayName": "[Payments]\\Payments Team", "principalName": "[Payments]\\Payments Team" }
+] }

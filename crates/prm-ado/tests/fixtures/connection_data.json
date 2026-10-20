@@ -1,0 +1,14 @@
+{
+  "authenticatedUser": {
+    "id": "00000000-0000-4000-8000-000000000009",
+    "descriptor": "Microsoft.IdentityModel.Claims.ClaimsIdentity;tenant\\jtseng@contoso.com",
+    "subjectDescriptor": "aad.MDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA5",
+    "providerDisplayName": "Jia-hao Tseng",
+    "isActive": true,
+    "properties": {
+      "Account": { "$type": "System.String", "$value": "jtseng@contoso.com" }
+    }
+  },
+  "instanceId": "00000000-0000-4000-8000-0000000000ff",
+  "deploymentType": "hosted"
+}

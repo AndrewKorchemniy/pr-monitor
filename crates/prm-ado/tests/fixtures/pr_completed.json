@@ -1,0 +1,5 @@
+{
+  "pullRequestId": 22, "status": "completed", "title": "A new feature", "closedDate": "2026-10-19T12:00:00Z",
+  "createdBy": { "id": "00000000-0000-4000-8000-000000000001", "displayName": "Normal Paulk" }, "creationDate": "2026-10-18T12:00:00Z",
+  "repository": { "id": "00000000-0000-4000-8000-0000000000b2", "name": "web app", "project": { "id": "00000000-0000-4000-8000-0000000000a1", "name": "Payments" } }
+}

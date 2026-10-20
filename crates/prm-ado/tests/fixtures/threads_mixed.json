@@ -1,0 +1,24 @@
+{
+  "count": 11,
+  "value": [
+    { "id": 143, "publishedDate": "2016-11-01T16:30:36Z", "lastUpdatedDate": "2016-11-01T16:30:36.58Z", "isDeleted": false,
+      "comments": [ { "id": 1, "parentCommentId": 0, "commentType": "system", "content": "Normal Paulk voted 10", "author": { "id": "00000000-0000-4000-8000-000000000041", "displayName": "Project Collection Service Accounts", "isContainer": true } } ],
+      "properties": { "CodeReviewThreadType": { "$type": "System.String", "$value": "VoteUpdate" } } },
+    { "id": 148, "status": "active", "isDeleted": false, "lastUpdatedDate": "2016-11-01T16:30:52.48Z",
+      "threadContext": { "filePath": "/new_feature.cpp", "rightFileStart": { "line": 5, "offset": 1 } },
+      "comments": [
+        { "id": 1, "parentCommentId": 0, "commentType": "text", "content": "Should we add a comment about what this value means?", "publishedDate": "2016-11-01T16:30:50Z", "author": { "id": "00000000-0000-4000-8000-000000000002", "displayName": "Ann Bell" } },
+        { "id": 2, "parentCommentId": 1, "commentType": "text", "isDeleted": true, "author": { "id": "00000000-0000-4000-8000-000000000002" } }
+      ],
+      "properties": { "Microsoft.TeamFoundation.Discussion.SupportsMarkdown": { "$type": "System.Int32", "$value": 1 } } },
+    { "id": 149, "status": "pending", "comments": [ { "id": 1, "commentType": "text", "content": "Pending one", "author": { "id": "00000000-0000-4000-8000-000000000002" } } ] },
+    { "id": 150, "status": "fixed", "comments": [ { "id": 1, "commentType": "text", "content": "Fixed", "author": { "id": "00000000-0000-4000-8000-000000000002" } } ] },
+    { "id": 151, "status": "byDesign", "comments": [ { "id": 1, "commentType": "text", "content": "By design", "author": { "id": "00000000-0000-4000-8000-000000000002" } } ] },
+    { "id": 152, "comments": [ { "id": 1, "commentType": "text", "content": "No status", "author": { "id": "00000000-0000-4000-8000-000000000002" } } ] },
+    { "id": 153, "status": "active", "isDeleted": true, "comments": [ { "id": 1, "commentType": "text", "isDeleted": true, "author": { "id": "00000000-0000-4000-8000-000000000002" } } ] },
+    { "id": 154, "status": "active", "comments": [ { "id": 1, "commentType": "text", "isDeleted": true, "author": { "id": "00000000-0000-4000-8000-000000000002" } } ] },
+    { "id": 155, "status": "active", "comments": [ { "id": 1, "commentType": "text", "content": "Bot finding", "author": { "id": "00000000-0000-4000-8000-000000000007", "displayName": "SonarQube" } } ] },
+    { "id": 156, "status": "active", "properties": null, "comments": [ { "id": 1, "commentType": "codeChange", "content": "Suggested change", "author": { "id": "00000000-0000-4000-8000-000000000003" } } ] },
+    { "id": 157, "status": "active", "comments": [ { "id": 1, "commentType": "aiSuggestion", "content": "## AI says\nsomething", "author": { "id": "00000000-0000-4000-8000-000000000003" } } ] }
+  ]
+}

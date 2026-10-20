@@ -1,0 +1,87 @@
+---
+source: crates/prm-ado/src/map/tests.rs
+expression: "prs()[0]"
+---
+{
+  "key": "contoso/00000000-0000-4000-8000-0000000000b2/22",
+  "project": "00000000-0000-4000-8000-0000000000a1",
+  "project_name": "Payments",
+  "repo_name": "web app",
+  "title": "A new feature",
+  "author": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "Normal Paulk",
+    "unique_name": "npaulk@contoso.com",
+    "descriptor": "aad.xyz"
+  },
+  "created_at": "2016-11-01T16:30:31.6655471Z",
+  "closed_at": null,
+  "state": "active",
+  "draft": false,
+  "source_branch": "npaulk/my_work",
+  "target_branch": "main",
+  "merge_status": "succeeded",
+  "head_commit": "b60280bc6e62e2f880f1b63c1e24987664d3bda3",
+  "auto_complete": true,
+  "reviewers": [
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "name": "Ann Bell"
+      },
+      "vote": 10,
+      "required": false,
+      "declined": false,
+      "flagged": false,
+      "voted_for": [
+        "00000000-0000-4000-8000-000000000050"
+      ]
+    },
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000050",
+        "name": "[Payments]\\Payments Team",
+        "group": true
+      },
+      "vote": 10,
+      "required": true,
+      "declined": false,
+      "flagged": false,
+      "voted_for": []
+    },
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Normal Paulk"
+      },
+      "vote": 10,
+      "required": false,
+      "declined": false,
+      "flagged": false,
+      "voted_for": []
+    },
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "Cal Diaz"
+      },
+      "vote": 15,
+      "required": false,
+      "declined": false,
+      "flagged": false,
+      "voted_for": []
+    },
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "name": "Dee Ng"
+      },
+      "vote": 0,
+      "required": false,
+      "declined": true,
+      "flagged": false,
+      "voted_for": []
+    }
+  ],
+  "web_url": "https://dev.azure.com/contoso/Payments/_git/web%20app/pullrequest/22"
+}
