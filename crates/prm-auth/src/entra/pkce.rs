@@ -8,10 +8,20 @@ use sha2::{Digest, Sha256};
 const VERIFIER_BYTES: usize = 32;
 const STATE_BYTES: usize = 16;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Pkce {
     pub verifier: String,
     pub challenge: String,
+}
+
+/// The verifier is a one-time secret: redacted. The challenge is public (it is in the URL).
+impl std::fmt::Debug for Pkce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pkce")
+            .field("verifier", &"<redacted>")
+            .field("challenge", &self.challenge)
+            .finish()
+    }
 }
 
 impl Pkce {

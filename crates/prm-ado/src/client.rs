@@ -1,14 +1,20 @@
 //! One org's HTTP client: headers, concurrency cap, rate gate, retries, a single token refresh
 //! on 401, and sign-in-page detection. `execute` is the only request loop in the crate.
 
-use std::sync::{
-    Arc, Mutex, PoisonError,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
 };
 
 use bytes::Bytes;
 use http::{HeaderMap, HeaderValue, Method, header};
-use prm_domain::auth::{AccessToken, AuthError, extract_code};
+use prm_domain::{
+    auth::{AccessToken, AuthError, extract_code},
+    secret::TokenId,
+};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::Semaphore;
 use url::Url;
@@ -69,12 +75,16 @@ pub struct AdoClient {
 enum Outcome {
     Done(HttpResponse),
     Fail(AdoError),
-    /// 401: ask the credential for a fresh token once, then retry.
-    RefreshAuth,
+    /// 401: ask the credential for a fresh token once, then retry. `code` is the server's
+    /// code, kept for the error if the credential cannot refresh.
+    RefreshAuth {
+        code: Option<Arc<str>>,
+    },
     RetryWithBackoff,
-    /// 429: wait in the rate gate. `no_retry_after`: the server gave no wait, so use the default.
+    /// 429: wait in the rate gate. `retry_after: None`: the server gave no wait, so use the
+    /// default.
     RetryAfterGate {
-        no_retry_after: bool,
+        retry_after: Option<Duration>,
     },
 }
 
@@ -148,16 +158,16 @@ impl AdoClient {
             .map_err(|_| AdoError::Cancelled)?;
         let mut attempt = 0;
         let mut rejected = None;
+        let mut refused_code = None;
         let mut refreshed = false;
         loop {
             self.gate.wait().await;
-            let token = self.credential.access_token(rejected.take()).await?;
+            let token = self.token(rejected.take(), refused_code.take()).await?;
             let request = HttpRequest {
                 method: method.clone(),
                 url: url.clone(),
                 headers: self.headers(&token, body.is_some())?,
                 body: body.clone(),
-                timeout: None,
             };
             self.requests.fetch_add(1, Ordering::Relaxed);
             let can_retry = attempt + 1 < self.policy.retry.max_attempts;
@@ -171,19 +181,35 @@ impl AdoClient {
             match outcome {
                 Outcome::Done(response) => return Ok(response),
                 Outcome::Fail(error) => return Err(error),
-                Outcome::RefreshAuth => {
+                Outcome::RefreshAuth { code } => {
                     refreshed = true;
                     rejected = Some(token.id);
+                    refused_code = code;
                 }
                 Outcome::RetryWithBackoff => {
                     tokio::time::sleep(self.backoff(attempt)).await;
                     attempt += 1;
                 }
-                Outcome::RetryAfterGate { no_retry_after } => {
-                    self.hold_for_rate_limit(no_retry_after);
+                Outcome::RetryAfterGate { retry_after } => {
+                    self.hold_for_rate_limit(retry_after);
                     attempt += 1;
                 }
             }
+        }
+    }
+
+    /// The credential's token. A credential that cannot refresh after a 401 (a fixed PAT)
+    /// answers `Unauthorized` without a code; the server's code from that 401 is kept instead.
+    async fn token(
+        &self,
+        rejected: Option<TokenId>,
+        refused_code: Option<Arc<str>>,
+    ) -> Result<AccessToken, AdoError> {
+        match self.credential.access_token(rejected).await {
+            Err(AuthError::Unauthorized { code: None }) if refused_code.is_some() => {
+                Err(AuthError::Unauthorized { code: refused_code }.into())
+            }
+            result => Ok(result?),
         }
     }
 
@@ -209,13 +235,13 @@ impl AdoClient {
     }
 
     /// A 429 without `Retry-After` still waits, for the policy's default time.
-    fn hold_for_rate_limit(&self, no_retry_after: bool) {
-        if no_retry_after {
+    fn hold_for_rate_limit(&self, retry_after: Option<Duration>) {
+        if retry_after.is_none() {
             self.gate.push(self.policy.retry.default_429_wait);
         }
     }
 
-    fn backoff(&self, attempt: u32) -> std::time::Duration {
+    fn backoff(&self, attempt: u32) -> Duration {
         let mut rng = self.rng.lock().unwrap_or_else(PoisonError::into_inner);
         backoff_delay(&self.policy.retry, attempt, &mut rng)
     }
@@ -250,23 +276,28 @@ fn classify(method: &Method, response: HttpResponse, can_retry: bool, refreshed:
         }
         // Redirects are disabled; one means a sign-in redirect.
         300..=399 => Outcome::Fail(AuthError::SignInPageReturned.into()),
-        401 if !refreshed => Outcome::RefreshAuth,
+        401 if !refreshed => Outcome::RefreshAuth {
+            code: vss_error(&response).1,
+        },
         401 => Outcome::Fail(
             AuthError::Unauthorized {
-                code: vss_code(&response),
+                code: vss_error(&response).1,
             }
             .into(),
         ),
-        403 => Outcome::Fail(AdoError::Forbidden {
-            message: vss_message(&response).unwrap_or_else(|| "Forbidden".into()),
-            code: vss_code(&response),
-        }),
+        403 => {
+            let (message, code) = vss_error(&response);
+            Outcome::Fail(AdoError::Forbidden {
+                message: message.unwrap_or_else(|| "Forbidden".into()),
+                code,
+            })
+        }
         404 => Outcome::Fail(AdoError::NotFound {
             message: vss_message(&response),
         }),
         407 => Outcome::Fail(AdoError::ProxyAuthRequired),
         429 if can_retry => Outcome::RetryAfterGate {
-            no_retry_after: parse_retry_after(&response.headers).is_none(),
+            retry_after: parse_retry_after(&response.headers),
         },
         429 => Outcome::Fail(AdoError::RateLimited {
             retry_after: parse_retry_after(&response.headers),
@@ -277,12 +308,15 @@ fn classify(method: &Method, response: HttpResponse, can_retry: bool, refreshed:
             message: vss_message(&response),
             activity: activity_id(&response.headers),
         }),
-        _ => Outcome::Fail(AdoError::Http {
-            status,
-            message: vss_message(&response).unwrap_or_else(|| "Unexpected status".into()),
-            code: vss_code(&response),
-            activity: activity_id(&response.headers),
-        }),
+        _ => {
+            let (message, code) = vss_error(&response);
+            Outcome::Fail(AdoError::Http {
+                status,
+                message: message.unwrap_or_else(|| "Unexpected status".into()),
+                code,
+                activity: activity_id(&response.headers),
+            })
+        }
     }
 }
 
@@ -302,8 +336,11 @@ fn vss_message(response: &HttpResponse) -> Option<Arc<str>> {
         .map(Arc::from)
 }
 
-fn vss_code(response: &HttpResponse) -> Option<Arc<str>> {
-    vss_message(response).and_then(|m| extract_code(&m).map(Arc::from))
+/// The error body's message and the `TF…`/`VS…` code inside it, parsed once.
+fn vss_error(response: &HttpResponse) -> (Option<Arc<str>>, Option<Arc<str>>) {
+    let message = vss_message(response);
+    let code = message.as_deref().and_then(extract_code).map(Arc::from);
+    (message, code)
 }
 
 fn activity_id(headers: &HeaderMap) -> Option<Arc<str>> {

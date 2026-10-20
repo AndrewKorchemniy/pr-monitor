@@ -7,7 +7,7 @@ pub mod memory;
 
 use std::sync::Arc;
 
-use prm_domain::{OrgId, secret::SecretBytes};
+use prm_domain::{OrgId, auth::AuthError, secret::SecretBytes};
 
 pub use chunked::ChunkedSecretStore;
 pub use memory::InMemorySecretStore;
@@ -47,11 +47,16 @@ pub enum SecretStoreError {
     Other(Arc<str>),
 }
 
+/// The one place a secret-store failure becomes an `AuthError`.
+impl From<SecretStoreError> for AuthError {
+    fn from(error: SecretStoreError) -> Self {
+        Self::SecretStore(error.to_string().into())
+    }
+}
+
 pub trait SecretStore: Send + Sync + 'static {
     fn get(&self, key: &SecretKey) -> Result<Option<SecretBytes>, SecretStoreError>;
     fn set(&self, key: &SecretKey, value: &[u8]) -> Result<(), SecretStoreError>;
     /// Succeeds when the key is absent.
     fn delete(&self, key: &SecretKey) -> Result<(), SecretStoreError>;
-    /// The largest value one slot holds, if limited.
-    fn max_value_len(&self) -> Option<usize>;
 }

@@ -1,6 +1,7 @@
 //! Splits large values across several slots. Small values are stored raw. A large value is
 //! stored as parts `key#0..n` plus a header in `key`: `PRMC1:{n}:{len}:{fnv64}`. The header is
-//! written last and deleted first, so a crash never leaves a header pointing at missing parts.
+//! deleted before any part is rewritten and written last, so a failed or interrupted write
+//! reads as absent, never as a header pointing at missing or mixed parts.
 
 use prm_domain::{hash::fnv64, secret::SecretBytes};
 
@@ -70,7 +71,8 @@ impl<S: SecretStore> ChunkedSecretStore<S> {
     }
 
     fn read_parts(&self, key: &SecretKey, header: Header) -> Result<SecretBytes, SecretStoreError> {
-        let mut value = Vec::with_capacity(header.len);
+        // why: the header is untrusted input; never allocate more than its parts can hold.
+        let mut value = Vec::with_capacity(header.len.min(header.parts.saturating_mul(CHUNK_SIZE)));
         for index in 0..header.parts {
             let part = self
                 .inner
@@ -103,6 +105,10 @@ impl<S: SecretStore> SecretStore for ChunkedSecretStore<S> {
             self.delete_parts(key, old, 0);
             return Ok(());
         }
+        if old.is_some() {
+            // The old header would point at a mix of new and old parts if a write below fails.
+            self.inner.delete(key)?;
+        }
         let chunks: Vec<&[u8]> = value.chunks(CHUNK_SIZE).collect();
         for (index, chunk) in chunks.iter().enumerate() {
             self.inner.set(&key.part(index), chunk)?;
@@ -122,10 +128,6 @@ impl<S: SecretStore> SecretStore for ChunkedSecretStore<S> {
         self.inner.delete(key)?;
         self.delete_parts(key, old, 0);
         Ok(())
-    }
-
-    fn max_value_len(&self) -> Option<usize> {
-        None
     }
 }
 

@@ -61,7 +61,6 @@ pub(super) fn project_n(n: u128) -> Project {
     Project {
         id: project(n),
         name: format!("Project{n}").into(),
-        state: "wellFormed".into(),
     }
 }
 

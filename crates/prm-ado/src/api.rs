@@ -68,6 +68,8 @@ pub trait AdoApi: Send + Sync + 'static {
     async fn identities_by_query(&self, query: &str) -> Result<Vec<Person>, AdoError>;
     async fn identities_by_ids(&self, ids: &[Vsid]) -> Result<Vec<Person>, AdoError>;
     /// Supported iff it returns JSON spanning 2+ projects, or the org has a single project.
+    /// Auth, transient and cancel errors are returned as errors (not a verdict) so the caller
+    /// can probe again later instead of caching "unsupported".
     async fn probe_org_wide(&self, project_count: usize) -> Result<OrgWideProbe, AdoError>;
     fn rate(&self) -> RateSnapshot;
     fn request_count(&self) -> u64;
@@ -125,7 +127,7 @@ impl AdoApi for AdoClient {
                     .map(|d| map::pull_request(self.endpoint(), d)),
             );
             match step {
-                PageStep::Continue { .. } => {}
+                PageStep::Continue => {}
                 PageStep::Done => return Ok(prs),
                 PageStep::Truncated => {
                     tracing::warn!(
@@ -203,7 +205,9 @@ impl AdoApi for AdoClient {
             .active_prs(&PrQuery::OrgWide, 0, ORG_WIDE_PROBE_TOP);
         let page = match self.get_json::<ListDto<PullRequestDto>>(url).await {
             Ok(json) => json.body.value,
-            Err(AdoError::Auth(auth)) => return Err(AdoError::Auth(auth)),
+            Err(e) if e.is_auth() || e.is_transient() || matches!(e, AdoError::Cancelled) => {
+                return Err(e);
+            }
             Err(e) => {
                 tracing::info!(error = %e, "org-wide PR query unsupported");
                 return Ok(OrgWideProbe::Unsupported);

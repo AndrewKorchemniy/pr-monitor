@@ -69,10 +69,6 @@ impl SecretStore for PlatformSecretStore {
     fn delete(&self, key: &SecretKey) -> Result<(), SecretStoreError> {
         self.inner().delete(key)
     }
-
-    fn max_value_len(&self) -> Option<usize> {
-        self.inner().max_value_len()
-    }
 }
 
 /// Never fails: a backend that cannot start degrades to memory (secrets will not persist).

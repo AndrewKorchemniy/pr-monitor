@@ -11,9 +11,8 @@ use crate::consts::{H_CONTINUATION, MAX_CONTINUATION_PAGES};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PageStep {
-    Continue {
-        skip: u32,
-    },
+    /// Fetch the next page at `SkipPager::skip`.
+    Continue,
     Done,
     /// Stopped at the page limit; results may be incomplete.
     Truncated,
@@ -64,7 +63,7 @@ impl<K: Eq + Hash> SkipPager<K> {
         } else if self.pages >= self.max_pages {
             PageStep::Truncated
         } else {
-            PageStep::Continue { skip: self.skip }
+            PageStep::Continue
         };
         (fresh, step)
     }

@@ -13,14 +13,14 @@ use bytes::Bytes;
 use http::{HeaderMap, HeaderValue, Method, header};
 use prm_ado::{HttpTransport, http::HttpRequest};
 use prm_domain::{
-    Secret,
     auth::{AccessToken, AuthError, AuthHeader, AuthMethod},
+    person::non_blank,
     ports::{Clock, UrlOpener},
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    consts::{ENTRA_SCOPES, ENTRA_SIGNIN_TIMEOUT},
+    consts::{ENTRA_FALLBACK_LIFETIME, ENTRA_SCOPES, ENTRA_SIGNIN_TIMEOUT},
     entra::{
         loopback::Loopback,
         pkce::{Pkce, new_state},
@@ -28,7 +28,7 @@ use crate::{
         urls::{AuthorizeRequest, authorize_url, token_url},
     },
     secrets::{SecretKey, SecretStore},
-    source::{AuthContext, TokenSource},
+    source::{AuthContext, TokenSource, network},
 };
 
 /// The tenant to use when neither the config nor discovery names one.
@@ -79,9 +79,7 @@ impl EntraSource {
     }
 
     pub fn forget(&self) -> Result<(), AuthError> {
-        self.secrets
-            .delete(&self.key)
-            .map_err(|e| AuthError::SecretStore(e.to_string().into()))
+        Ok(self.secrets.delete(&self.key)?)
     }
 
     /// Opens the browser, waits for the redirect (5 minutes), exchanges the code, stores the
@@ -104,7 +102,6 @@ impl EntraSource {
             redirect_uri: &redirect_uri,
             pkce: &pkce,
             state: &state,
-            login_hint: None,
         };
         self.opener
             .open(&authorize_url(config, &request))
@@ -112,25 +109,23 @@ impl EntraSource {
         let code = loopback
             .wait_for_code(&state, cancel, ENTRA_SIGNIN_TIMEOUT)
             .await?;
+        let client_id = config.client_id.to_string();
         let form = [
-            ("client_id", config.client_id.to_string()),
-            ("grant_type", "authorization_code".to_owned()),
-            ("code", code),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", pkce.verifier),
-            ("scope", ENTRA_SCOPES.to_owned()),
+            ("client_id", client_id.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("code_verifier", pkce.verifier.as_str()),
+            ("scope", ENTRA_SCOPES),
         ];
         self.redeem(&tenant, &form).await
     }
 
     /// POSTs a token request, stores any new refresh token (always rotate), returns the token.
-    async fn redeem(
-        &self,
-        tenant: &str,
-        form: &[(&str, String)],
-    ) -> Result<AccessToken, AuthError> {
+    /// The form is borrowed so secrets are copied only into the request body.
+    async fn redeem(&self, tenant: &str, form: &[(&str, &str)]) -> Result<AccessToken, AuthError> {
         let body: String = url::form_urlencoded::Serializer::new(String::new())
-            .extend_pairs(form.iter().map(|(k, v)| (*k, v.as_str())))
+            .extend_pairs(form.iter().copied())
             .finish();
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -142,13 +137,8 @@ impl EntraSource {
             url: token_url(tenant),
             headers,
             body: Some(Bytes::from(body)),
-            timeout: None,
         };
-        let response = self
-            .transport
-            .send(request)
-            .await
-            .map_err(|e| AuthError::Network(e.to_string().into()))?;
+        let response = self.transport.send(request).await.map_err(network)?;
         let tokens = parse_token_response(response.status.as_u16(), &response.body)?;
         self.store_refresh(&tokens)?;
         Ok(self.access_token(tokens))
@@ -158,16 +148,16 @@ impl EntraSource {
         let Some(refresh) = &tokens.refresh_token else {
             return Ok(());
         };
-        self.secrets
-            .set(&self.key, refresh.expose().as_bytes())
-            .map_err(|e| AuthError::SecretStore(e.to_string().into()))
+        Ok(self.secrets.set(&self.key, refresh.expose().as_bytes())?)
     }
 
     fn access_token(&self, tokens: TokenResponse) -> AccessToken {
-        let expires_at = self
-            .clock
-            .now()
-            .saturating_add(Duration::from_secs(tokens.expires_in));
+        // A missing or zero `expires_in` would make the token stale on arrival.
+        let lifetime = match tokens.expires_in {
+            0 => ENTRA_FALLBACK_LIFETIME,
+            secs => Duration::from_secs(secs),
+        };
+        let expires_at = self.clock.now().saturating_add(lifetime);
         AccessToken {
             id: tokens.access_token.id(),
             header: AuthHeader::Bearer(tokens.access_token),
@@ -182,7 +172,7 @@ fn tenant_for(config: &EntraConfig, ctx: &AuthContext) -> Result<String, AuthErr
     if ctx.tenant.is_some_and(|t| t.msa) {
         return Err(AuthError::MsaOrgUnsupported);
     }
-    let configured = config.tenant.clone().filter(|t| !t.trim().is_empty());
+    let configured = config.tenant.clone().filter(|t| non_blank(t));
     let discovered = ctx.tenant.map(|t| t.id.to_string());
     Ok(configured
         .or(discovered)
@@ -199,19 +189,22 @@ impl TokenSource for EntraSource {
     async fn acquire(&self, ctx: &AuthContext) -> Result<AccessToken, AuthError> {
         let config = self.config.as_ref().ok_or(AuthError::EntraNotConfigured)?;
         let tenant = tenant_for(config, ctx)?;
-        let stored = self
-            .secrets
-            .get(&self.key)
-            .map_err(|e| AuthError::SecretStore(e.to_string().into()))?
-            .ok_or_else(|| AuthError::InteractionRequired {
-                reason: "No saved sign-in for your organization's app.".into(),
-            })?;
-        let refresh = Secret::new(String::from_utf8_lossy(&stored).into_owned());
+        let stored =
+            self.secrets
+                .get(&self.key)?
+                .ok_or_else(|| AuthError::InteractionRequired {
+                    reason: "No saved sign-in for your organization's app.".into(),
+                })?;
+        // Borrowed from the zeroizing `SecretBytes`: no plain copy of the refresh token.
+        let refresh = std::str::from_utf8(&stored).map_err(|_| AuthError::InteractionRequired {
+            reason: "The saved sign-in for your organization's app is unreadable.".into(),
+        })?;
+        let client_id = config.client_id.to_string();
         let form = [
-            ("client_id", config.client_id.to_string()),
-            ("grant_type", "refresh_token".to_owned()),
-            ("refresh_token", refresh.expose().to_owned()),
-            ("scope", ENTRA_SCOPES.to_owned()),
+            ("client_id", client_id.as_str()),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh),
+            ("scope", ENTRA_SCOPES),
         ];
         self.redeem(&tenant, &form).await
     }

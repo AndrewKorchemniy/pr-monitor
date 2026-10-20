@@ -87,7 +87,7 @@ impl Service {
             .orgs
             .iter()
             .map(|o| {
-                let method = o.link.auth.snapshot().method;
+                let method = o.link.auth.method();
                 (o.data.id.clone(), o.data.to_persisted(method))
             })
             .collect();

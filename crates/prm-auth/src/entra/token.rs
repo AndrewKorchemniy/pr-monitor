@@ -20,7 +20,7 @@ struct SuccessBody {
     refresh_token: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 struct ErrorBody {
     #[serde(default)]
     error: String,
@@ -40,16 +40,22 @@ pub fn parse_token_response(status: u16, body: &[u8]) -> Result<TokenResponse, A
             refresh_token: ok.refresh_token.filter(|t| !t.is_empty()).map(Secret::new),
         });
     }
-    let error: ErrorBody = serde_json::from_slice(body).unwrap_or_default();
-    Err(map_oauth_error(
-        &error.error,
-        &error.error_description,
-        &error.error_codes,
-    ))
+    match serde_json::from_slice::<ErrorBody>(body) {
+        Ok(error) if !error.error.is_empty() => Err(map_oauth_error(
+            &error.error,
+            &error.error_description,
+            &error.error_codes,
+        )),
+        // A gateway error page or other non-OAuth body: the status is all there is.
+        Ok(_) | Err(_) => Err(AuthError::Other(
+            format!("Sign-in failed (HTTP {status}).").into(),
+        )),
+    }
 }
 
 /// `invalid_grant` / `interaction_required` → sign in again; consent and Conditional Access
-/// codes → admin; anything else → the description's first line.
+/// codes → admin; the user declining (`access_denied`, AADSTS65004) → cancelled; anything else
+/// → the description's first line.
 pub fn map_oauth_error(error: &str, description: &str, codes: &[i64]) -> AuthError {
     let first_line = description.lines().next().unwrap_or_default().trim();
     let has_code =
@@ -61,6 +67,8 @@ pub fn map_oauth_error(error: &str, description: &str, codes: &[i64]) -> AuthErr
             admin: true,
             detail: first_line.into(),
         }
+    } else if has_code(65_004) || error == "access_denied" {
+        AuthError::Cancelled
     } else if error == "invalid_grant" || error == "interaction_required" {
         AuthError::InteractionRequired {
             reason: first_line.into(),

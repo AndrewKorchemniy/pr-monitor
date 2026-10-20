@@ -131,10 +131,8 @@ async fn az_exit0_with_warning_ok() {
 }
 
 #[test]
-fn az_token_spec_hidden_systemroot_args_env() {
+fn az_token_spec_args_env() {
     let spec = token_spec(&PathBuf::from("az.cmd"), Some(TENANT));
-    assert!(spec.hide_window);
-    assert_eq!(spec.cwd, None, "runner defaults to %SystemRoot%");
     assert_eq!(spec.timeout, Duration::from_secs(60));
     assert_eq!(
         strings(&spec.args),

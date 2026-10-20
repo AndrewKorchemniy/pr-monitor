@@ -53,8 +53,4 @@ impl SecretStore for InMemorySecretStore {
         self.lock().remove(key);
         Ok(())
     }
-
-    fn max_value_len(&self) -> Option<usize> {
-        self.max
-    }
 }

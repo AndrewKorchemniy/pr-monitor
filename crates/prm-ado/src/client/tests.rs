@@ -158,6 +158,31 @@ async fn client_401_twice_unauthorized_with_tf_code() {
     );
 }
 
+/// Validating an expired PAT (a `StaticCredential`, which cannot refresh) dropped the
+/// server's TF code, so the UI could not say why the PAT was refused.
+#[tokio::test]
+async fn client_401_static_credential_keeps_tf_code() {
+    let transport = Arc::new(FakeTransport::new([Scripted::json(
+        401,
+        fixture!("vss_error_401_tf400813.json"),
+    )]));
+    let client = AdoClient::new(
+        OrgEndpoint::new(org("contoso")),
+        transport.clone(),
+        Arc::new(crate::credential::StaticCredential(token("pat"))),
+        ClientPolicy::default(),
+        uuid::Uuid::nil(),
+    );
+    let result = client.repositories().await;
+    assert_eq!(
+        result,
+        Err(AdoError::Auth(AuthError::Unauthorized {
+            code: Some("TF400813".into())
+        }))
+    );
+    assert_eq!(transport.requests().len(), 1);
+}
+
 #[tokio::test]
 async fn client_vss_error_message_parsed() {
     let server = server_with(403, fixture!("vss_error_403.json"), JSON).await;

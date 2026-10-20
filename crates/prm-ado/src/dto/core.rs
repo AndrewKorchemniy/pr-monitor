@@ -10,8 +10,6 @@ use super::common::ProjectRefDto;
 pub(crate) struct ProjectDto {
     pub(crate) id: Uuid,
     pub(crate) name: String,
-    #[serde(default)]
-    pub(crate) state: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

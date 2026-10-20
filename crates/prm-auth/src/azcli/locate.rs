@@ -63,7 +63,8 @@ pub struct AzLocator {
 }
 
 impl AzLocator {
-    /// Always uses `path` (tests, or a user override).
+    /// Always uses `path` (tests).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn fixed(path: PathBuf) -> Self {
         Self {
             fixed: Some(path),
