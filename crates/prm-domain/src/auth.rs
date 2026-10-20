@@ -6,7 +6,7 @@
 //! - [`SignInMethod`]: a one-off sign-in action the user triggered.
 //!
 //! The `#[error]` texts on [`AuthError`] are the user-facing copy (one voice, one place), and
-//! [`AuthError::profile`] describes each variant's severity and actions in one match.
+//! `AuthError::profile` describes each variant's severity and actions in one match.
 
 use std::{sync::Arc, time::Duration};
 

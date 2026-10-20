@@ -34,7 +34,7 @@ pub fn truncate_utf16(s: &str, max_units: usize) -> String {
     out
 }
 
-/// Up to two uppercase initials: "Jane Doe" → "JD", "[Team]\\Payments" → "P".
+/// Up to two uppercase initials: "Jane Doe" → "JD", `"[Team]\Payments"` → "P".
 pub fn initials(name: &str) -> String {
     let words = name
         .rsplit('\\')
