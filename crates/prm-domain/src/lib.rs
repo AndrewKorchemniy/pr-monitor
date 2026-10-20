@@ -8,6 +8,7 @@ pub mod diff;
 pub mod hash;
 pub mod ids;
 pub mod model;
+pub mod notify;
 pub mod person;
 pub mod plan;
 pub mod ports;
@@ -17,6 +18,7 @@ pub mod snapshot;
 pub mod time;
 pub mod tombstone;
 pub mod uri;
+pub mod view;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;

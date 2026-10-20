@@ -1,0 +1,68 @@
+//! The visible dashboard: which rows, in what order, under which group headers.
+
+use crate::view::{
+    group::{GroupBy, GroupKey, GroupSpan},
+    query::{ParsedFilter, ViewQuery, parse_filter, row_matches},
+    row::PrRow,
+    sort::{Sort, compare_rows},
+    summary::{StatusSummary, summarize},
+};
+
+/// Indices into the row slice, plus group spans over those indices.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct ViewModel {
+    pub indices: Vec<u32>,
+    pub groups: Vec<GroupSpan>,
+    /// Counts over the rows that pass the filter.
+    pub counts: StatusSummary,
+}
+
+/// Filter, then stable-sort by (group, column sort), then cut into group spans.
+/// O(n log n); fast enough to rebuild on every keystroke for a thousand rows.
+pub fn build_view(rows: &[PrRow], query: &ViewQuery, sort: Sort, group: GroupBy) -> ViewModel {
+    let filter = parse_filter(&query.text);
+    let mut visible = matching_rows(rows, query, &filter);
+    visible.sort_by(|a, b| {
+        let (ra, rb) = (&rows[*a], &rows[*b]);
+        GroupKey::of(ra, group)
+            .order(&GroupKey::of(rb, group))
+            .then_with(|| compare_rows(ra, rb, sort))
+    });
+    ViewModel {
+        groups: group_spans(rows, &visible, group),
+        counts: summarize(visible.iter().map(|i| &rows[*i])),
+        indices: visible
+            .iter()
+            .map(|i| u32::try_from(*i).unwrap_or(u32::MAX))
+            .collect(),
+    }
+}
+
+fn matching_rows(rows: &[PrRow], query: &ViewQuery, filter: &ParsedFilter) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter(|(_, row)| row_matches(row, query, filter))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn group_spans(rows: &[PrRow], visible: &[usize], group: GroupBy) -> Vec<GroupSpan> {
+    if group == GroupBy::None {
+        return Vec::new();
+    }
+    let mut spans: Vec<GroupSpan> = Vec::new();
+    for (position, index) in visible.iter().enumerate() {
+        let row = &rows[*index];
+        let key = GroupKey::of(row, group);
+        match spans.last_mut() {
+            Some(span) if span.key == key => span.len += 1,
+            Some(_) | None => spans.push(GroupSpan {
+                label: key.label(row),
+                key,
+                start: u32::try_from(position).unwrap_or(u32::MAX),
+                len: 1,
+            }),
+        }
+    }
+    spans
+}

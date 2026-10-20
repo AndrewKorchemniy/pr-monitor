@@ -319,3 +319,41 @@ impl UrlOpener for RecordingUrlOpener {
         Ok(())
     }
 }
+
+/// Rows for one org ("contoso") built through the real pipeline, with `reviewers` listed and
+/// nothing seen yet.
+pub fn rows(records: &[PrRecord], reviewers: &[u128]) -> Vec<crate::view::PrRow> {
+    use std::collections::{BTreeMap, HashSet};
+
+    use crate::{
+        classify::ClassifyConfig,
+        snapshot::{SeenMap, classify_record},
+        view::{RowBuildInput, build_rows},
+    };
+
+    let config = ClassifyConfig {
+        reviewers: reviewers.iter().map(|n| vsid(*n)).collect(),
+        ..ClassifyConfig::default()
+    };
+    let snapshot = records
+        .iter()
+        .map(|r| (r.pr.key.clone(), classify_record(r, &config, false)))
+        .collect();
+    let by_key: BTreeMap<PrKey, PrRecord> = records
+        .iter()
+        .map(|r| (r.pr.key.clone(), r.clone()))
+        .collect();
+    let org_id = org("contoso");
+    let label: Arc<str> = Arc::from("Contoso");
+    let ignored = HashSet::new();
+    let input = RowBuildInput {
+        org: &org_id,
+        org_label: &label,
+        snapshot: &snapshot,
+        records: &by_key,
+        reviewers: &config.reviewers,
+        ignored: &ignored,
+        org_stale: false,
+    };
+    build_rows(&[input], &SeenMap::new(), ts(BASE_TIME_SECS + 3_600))
+}

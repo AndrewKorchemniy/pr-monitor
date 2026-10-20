@@ -1,0 +1,22 @@
+---
+source: crates/prm-domain/src/notify/text/tests.rs
+expression: "rendered.join(\"\\n\")"
+---
+New pull request · !4711 | 
+Reopened · !4711 | 
+Ready for review · !4711 | 
+Completed · !4711 | 
+Abandoned · !4711 | 
+Closed · !4711 | 
+Approved · !4711 | 
+Waiting for the author · !4711 | 
+Needs review again · !4711 | Earlier votes no longer count.
+Rae Reviewer is waiting for the author · !4711 | 
+Rae Reviewer rejected · !4711 | 
+Rae Reviewer approved · !4711 | 
+Rae Reviewer approved with suggestions · !4711 | 
+Rae commented · !4711 | “Typo here”
+4 new comments · !4711 | “Typo here” — Rae
+4 new comments · !4711 | Rae, Sam and 2 more
+All comments resolved · !4711 | 
+New changes pushed · !4711 |
