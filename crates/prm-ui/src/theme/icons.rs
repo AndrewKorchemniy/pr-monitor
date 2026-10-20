@@ -156,6 +156,34 @@ fn arc_with_head(painter: &Painter, center: Pos2, radius: f32, s: Stroke) {
     painter.line_segment([end, end + vec2(radius * 0.05, -radius * 0.45)], s);
 }
 
+/// Paints a stroked icon (check, cross, chevrons, arrows) with an explicit stroke width.
+pub(crate) fn paint_stroke(painter: &Painter, rect: Rect, icon: Icon, stroke: Stroke) {
+    let c = rect.center();
+    let r = rect.width().min(rect.height()) / 2.0;
+    let at = |x: f32, y: f32| pos2(c.x + x * r, c.y + y * r);
+    match icon {
+        Icon::Check => check(painter, &at, stroke),
+        Icon::Ring
+        | Icon::Diamond
+        | Icon::CheckDot
+        | Icon::Pause
+        | Icon::Cross
+        | Icon::Search
+        | Icon::Refresh
+        | Icon::Gear
+        | Icon::ChevronRight
+        | Icon::ChevronDown
+        | Icon::ChevronUp
+        | Icon::ArrowRight
+        | Icon::ArrowLeft
+        | Icon::Plus
+        | Icon::Warning
+        | Icon::Info
+        | Icon::Dot
+        | Icon::Bar => paint(painter, rect, icon, stroke.color),
+    }
+}
+
 /// Allocates a square and paints an icon in it (for inline use in layouts).
 pub(crate) fn show(
     ui: &mut eframe::egui::Ui,

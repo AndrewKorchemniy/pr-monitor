@@ -108,11 +108,29 @@ pub(crate) fn pr_table(
 
 /// Grouped by status, the group header already names it: the status cell shows only its glyph.
 fn compact_status(columns: &mut [ColumnSpec]) {
-    for spec in columns.iter_mut().filter(|c| c.id == ColumnId::Status) {
-        spec.key = "status_glyph";
-        spec.header = "";
-        spec.width = Width::Initial(28.0);
-        spec.min = 24.0;
+    for spec in columns.iter_mut() {
+        match spec.id {
+            ColumnId::Status => {
+                spec.key = "status_glyph";
+                spec.header = "";
+                spec.width = Width::Initial(24.0);
+                spec.min = 24.0;
+                spec.sort = None;
+            }
+            ColumnId::Number => {
+                spec.key = "number_left";
+                spec.align_right = false;
+                spec.width = Width::Initial(56.0);
+            }
+            ColumnId::Margin
+            | ColumnId::Title
+            | ColumnId::Repo
+            | ColumnId::Author
+            | ColumnId::Reviews
+            | ColumnId::Comments
+            | ColumnId::Age
+            | ColumnId::Org => {}
+        }
     }
 }
 
@@ -234,7 +252,7 @@ fn header_cell(
     };
     ui.with_layout(layout, |ui| {
         let clicked = ui.add(label).clicked();
-        if sorted {
+        if sorted && !spec.header.is_empty() {
             icons::show(ui, arrow, 8.0, theme.colors.text_secondary);
         }
         clicked
@@ -429,9 +447,7 @@ fn cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, spec: &ColumnSpec, pr: &PrRow, 
                 pr.active_threads,
             ));
         }
-        ColumnId::Number => right(ui, |ui| {
-            ui.label(mono(&pr.number_text));
-        }),
+        ColumnId::Number => number_cell(ui, spec, mono(&pr.number_text)),
         ColumnId::Title => title_cell(ui, bcx, pr),
         ColumnId::Repo => {
             ui.add(egui::Label::new(text(&pr.repo_name)).truncate());
@@ -467,6 +483,17 @@ fn cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, spec: &ColumnSpec, pr: &PrRow, 
         ColumnId::Org => {
             ui.add(egui::Label::new(text(&pr.org_label)).truncate());
         }
+    }
+}
+
+/// "!4711", right-aligned unless the column says otherwise (glyph-only status mode).
+fn number_cell(ui: &mut egui::Ui, spec: &ColumnSpec, text: RichText) {
+    if spec.align_right {
+        right(ui, |ui| {
+            ui.label(text);
+        });
+    } else {
+        ui.label(text);
     }
 }
 

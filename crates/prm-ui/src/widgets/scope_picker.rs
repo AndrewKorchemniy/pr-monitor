@@ -12,10 +12,13 @@ use prm_domain::{
 use crate::{
     copy,
     theme::{
-        UiTheme, adapter,
+        UiTheme,
         icons::{self, Icon},
     },
-    widgets::{self, controls},
+    widgets::{
+        self,
+        controls::{self, Check},
+    },
 };
 
 #[derive(Clone, Debug, Default)]
@@ -33,7 +36,9 @@ pub(crate) fn scope_picker(
 ) -> bool {
     let mut reload = false;
     ui.horizontal(|ui| {
-        ui.checkbox(&mut scope.all_projects, copy::WATCH_ALL_PROJECTS);
+        // why: line the box up with the project boxes, which sit after a chevron.
+        ui.add_space(CHEVRON);
+        controls::checkbox(ui, theme, &mut scope.all_projects, copy::WATCH_ALL_PROJECTS);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             reload = controls::icon_button(ui, theme, Icon::Refresh, copy::REFRESH_LIST)
                 .on_hover_text(copy::REFRESH_LIST)
@@ -59,16 +64,13 @@ pub(crate) fn scope_picker(
     );
     ui.add_space(theme.tokens.metrics.space.xs);
     let needle = filter.text.trim().to_lowercase();
-    adapter::frame_sunken(theme)
-        .corner_radius(egui::CornerRadius::same(theme.tokens.metrics.radius.md))
-        .inner_margin(egui::Margin::symmetric(8, 6))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xs;
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
-        });
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
+    });
     reload
 }
 
@@ -91,7 +93,7 @@ fn project_list(
         let open_id = ui.make_persistent_id(("scope_open", project.name.as_ref()));
         if searching || ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false) {
             ui.indent(("scope", project.name.as_ref()), |ui| {
-                repo_rows(ui, (project, &all), &shown, scope);
+                repo_rows(ui, theme, (project, &all), &shown, scope);
             });
         }
     }
@@ -193,14 +195,14 @@ fn project_row(
             open = !open;
             ui.data_mut(|d| d.insert_temp(open_id, open));
         }
-        let mut on = chosen > 0 && chosen == all.len();
+        let state = match chosen {
+            0 => Check::Off,
+            n if n == all.len() => Check::On,
+            _ => Check::Mixed,
+        };
         let header = RichText::new(project.name.as_ref()).font(theme.fonts.body_strong.clone());
-        let partial = chosen > 0 && chosen < all.len();
-        if ui
-            .add(egui::Checkbox::new(&mut on, header).indeterminate(partial))
-            .changed()
-        {
-            set_project(scope, project, on);
+        if controls::check(ui, theme, state, header.into()).clicked() {
+            set_project(scope, project, state != Check::On);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             widgets::muted(ui, theme, &format!("{chosen}/{}", all.len()));
@@ -208,8 +210,12 @@ fn project_row(
     });
 }
 
+/// The expand chevron's width; other rows indent by it (plus spacing) to line up.
+const CHEVRON: f32 = 14.0;
+
 fn chevron(ui: &mut egui::Ui, theme: &UiTheme, open: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::click());
+    let size = egui::vec2(CHEVRON, CHEVRON);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let icon = if open {
         Icon::ChevronDown
     } else {
@@ -241,6 +247,7 @@ fn set_project(scope: &mut ScopeSpec, project: &Project, on: bool) {
 
 fn repo_rows(
     ui: &mut egui::Ui,
+    theme: &UiTheme,
     (project, all): (&Project, &[&Repository]),
     shown: &[&Repository],
     scope: &mut ScopeSpec,
@@ -249,7 +256,7 @@ fn repo_rows(
         let entry = scope.projects.iter().find(|p| p.name == project.name);
         let mut on =
             entry.is_some_and(|p| p.all_repos || p.repos.iter().any(|r| r.name == repo.name));
-        if ui.checkbox(&mut on, repo.name.as_ref()).changed() {
+        if controls::checkbox(ui, theme, &mut on, repo.name.as_ref()).changed() {
             set_repo(scope, (project, all), repo, on);
         }
     }

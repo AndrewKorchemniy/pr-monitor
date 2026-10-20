@@ -61,7 +61,7 @@ pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstR
 /// "PR Monitor", then "Step 2 of 3 · Repositories".
 fn header(ui: &mut egui::Ui, theme: &UiTheme, step: Step) {
     let (index, name) = match step {
-        Step::Connect => (1, copy::ORG_URL_LABEL),
+        Step::Connect => (1, copy::CONNECT),
         Step::Repositories => (2, copy::REPOSITORIES),
         Step::People => (3, copy::PEOPLE),
     };
@@ -86,6 +86,7 @@ fn connect(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         action: copy::CONNECT,
         icon: Icon::ArrowRight,
         error: st.url_error,
+        tall: true,
     };
     let submitted = controls::action_field(ui, &theme, &mut st.new_org_url, &field);
     if st.url_error {
@@ -120,15 +121,13 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     let status = org.org_id().and_then(|id| cx.state.org(id));
     let identity = status.map(|s| copy::identity(&s.label, s.auth.method));
     let catalog = status.and_then(|o| o.catalog.clone());
-    let reload = card::section(ui, &theme, copy::REPOSITORIES, identity.as_deref(), |ui| {
-        scope_picker(
-            ui,
-            &theme,
-            &mut st.scope_filter,
-            catalog.as_deref(),
-            &mut org.scope,
-        )
-    });
+    if let Some(identity) = &identity {
+        widgets::muted(ui, &theme, identity);
+        ui.add_space(theme.tokens.metrics.space.md);
+    }
+    let filter = &mut st.scope_filter;
+    let reload = scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope);
+    ui.add_space(theme.tokens.metrics.space.lg);
     if reload && let Some(id) = org.org_id() {
         cx.push(UiAction::Send(prm_service::Command::LoadCatalog {
             org: id.clone(),
@@ -154,21 +153,27 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         return;
     };
     let id = org.org_id().cloned();
-    card::section(ui, &theme, copy::TRACK_FROM, None, |ui| {
-        let list = &mut org.people.tracked_authors;
-        people_picker(ui, cx, &mut st.pickers.tracked, id.as_ref(), list);
-    });
-    let help = Some(copy::REVIEWERS_EMPTY_HELP);
-    card::section(ui, &theme, copy::COUNT_REVIEWS_FROM, help, |ui| {
-        let list = &mut org.people.reviewers;
-        people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
-    });
+    group_label(ui, &theme, copy::TRACK_FROM, None);
+    let list = &mut org.people.tracked_authors;
+    people_picker(ui, cx, &mut st.pickers.tracked, id.as_ref(), list);
+    ui.add_space(theme.tokens.metrics.space.xl);
+    group_label(
+        ui,
+        &theme,
+        copy::COUNT_REVIEWS_FROM,
+        Some(copy::REVIEWERS_EMPTY_HELP),
+    );
+    let list = &mut org.people.reviewers;
+    people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
+    ui.add_space(theme.tokens.metrics.space.lg);
+    // why: once people are chosen, skipping would read as throwing the choice away.
+    let nobody = org.people.tracked_authors.is_empty() && org.people.reviewers.is_empty();
     let mut finish = None;
     let back = footer(ui, &theme, |ui| {
         if widgets::primary_button(ui, &theme, copy::START_MONITORING).clicked() {
             finish = Some(true);
         }
-        if ui.button(copy::SKIP_FOR_NOW).clicked() {
+        if nobody && ui.button(copy::SKIP_FOR_NOW).clicked() {
             finish = Some(false);
         }
     });
@@ -184,6 +189,19 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         }
         cx.push(UiAction::FinishFirstRun);
     }
+}
+
+/// A bold group title with an optional muted line under it.
+fn group_label(ui: &mut egui::Ui, theme: &UiTheme, title: &str, help: Option<&str>) {
+    ui.label(
+        RichText::new(title)
+            .font(theme.fonts.body_strong.clone())
+            .color(theme.colors.text_primary),
+    );
+    if let Some(help) = help {
+        widgets::muted(ui, theme, help);
+    }
+    ui.add_space(theme.tokens.metrics.space.xs);
 }
 
 /// A Back button on the left, the step's buttons right-aligned; true on Back.

@@ -59,20 +59,20 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) 
     });
     ui.add_enabled_ui(prefs.enabled, |ui| {
         section(ui, &theme, copy::SECTION_EVENTS, None, |ui| {
-            events(ui, &mut prefs.events);
+            events(ui, &theme, &mut prefs.events);
         });
     });
     section(ui, &theme, copy::SECTION_TRY, None, |ui| try_out(ui, cx));
 }
 
 /// The event toggles in two columns.
-fn events(ui: &mut egui::Ui, events: &mut EventToggles) {
+fn events(ui: &mut egui::Ui, theme: &UiTheme, events: &mut EventToggles) {
     egui::Grid::new("notify_events")
         .num_columns(2)
         .spacing([24.0, 6.0])
         .show(ui, |ui| {
             for (index, (value, label)) in toggles(events).into_iter().enumerate() {
-                ui.checkbox(value, label);
+                controls::checkbox(ui, theme, value, label);
                 if index % 2 == 1 {
                     ui.end_row();
                 }

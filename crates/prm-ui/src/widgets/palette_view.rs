@@ -85,7 +85,7 @@ fn row(ui: &mut egui::Ui, theme: &UiTheme, title: &str, selected: bool) -> egui:
     let size = egui::vec2(WIDTH, m.row.control_height + m.space.xs);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let fill = if selected {
-        Some(theme.colors.accent_subtle)
+        Some(theme.colors.row_selected)
     } else if response.hovered() {
         Some(theme.colors.control_hover)
     } else {
@@ -93,6 +93,13 @@ fn row(ui: &mut egui::Ui, theme: &UiTheme, title: &str, selected: bool) -> egui:
     };
     if let Some(fill) = fill {
         ui.painter().rect_filled(rect, m.radius.md, fill);
+    }
+    if selected {
+        let bar = egui::Rect::from_min_size(
+            rect.left_top() + egui::vec2(0.0, 6.0),
+            egui::vec2(2.0, rect.height() - 12.0),
+        );
+        ui.painter().rect_filled(bar, 1.0, theme.colors.accent_base);
     }
     let galley = ui.painter().layout_no_wrap(
         title.to_owned(),

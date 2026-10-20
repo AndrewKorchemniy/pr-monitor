@@ -67,7 +67,7 @@ fn advanced(
 ) {
     let theme = cx.theme.clone();
     for (mode, label) in MODES {
-        ui.radio_value(&mut org.auth, mode, label);
+        controls::radio(ui, &theme, &mut org.auth, mode, label);
     }
     egui::Grid::new("entra").num_columns(2).show(ui, |ui| {
         widgets::field_label(ui, &theme, copy::TENANT_ID);

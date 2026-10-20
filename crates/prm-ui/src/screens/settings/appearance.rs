@@ -27,7 +27,7 @@ const TRISTATE: [(Tristate, &str); 3] = [
 const RENDERERS: [(RendererPref, &str); 3] = [
     (RendererPref::Auto, "Automatic"),
     (RendererPref::Glow, "OpenGL"),
-    (RendererPref::Wgpu, "Direct3D / Vulkan / Metal"),
+    (RendererPref::Wgpu, "Direct3D"),
 ];
 const DENSITIES: [(Density, &str); 2] = [
     (Density::Compact, "Compact"),
@@ -55,9 +55,9 @@ pub(crate) fn page(
             theme_name(env, &prefs.theme_dark),
             theme_name(env, &prefs.theme_light),
         );
-        ui.radio_value(&mut prefs.theme, SYSTEM.to_owned(), system);
+        controls::radio(ui, &theme, &mut prefs.theme, SYSTEM.to_owned(), system);
         for (id, name) in &env.themes {
-            ui.radio_value(&mut prefs.theme, id.clone(), name.as_str());
+            controls::radio(ui, &theme, &mut prefs.theme, id.clone(), name.as_str());
         }
         if prefs.theme != before {
             cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
@@ -90,7 +90,7 @@ pub(crate) fn page(
         ui.separator();
         tristate(ui, &theme, (copy::LOW_POWER, None), &mut prefs.low_power);
         ui.separator();
-        let help = format!("{} {}", env.renderer_line, copy::RESTART_HELP);
+        let help = format!("{}. {}", env.renderer_line, copy::RESTART_HELP);
         setting_row(ui, &theme, (copy::RENDERER, Some(&help)), |ui| {
             controls::segmented(ui, &theme, &mut prefs.renderer, &RENDERERS);
         });

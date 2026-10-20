@@ -104,7 +104,7 @@ fn org_tabs(ui: &mut egui::Ui, cx: &FrameCx<'_>, st: &mut SettingsState) {
             }
         }
         ui.add_space(theme.tokens.metrics.space.sm);
-        add = controls::icon_text_button(ui, &theme, Icon::Plus, copy::ADD_ORG, None).clicked();
+        add = add_tab(ui, &theme).clicked();
     });
     let line = row.response.rect;
     let stroke = egui::Stroke::new(
@@ -183,6 +183,38 @@ fn org_tab(
         Some(tip) => response.on_hover_text(tip),
         None => response,
     }
+}
+
+/// "+ Add organization" drawn like a tab, so the strip reads as one control.
+fn add_tab(ui: &mut egui::Ui, theme: &UiTheme) -> egui::Response {
+    let m = &theme.tokens.metrics;
+    let galley = ui.painter().layout_no_wrap(
+        copy::ADD_ORG.to_owned(),
+        theme.fonts.body.clone(),
+        theme.colors.text_secondary,
+    );
+    let pad = m.space.lg;
+    let width = pad + 12.0 + m.space.sm + galley.size().x + pad;
+    let size = egui::vec2(width, m.row.control_height + m.space.xs);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let color = if response.hovered() {
+        theme.colors.text_primary
+    } else {
+        theme.colors.text_secondary
+    };
+    let glyph = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + pad + 6.0, rect.center().y),
+        egui::vec2(12.0, 12.0),
+    );
+    crate::theme::icons::paint(ui.painter(), glyph, Icon::Plus, color);
+    let at = egui::pos2(
+        glyph.right() + m.space.sm,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(at, galley, color);
+    let name = copy::ADD_ORG;
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    response
 }
 
 /// Adds (or selects) the org typed in the field; true when the URL was valid.
@@ -331,12 +363,15 @@ fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
 
 fn reviewer_policy(ui: &mut egui::Ui, theme: &UiTheme, policy: &mut EmptyReviewerPolicy) {
     widgets::field_label(ui, theme, copy::EMPTY_LIST_POLICY);
-    ui.radio_value(
+    let any = EmptyReviewerPolicy::AnyNonAuthorVote;
+    controls::radio(ui, theme, policy, any, copy::ANY_NON_AUTHOR);
+    controls::radio(
+        ui,
+        theme,
         policy,
-        EmptyReviewerPolicy::AnyNonAuthorVote,
-        copy::ANY_NON_AUTHOR,
+        EmptyReviewerPolicy::Nobody,
+        copy::NO_VOTES,
     );
-    ui.radio_value(policy, EmptyReviewerPolicy::Nobody, copy::NO_VOTES);
 }
 
 /// The list a people editor edits (tracked authors for the non-people editors).
@@ -382,6 +417,7 @@ fn add_org_dialog(ctx: &egui::Context, theme: &UiTheme, st: &mut SettingsState) 
             action: copy::ADD_ORG,
             icon: Icon::ArrowRight,
             error: st.url_error,
+            tall: false,
         };
         if controls::action_field(ui, theme, &mut st.new_org_url, &field)
             && !st.new_org_url.trim().is_empty()
