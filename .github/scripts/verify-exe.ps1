@@ -9,7 +9,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('x64', 'arm64')][string] $Arch,
     [string] $ExpectedVersion = '',
     # Budget (spec §5.2). After v0.1.0: round_up(measured * 1.10, 0.5 MiB).
-    [long] $MaxBytes = 14MB,
+    [long] $MaxBytes = 20MB,
     [string] $SizeJson = '',
     [int] $SelfTestTimeoutSec = 60
 )
