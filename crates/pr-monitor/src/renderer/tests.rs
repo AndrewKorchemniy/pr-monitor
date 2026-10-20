@@ -131,3 +131,29 @@ fn the_marker_records_attempts_success_and_failure() {
     assert!(after.glow_failed, "a failure is remembered across attempts");
     assert_eq!(after.attempt, Some(RendererKind::Wgpu));
 }
+
+/// Regression: an OpenGL start that crashed before its first frame was forgotten after one good
+/// wgpu run, so a machine with a broken OpenGL driver crashed on every second launch.
+#[test]
+fn renderer_marker_remembers_a_crashed_opengl_start_after_a_good_wgpu_run() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = MarkerFile::new(dir.path().join("renderer.json"), VERSION);
+    file.begin(RendererKind::Glow);
+    let after_crash = file.load().expect("written");
+    assert_eq!(
+        choose_renderer(&inputs(Some(&after_crash))).kind,
+        RendererKind::Wgpu,
+        "{after_crash:?}"
+    );
+    file.begin(RendererKind::Wgpu);
+    file.mark_ok();
+    let after_wgpu = file.load().expect("written");
+    assert_eq!(
+        choose_renderer(&inputs(Some(&after_wgpu))),
+        RendererChoice {
+            kind: RendererKind::Wgpu,
+            reason: "previous OpenGL failure"
+        },
+        "{after_wgpu:?}"
+    );
+}

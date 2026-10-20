@@ -1,4 +1,4 @@
-//! Ending a run: the service persists and stops, handoff stops, the instance lock is released. Or,
+//! Ending a run: handoff stops, the service persists and stops, the instance lock is released. Or,
 //! when the renderer could not start, the same followed by a relaunch with the other renderer.
 
 use std::{ffi::OsString, process::ExitCode, time::Duration};
@@ -17,14 +17,16 @@ pub(crate) struct Held {
     pub lock: InstanceLock,
 }
 
+/// handoff stops first, so a launch during shutdown sees no primary and waits for the lock (and
+/// takes over) instead of handing its request to a process that is going away.
 fn release(held: Held, service_wait: Duration) {
-    if !held.handle.shutdown(service_wait) {
-        tracing::warn!("the service didn't stop in time");
-    }
     if let Some(handoff) = held.handoff
         && !handoff.stop(HANDOFF_STOP)
     {
         tracing::warn!("the activation listener didn't stop in time");
+    }
+    if !held.handle.shutdown(service_wait) {
+        tracing::warn!("the service didn't stop in time");
     }
     drop(held.lock);
 }
@@ -51,7 +53,7 @@ pub(crate) fn fallback_relaunch(held: Held, args: Vec<OsString>) -> ExitCode {
         Err(error) => {
             tracing::error!(%error, "relaunch failed");
             prm_platform::console::fatal_dialog(
-                "PR Monitor couldn't start",
+                crate::copy::STARTUP_FAILED,
                 &crate::copy::graphics_failed(&error.to_string()),
             );
             ExitCode::FAILURE

@@ -1,4 +1,5 @@
-//! Logging: daily files (8 kept) in the data folder, redacted; a console layer with `--debug`.
+//! Logging: daily files (8 kept, 32 MiB a day at most) in the data folder, redacted; a console
+//! layer with `--debug`.
 //! `PRMONITOR_LOG` overrides the level filter.
 
 pub(crate) mod redact;
@@ -11,7 +12,7 @@ use tracing_subscriber::{
     Registry, filter::Targets, fmt, layer::SubscriberExt as _, reload, util::SubscriberInitExt as _,
 };
 
-use self::writer::RedactingMakeWriter;
+use self::writer::{DayBudget, MAX_DAY_BYTES, RedactingMakeWriter};
 
 /// Third-party targets kept at warn or quieter.
 const NOISY: [&str; 19] = [
@@ -83,7 +84,7 @@ pub(crate) fn init(logs: &Path, debug: bool, env: Option<String>) -> LogHandle {
     let file_ok = appender.is_some();
     let file = appender.map(|a| {
         fmt::layer()
-            .with_writer(RedactingMakeWriter::new(a))
+            .with_writer(RedactingMakeWriter::new(a).with_budget(DayBudget::daily(MAX_DAY_BYTES)))
             .with_ansi(false)
             .with_thread_names(true)
     });
