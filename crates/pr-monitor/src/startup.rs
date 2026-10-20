@@ -23,10 +23,10 @@ use prm_domain::{
     uri::AppUri,
 };
 use prm_platform::{
-    Acquired, ForwardOutcome, InstanceKey, InstanceLock, InstanceScope, HandoffRequest, HandoffServer,
-    PlatformAdapters, PlatformInit, RegistrationReport, RegistrationSpec, SecretBackendPref,
-    acquire_instance, adapters, console, ensure_shell_identity, forward_to_primary,
-    shared::registration::registration_scope,
+    Acquired, ForwardOutcome, HandoffRequest, HandoffServer, InstanceKey, InstanceLock,
+    InstanceScope, PlatformAdapters, PlatformInit, RegistrationReport, RegistrationSpec,
+    SecretBackendPref, acquire_instance, adapters, console, ensure_shell_identity,
+    forward_to_primary, shared::registration::registration_scope,
 };
 use prm_service::{ServiceHandle, SystemClock, channel_sink};
 
@@ -119,7 +119,9 @@ pub(crate) fn plan(args: &Args) -> StartupPlan {
 /// already running).
 pub(crate) fn forward_request(args: &Args) -> Option<HandoffRequest> {
     match (&args.activate, args.minimized) {
-        (Some(raw), _) => Some(AppUri::parse(raw).map_or(HandoffRequest::Show, HandoffRequest::Activate)),
+        (Some(raw), _) => {
+            Some(AppUri::parse(raw).map_or(HandoffRequest::Show, HandoffRequest::Activate))
+        }
         (None, true) => None,
         (None, false) => Some(HandoffRequest::Show),
     }
@@ -311,7 +313,7 @@ fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
     })
 }
 
-/// Activation (handoff and our own `--activate`), buffered until the service exists.
+/// Activation (second launches and our own `--activate`), buffered until the service exists.
 struct Activation {
     waker: Arc<UiWaker>,
     quit: Arc<AtomicBool>,

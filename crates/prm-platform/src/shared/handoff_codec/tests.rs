@@ -103,7 +103,10 @@ fn handoff_rejects_non_utf8_and_nul() {
 
 #[test]
 fn handoff_reply_roundtrip() {
-    for reply in [HandoffReply::Ok, HandoffReply::Rejected("invalid uri".into())] {
+    for reply in [
+        HandoffReply::Ok,
+        HandoffReply::Rejected("invalid uri".into()),
+    ] {
         assert_eq!(decode_reply(&encode_reply(&reply)), Ok(reply.clone()));
     }
 }

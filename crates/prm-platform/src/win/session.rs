@@ -1,4 +1,4 @@
-//! Is this a remote desktop (RDP, RemoteFX)? Picks the renderer.
+//! Is this a remote desktop session (RDP, RemoteFX)? Picks the renderer.
 
 #![allow(
     unsafe_code,
@@ -21,12 +21,8 @@ pub(crate) fn session_info() -> SessionInfo {
     // Microsoft-documented RemoteFX check: the console ("glass") session is not ours.
     let glass_mismatch = matches!((glass, id), (Some(g), Some(s)) if g != s);
     let name = std::env::var("SESSIONNAME").ok();
-    let remote_agent_host = LOCAL_MACHINE
-        .open(r"SOFTWARE\Vendor\RemoteAgent")
-        .is_ok();
     SessionInfo {
         kind: classify_session(sm_remote, glass_mismatch, name.as_deref()),
         id,
-        remote_agent_host,
     }
 }

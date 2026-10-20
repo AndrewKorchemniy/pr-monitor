@@ -13,7 +13,7 @@ prm-theme    pure: theme files, OKLab derivation, contrast checks, the brand mar
   prm-ado      Azure DevOps REST client: transport, paging, retries, rate limits, DTO mapping
     prm-auth   token sources (Azure CLI, PAT, Entra), single-flight cache, secret storage
   prm-service  the actor: scheduler, refresh jobs, notifications, the published AppState
-    prm-platform  OS adapters: toasts, credential store, single instance, handoff, autostart, DWM
+    prm-platform  OS adapters: toasts, credential store, single instance and second-launch handoff, autostart, DWM
     prm-ui        egui: dashboard, settings, tray, keymap, theme runtime (no platform code)
       pr-monitor  the binary: startup order, wiring, renderer choice, logging, panics
 ```
@@ -67,7 +67,7 @@ UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread
 8. Spawn the service, before the window, so the first frame paints the cached snapshot.
 9. Choose the renderer (OpenGL by default; wgpu over remote desktops, on arm64, or after an
    OpenGL failure) and run eframe.
-10. On exit: stop the service (it persists), stop handoff, release the lock. If the renderer
+10. On exit: stop the service (it persists), stop the handoff listener, release the lock. If the renderer
     failed to start, relaunch once with the other one.
 
 ## Testing

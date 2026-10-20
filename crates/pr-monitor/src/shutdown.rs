@@ -1,9 +1,9 @@
-//! Ending a run: handoff stops, the service persists and stops, the instance lock is released. Or,
+//! Ending a run: the handoff listener stops, the service persists and stops, the instance lock is released. Or,
 //! when the renderer could not start, the same followed by a relaunch with the other renderer.
 
 use std::{ffi::OsString, process::ExitCode, time::Duration};
 
-use prm_platform::{InstanceLock, HandoffServer};
+use prm_platform::{HandoffServer, InstanceLock};
 use prm_service::ServiceHandle;
 
 const SERVICE_STOP: Duration = Duration::from_secs(3);
@@ -17,7 +17,7 @@ pub(crate) struct Held {
     pub lock: InstanceLock,
 }
 
-/// handoff stops first, so a launch during shutdown sees no primary and waits for the lock (and
+/// The handoff listener stops first, so a launch during shutdown sees no primary and waits for the lock (and
 /// takes over) instead of handing its request to a process that is going away.
 fn release(held: Held, service_wait: Duration) {
     if let Some(handoff) = held.handoff

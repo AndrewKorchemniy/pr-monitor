@@ -16,8 +16,8 @@ use tokio::{
 };
 
 use crate::shared::{
-    instance_key::InstanceKey,
     handoff_codec::{HandoffReply, HandoffRequest, MAX_FRAME, decode_request, encode_reply},
+    instance_key::InstanceKey,
 };
 
 /// How long `start` waits for the listener to bind.

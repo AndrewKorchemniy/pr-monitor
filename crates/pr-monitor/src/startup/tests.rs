@@ -45,7 +45,10 @@ fn a_second_launch_forwards_links_shows_or_stays_quiet() {
         ..Args::default()
     };
     assert_eq!(forward_request(&autostart), None);
-    assert_eq!(forward_request(&Args::default()), Some(HandoffRequest::Show));
+    assert_eq!(
+        forward_request(&Args::default()),
+        Some(HandoffRequest::Show)
+    );
 }
 
 #[test]

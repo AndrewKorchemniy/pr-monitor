@@ -10,8 +10,8 @@ use std::{
 use interprocess::local_socket::{Stream, traits::Stream as _};
 
 use crate::shared::{
-    instance_key::InstanceKey,
     handoff_codec::{HandoffReply, HandoffRequest, MAX_FRAME, decode_reply, encode_request},
+    instance_key::InstanceKey,
 };
 
 const CONNECT_RETRY: Duration = Duration::from_millis(100);

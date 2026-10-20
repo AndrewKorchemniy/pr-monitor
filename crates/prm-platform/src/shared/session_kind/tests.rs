@@ -8,8 +8,7 @@ fn classify_session_table() {
         (true, false, Some("RDP-Tcp#4"), SessionKind::Rdp),
         (false, true, Some("RDP-Tcp#4"), SessionKind::Rdp),
         (true, false, None, SessionKind::OtherRemote),
-        (false, false, Some("TC-1"), SessionKind::ThinClient),
-        (true, false, Some("tc-2"), SessionKind::ThinClient),
+        (true, false, Some("Remote#2"), SessionKind::OtherRemote),
     ];
     for (sm_remote, glass, name, expected) in cases {
         assert_eq!(
@@ -21,16 +20,13 @@ fn classify_session_table() {
 }
 
 #[test]
-fn remote_agent_host_counts_as_remote() {
-    let info = SessionInfo {
+fn only_remote_kinds_count_as_remote() {
+    let local = SessionInfo {
         kind: SessionKind::Local,
         id: Some(1),
-        remote_agent_host: true,
-    };
-    assert!(info.is_remote());
-    let local = SessionInfo {
-        remote_agent_host: false,
-        ..info
     };
     assert!(!local.is_remote());
+    for kind in [SessionKind::Rdp, SessionKind::OtherRemote] {
+        assert!(SessionInfo { kind, ..local }.is_remote(), "{kind:?}");
+    }
 }

@@ -11,7 +11,7 @@ use std::{
 use prm_config::{AppPaths, Config, normalize};
 use prm_domain::OrgId;
 use prm_platform::{
-    Acquired, InstanceScope, HandoffRequest, UnregisterSpec, acquire_instance, forward_to_primary,
+    Acquired, HandoffRequest, InstanceScope, UnregisterSpec, acquire_instance, forward_to_primary,
 };
 
 /// How long a running instance gets to quit.

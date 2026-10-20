@@ -74,7 +74,6 @@ impl DesktopShell for NoopShell {
         SessionInfo {
             kind: SessionKind::Local,
             id: None,
-            remote_agent_host: false,
         }
     }
 

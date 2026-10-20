@@ -57,7 +57,6 @@ impl DesktopShell for UnixShell {
                 SessionKind::Local
             },
             id: None,
-            remote_agent_host: false,
         }
     }
 

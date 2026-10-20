@@ -66,7 +66,7 @@ pub struct UiInit {
     pub start_hidden: bool,
     /// `--activate` on first launch, handled in the first `logic`.
     pub activation: Option<AppUri>,
-    /// Set by the handoff Quit request or `--unregister`; polled every `logic`.
+    /// Set by a second launch asking to quit or `--unregister`; polled every `logic`.
     pub quit_requested: Arc<AtomicBool>,
     pub hover_bands: Arc<HoverBands>,
     /// Called once, when the first frame has been painted (marks the renderer good).

@@ -2,8 +2,8 @@
 //! registry command strings, proxy lists, session classification and small formatting rules.
 
 pub mod colors;
-pub mod instance_key;
 pub mod handoff_codec;
+pub mod instance_key;
 pub mod os_desc;
 pub mod proxy_list;
 pub mod registration;

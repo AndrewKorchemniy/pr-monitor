@@ -29,8 +29,8 @@ pub use identity::{IdentityStatus, RegistrationReport, RegistrationSpec, ensure_
 pub use instance::{Acquired, InstanceLock, acquire_instance};
 pub use shared::{
     colors::{Rgb, TitleBarColors},
-    instance_key::{InstanceKey, InstanceScope},
     handoff_codec::HandoffRequest,
+    instance_key::{InstanceKey, InstanceScope},
     session_kind::{SessionInfo, SessionKind},
 };
 pub use shell::DesktopShell;

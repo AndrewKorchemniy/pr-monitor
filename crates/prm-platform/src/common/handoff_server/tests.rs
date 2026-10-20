@@ -91,7 +91,11 @@ fn handoff_server_rejects_garbage_and_keeps_serving() {
 
 #[test]
 fn handoff_client_reports_no_primary() {
-    let outcome = forward_to_primary(&unique_key(), &HandoffRequest::Show, Duration::from_millis(250));
+    let outcome = forward_to_primary(
+        &unique_key(),
+        &HandoffRequest::Show,
+        Duration::from_millis(250),
+    );
     assert_eq!(outcome, ForwardOutcome::NoPrimary);
 }
 
