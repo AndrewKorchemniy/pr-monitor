@@ -12,6 +12,9 @@ pub mod state;
 pub mod store;
 pub mod validate;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
+
 pub use diff::{ConfigChanges, OrgChanges, diff_configs};
 pub use error::{ConfigError, ConfigIssue, Severity};
 pub use paths::{AppPaths, resolve_root};

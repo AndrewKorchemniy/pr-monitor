@@ -172,6 +172,45 @@ fn group_text_alpha() {
     assert_eq!(view.groups[0].len, 2);
 }
 
+/// Group keys differing only in case compared equal, so their rows interleaved by activity
+/// and the dashboard showed alternating "Ann", "ann", "Ann" headers.
+#[test]
+fn group_case_variants_stay_contiguous() {
+    let by = |n: i32, author: &str, id: u128| {
+        record(
+            PrBuilder::new(key("contoso", 1, n))
+                .author(person(id, author))
+                .created(ts(BASE_TIME_SECS + i64::from(n)))
+                .build(),
+            vec![],
+        )
+    };
+    let rows = rows(
+        &[
+            by(1, "Ann", 1),
+            by(2, "ann", 4),
+            by(3, "Ann", 1),
+            by(4, "ann", 4),
+        ],
+        &[REVIEWER],
+    );
+    let view = build_view(
+        &rows,
+        &ViewQuery::default(),
+        Sort::default(),
+        GroupBy::Author,
+    );
+    let spans: Vec<(&str, u32)> = view.groups.iter().map(|g| (&*g.label, g.len)).collect();
+    assert_eq!(spans, vec![("Ann", 2), ("ann", 2)]);
+}
+
+#[test]
+fn filter_org_uses_the_lowercase_label() {
+    let rows = sample();
+    assert_eq!(view_of(&rows, "org:CONTOSO").indices.len(), rows.len());
+    assert_eq!(view_of(&rows, "org:fabrikam").indices.len(), 0);
+}
+
 #[test]
 fn summary_counts() {
     let summary = summarize(&sample());

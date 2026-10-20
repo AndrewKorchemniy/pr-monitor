@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use prm_ado::{HttpAdoConnector, HttpTransport};
 use prm_auth::{DefaultAuthFactory, SecretStore, TokioCommandRunner};
-use prm_config::{AppPaths, Config, ConfigLoad, FileRepo, StateLoad};
+use prm_config::{Config, ConfigLoad, FileRepo, StateLoad};
 use prm_domain::ports::UrlOpener;
 use prm_domain::{OrgId, model::Catalog, ports::Clock};
 use prm_service::ports::{Autostart, Notifier};
@@ -45,7 +45,9 @@ pub(crate) struct Ports {
     pub events: Arc<dyn EventSink>,
 }
 
-pub(crate) fn deps(platform: Platform, ports: Ports, paths: &AppPaths) -> ServiceDeps {
+/// `repo` comes from [`FileRepo::from_load`], so a config that must not be overwritten
+/// (newer schema, or unreadable and left in place) stays untouched.
+pub(crate) fn deps(platform: Platform, ports: Ports, repo: FileRepo) -> ServiceDeps {
     let auth = DefaultAuthFactory::new(
         Arc::new(TokioCommandRunner),
         Arc::clone(&ports.transport),
@@ -61,7 +63,7 @@ pub(crate) fn deps(platform: Platform, ports: Ports, paths: &AppPaths) -> Servic
         clock: ports.clock,
         opener: platform.opener,
         autostart: platform.autostart,
-        repo: Arc::new(FileRepo::new(paths.clone())),
+        repo: Arc::new(repo),
     }
 }
 

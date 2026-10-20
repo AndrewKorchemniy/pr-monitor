@@ -11,8 +11,13 @@ use crate::hash::fnv64;
 pub struct Secret(Box<str>);
 
 impl Secret {
+    /// Copies the text into an exact-size buffer, then zeroizes the source, so no spare-capacity
+    /// copy is freed unzeroized (`into_boxed_str` may reallocate and drop the old buffer).
     pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into().into_boxed_str())
+        let mut source = s.into();
+        let secret = Self(Box::from(source.as_str()));
+        source.zeroize();
+        secret
     }
 
     pub fn expose(&self) -> &str {

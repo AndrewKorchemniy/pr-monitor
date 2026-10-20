@@ -9,6 +9,7 @@ use prm_domain::{
     OrgId, Person, Vsid,
     auth::AuthMode,
     classify::{ClassifyConfig, EmptyReviewerPolicy},
+    lenient::{saturating_u8, saturating_u32},
     notify::NotificationPrefs,
     plan::{DraftPolicy, TrackSpec},
     scope::ScopeSpec,
@@ -54,12 +55,17 @@ impl Config {
     }
 }
 
+/// Numbers saturate into their type when read, so `normalize` can clamp and report an
+/// out-of-range value instead of the whole file failing to load.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RefreshConfig {
+    #[serde(deserialize_with = "saturating_u32")]
     pub interval_minutes: u32,
+    #[serde(deserialize_with = "saturating_u8")]
     pub jitter_percent: u8,
     /// Delay of the first refresh after launch.
+    #[serde(deserialize_with = "saturating_u32")]
     pub startup_delay_secs: u32,
 }
 
@@ -68,7 +74,7 @@ impl Default for RefreshConfig {
         Self {
             interval_minutes: limits::DEFAULT_INTERVAL_MINUTES,
             jitter_percent: limits::DEFAULT_JITTER_PERCENT,
-            startup_delay_secs: 0,
+            startup_delay_secs: limits::DEFAULT_STARTUP_DELAY_SECS,
         }
     }
 }
@@ -171,13 +177,17 @@ impl OrgColumn {
     }
 }
 
+/// Numbers saturate into their type when read, like [`RefreshConfig`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NetworkConfig {
     pub proxy: ProxyConfig,
+    #[serde(deserialize_with = "saturating_u32")]
     pub connect_timeout_secs: u32,
+    #[serde(deserialize_with = "saturating_u32")]
     pub request_timeout_secs: u32,
     /// Concurrent requests per org.
+    #[serde(deserialize_with = "saturating_u8")]
     pub max_concurrency: u8,
 }
 
@@ -344,7 +354,7 @@ impl OrgProfile {
         }
     }
 
-    pub fn ignored_ids(&self) -> HashSet<Vsid> {
+    pub(crate) fn ignored_ids(&self) -> HashSet<Vsid> {
         ids(&self.people.ignored_comment_authors)
     }
 
@@ -361,6 +371,13 @@ impl OrgProfile {
 
     pub fn tenant_override(&self) -> Option<uuid::Uuid> {
         uuid::Uuid::parse_str(self.tenant.trim()).ok()
+    }
+
+    /// `pat_expires_on` as a calendar date: the only parser of that field. `None` when blank
+    /// or not a real `YYYY-MM-DD` date (so `2025-02-30` is rejected too).
+    pub fn pat_expiry(&self) -> Option<time::Date> {
+        let format = time::macros::format_description!("[year]-[month]-[day]");
+        time::Date::parse(self.pat_expires_on.trim(), format).ok()
     }
 
     /// The label, or the org id when no label is set.

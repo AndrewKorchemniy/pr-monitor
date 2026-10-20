@@ -129,13 +129,8 @@ fn org_status(view: &OrgView<'_>, rows: &[PrRow], now: Moment) -> OrgStatus {
         counts: summarize(rows.iter().filter(|r| r.key.org == data.id)),
         catalog: data.catalog.clone(),
         last_error: live.last_error.clone(),
-        pat_expires_on: parse_date(&data.profile.pat_expires_on),
+        pat_expires_on: data.profile.pat_expiry(),
     }
-}
-
-fn parse_date(text: &str) -> Option<time::Date> {
-    let format = time::macros::format_description!("[year]-[month]-[day]");
-    time::Date::parse(text.trim(), format).ok()
 }
 
 fn refresh_status(

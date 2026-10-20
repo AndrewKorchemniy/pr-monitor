@@ -63,7 +63,22 @@ fn normalize_bad_url_issue() {
 fn normalize_canonical_url() {
     let (config, _) = invalid();
     assert_eq!(config.orgs[1].url, "https://dev.azure.com/fabrikam");
-    assert_eq!(config.orgs[1].label, "fabrikam");
+}
+
+/// A blank label used to be filled with the org id and saved, so it went stale when the URL
+/// was later corrected; the fallback is computed by `display_label` instead.
+#[test]
+fn normalize_leaves_a_blank_label_blank() {
+    let mut config = Config::default();
+    config.orgs.push(OrgProfile {
+        url: "contoso".into(),
+        ..OrgProfile::default()
+    });
+    let (mut config, _) = normalize(config);
+    assert_eq!(config.orgs[0].label, "");
+    config.orgs[0].url = "fabrikam".into();
+    let (config, _) = normalize(config);
+    assert_eq!(&*config.orgs[0].display_label(), "fabrikam");
 }
 
 #[test]
@@ -114,14 +129,26 @@ fn normalize_dedupes_people() {
     assert_eq!(config.orgs[0].people.reviewers.len(), 1);
 }
 
+/// `2025-02-30` used to pass normalize, then fail the reminder's own parse, so the PAT
+/// expiry reminder silently never fired.
 #[test]
-fn iso_date_table() {
-    for (text, ok) in [
-        ("2026-12-01", true),
-        ("2026-13-01", false),
-        ("26-12-01", false),
-        ("tomorrow", false),
-    ] {
-        assert_eq!(is_iso_date(text), ok, "{text}");
-    }
+fn normalize_clears_impossible_pat_expiry() {
+    let mut config = Config::default();
+    config.orgs.push(OrgProfile {
+        url: "contoso".into(),
+        pat_expires_on: "2025-02-30".into(),
+        ..OrgProfile::default()
+    });
+    let (config, issues) = normalize(config);
+    assert_eq!(config.orgs[0].pat_expires_on, "");
+    assert!(issue_at(&issues, "orgs[0].pat_expires_on").is_some());
+}
+
+#[test]
+fn normalize_non_finite_font_scale_uses_default() {
+    let mut config = Config::default();
+    config.ui.font_scale = f32::NAN;
+    let (config, issues) = normalize(config);
+    assert_eq!(config.ui.font_scale, limits::DEFAULT_FONT_SCALE);
+    assert!(issue_at(&issues, "ui.font_scale").is_some());
 }

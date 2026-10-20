@@ -80,7 +80,7 @@ pub struct DiffInput<'a> {
     /// PRs that vanished from the active list, resolved via a by-id lookup.
     pub closed: &'a [(PrKey, CloseOutcome)],
     pub tombstones: &'a Tombstones,
-    /// The signed-in user: their own comments never notify them.
+    /// The signed-in user: their own comments and votes never notify them.
     pub me: Option<Vsid>,
     /// Same set as `ClassifyConfig::ignored_comment_authors` (bots, pipelines).
     pub ignored: &'a HashSet<Vsid>,
@@ -90,6 +90,7 @@ pub struct DiffInput<'a> {
 }
 
 /// Who is excluded from "new comments": the PR author, the signed-in user and ignored authors.
+/// The signed-in user's votes are excluded too.
 struct CommentFilter<'a> {
     me: Option<Vsid>,
     ignored: &'a HashSet<Vsid>,
@@ -155,7 +156,7 @@ fn pr_changes(
         old.classification.review,
         new.classification.review,
     ));
-    changes.extend(vote_changes(old, new));
+    changes.extend(vote_changes(old, new, filter.me));
     changes.extend(new_comments(old, new, filter));
     if old.classification.active_threads > 0 && new.classification.active_threads == 0 {
         changes.push(ChangeKind::CommentsResolved);
@@ -178,11 +179,13 @@ fn review_change(old: ReviewState, new: ReviewState) -> Option<ChangeKind> {
     }
 }
 
-/// One event per counted vote that is new or changed.
-fn vote_changes(old: &ClassifiedPr, new: &ClassifiedPr) -> Vec<ChangeKind> {
+/// One event per counted vote that is new or changed, except the signed-in user's own.
+/// Their vote still moves the review state (`review_change`), which describes the PR.
+fn vote_changes(old: &ClassifiedPr, new: &ClassifiedPr, me: Option<Vsid>) -> Vec<ChangeKind> {
     new.classification
         .counted_votes
         .iter()
+        .filter(|(voter, _)| Some(**voter) != me)
         .filter(|(voter, vote)| old.classification.counted_votes.get(voter) != Some(vote))
         .map(|(voter, vote)| {
             let by = new.person(*voter);
@@ -216,21 +219,23 @@ fn new_comments(
     if fresh.is_empty() {
         return None;
     }
-    let snippet = fresh
-        .iter()
-        .max_by_key(|meta| meta.published)
-        .and_then(|meta| meta.snippet.clone());
+    let newest = fresh.iter().copied().max_by_key(|meta| meta.published);
+    // why: the toast quotes the newest comment and credits `authors[0]`, so its author leads.
+    let ordered = newest.into_iter().chain(fresh.iter().copied());
     Some(ChangeKind::NewComments {
         count: u32::try_from(fresh.len()).unwrap_or(u32::MAX),
-        authors: author_names(new, &fresh).into(),
-        snippet,
+        authors: author_names(new, ordered).into(),
+        snippet: newest.and_then(|meta| meta.snippet.clone()),
     })
 }
 
-/// Up to [`MAX_NAMED_AUTHORS`] distinct names, in comment order.
-fn author_names(pr: &ClassifiedPr, comments: &[&CommentMeta]) -> Vec<Arc<str>> {
+/// Up to [`MAX_NAMED_AUTHORS`] distinct names, in the given comment order.
+fn author_names<'a>(
+    pr: &ClassifiedPr,
+    comments: impl Iterator<Item = &'a CommentMeta>,
+) -> Vec<Arc<str>> {
     let mut names: Vec<Arc<str>> = Vec::new();
-    for id in comments.iter().filter_map(|meta| meta.author) {
+    for id in comments.filter_map(|meta| meta.author) {
         let name = pr.person(id).display_name();
         if !names.contains(&name) {
             names.push(name);
