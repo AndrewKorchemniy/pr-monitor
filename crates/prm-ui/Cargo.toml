@@ -9,3 +9,36 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+prm-domain = { workspace = true }
+prm-config = { workspace = true }
+prm-service = { workspace = true }
+prm-theme = { workspace = true }
+eframe = { workspace = true }
+egui_extras = { workspace = true }
+tray-icon = { workspace = true }
+raw-window-handle = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+serde = { workspace = true }
+toml = { workspace = true }
+time = { workspace = true }
+url = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+wgpu = { workspace = true, features = ["dx12"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { workspace = true, features = ["metal"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+wgpu = { workspace = true, features = ["vulkan", "gles"] }
+eframe = { workspace = true, features = ["x11", "wayland"] }
+tray-icon = { workspace = true, features = ["ksni"] }
+
+[dev-dependencies]
+egui_kittest = { workspace = true }
+prm-domain = { workspace = true, features = ["test-support"] }
+prm-service = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["sync", "rt"] }

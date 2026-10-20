@@ -1,0 +1,371 @@
+//! Dashboard view state: query, sort, grouping, collapsed groups, the selection (a key, never
+//! an index), the cached view model and display list, and pending scroll requests.
+
+pub(crate) mod anchor;
+pub(crate) mod changes;
+pub(crate) mod columns;
+pub(crate) mod display;
+pub(crate) mod empty;
+
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
+
+use eframe::egui::Align;
+use prm_config::UiState;
+use prm_domain::{
+    PrKey,
+    view::{GroupBy, PrRow, Sort, SortKey, StatusFilter, ViewModel, ViewQuery, build_view},
+};
+
+use crate::view::{
+    anchor::{AnchorResult, capture, restore},
+    display::{DisplayList, DisplayRow, build_display, group_id},
+};
+
+/// Rows a page-up/down moves.
+const PAGE: usize = 15;
+
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
+pub(crate) enum ScrollIntent {
+    #[default]
+    None,
+    ToRow(usize, Option<Align>),
+    Offset(f32),
+}
+
+pub(crate) struct DashboardView {
+    rows: Arc<[PrRow]>,
+    rows_generation: u64,
+    pub query: ViewQuery,
+    pub sort: Sort,
+    pub group: GroupBy,
+    pub collapsed: BTreeSet<String>,
+    pub selected: Option<PrKey>,
+    pub model: ViewModel,
+    pub display: DisplayList,
+    pub scroll: ScrollIntent,
+    /// The last selection change came from the keyboard (shows the focus ring).
+    pub keyboard_nav: bool,
+    pub widths: BTreeMap<String, f32>,
+    pub hidden_columns: Vec<String>,
+    pub offset_y: f32,
+    pub top_visible: Option<usize>,
+    pub row_pitch: f32,
+    /// Bumped by "reset columns" so the table forgets its stored widths.
+    pub table_epoch: u32,
+}
+
+impl DashboardView {
+    pub(crate) fn new(
+        ui: &UiState,
+        rows: Arc<[PrRow]>,
+        rows_generation: u64,
+        row_pitch: f32,
+    ) -> Self {
+        let mut view = Self {
+            rows,
+            rows_generation,
+            query: ui.filter.clone(),
+            sort: ui.sort,
+            group: ui.group,
+            collapsed: ui.collapsed_groups.iter().cloned().collect(),
+            selected: ui.selected.clone(),
+            model: ViewModel::default(),
+            display: DisplayList::default(),
+            scroll: ScrollIntent::None,
+            keyboard_nav: false,
+            widths: ui.columns.clone(),
+            hidden_columns: ui.hidden_columns.clone(),
+            offset_y: 0.0,
+            top_visible: None,
+            row_pitch,
+            table_epoch: 0,
+        };
+        view.rebuild();
+        if let Some(index) = view.selected_display() {
+            view.scroll = ScrollIntent::ToRow(index, Some(Align::Center));
+        }
+        view
+    }
+
+    pub(crate) fn rows(&self) -> &Arc<[PrRow]> {
+        &self.rows
+    }
+
+    pub(crate) const fn rows_generation(&self) -> u64 {
+        self.rows_generation
+    }
+
+    /// New data: keep the anchor (selected or top row) at the same screen position.
+    pub(crate) fn on_rows(&mut self, rows: Arc<[PrRow]>, generation: u64) {
+        let snapshot = capture(
+            &self.display,
+            self.selected.as_ref(),
+            self.top_visible,
+            self.offset_y,
+        );
+        self.rows = rows;
+        self.rows_generation = generation;
+        self.rebuild();
+        let Some(snapshot) = snapshot else {
+            return;
+        };
+        match restore(&snapshot, &self.display, self.row_pitch) {
+            AnchorResult::Offset(offset) => self.scroll = ScrollIntent::Offset(offset),
+            AnchorResult::SelectNeighbor { index } => {
+                if self.selected.is_some() {
+                    self.selected = self.key_at(index);
+                }
+            }
+            AnchorResult::None => {}
+        }
+    }
+
+    pub(crate) fn rebuild(&mut self) {
+        self.model = build_view(&self.rows, &self.query, self.sort, self.group);
+        self.display = build_display(&self.rows, &self.model, self.group, &self.collapsed);
+    }
+
+    /// Filter typing: keep the selection if it still matches, else select the first row.
+    pub(crate) fn set_text(&mut self, text: &str) {
+        if self.query.text == text {
+            return;
+        }
+        text.clone_into(&mut self.query.text);
+        self.after_filter_change();
+    }
+
+    pub(crate) fn set_status(&mut self, status: StatusFilter) {
+        self.query.status = if self.query.status == status {
+            StatusFilter::All
+        } else {
+            status
+        };
+        self.after_filter_change();
+    }
+
+    pub(crate) fn toggle_unread_only(&mut self) {
+        self.query.unread_only = !self.query.unread_only;
+        self.after_filter_change();
+    }
+
+    pub(crate) fn toggle_hide_drafts(&mut self) {
+        self.query.hide_drafts = !self.query.hide_drafts;
+        self.after_filter_change();
+    }
+
+    /// Clears text, status, changed-only and hide-drafts.
+    pub(crate) fn clear_filters(&mut self) {
+        self.query = ViewQuery {
+            org: self.query.org.clone(),
+            ..ViewQuery::default()
+        };
+        self.after_filter_change();
+    }
+
+    pub(crate) fn filters_active(&self) -> bool {
+        !self.query.text.is_empty()
+            || self.query.status != StatusFilter::All
+            || self.query.unread_only
+            || self.query.hide_drafts
+    }
+
+    fn after_filter_change(&mut self) {
+        self.rebuild();
+        if let Some(index) = self.selected_display() {
+            self.scroll = ScrollIntent::ToRow(index, None);
+        } else {
+            self.selected = self.first_pr();
+            self.scroll = ScrollIntent::Offset(0.0);
+        }
+    }
+
+    pub(crate) fn set_group(&mut self, group: GroupBy) {
+        self.group = group;
+        self.rebuild();
+        self.scroll_to_selection();
+    }
+
+    /// Clicking the sorted column again reverses it.
+    pub(crate) fn sort_by(&mut self, key: SortKey) {
+        if self.sort.key == key {
+            self.sort.descending = !self.sort.descending;
+        } else {
+            self.sort = Sort {
+                key,
+                descending: false,
+            };
+        }
+        self.rebuild();
+        self.scroll_to_selection();
+    }
+
+    fn scroll_to_selection(&mut self) {
+        if let Some(index) = self.selected_display() {
+            self.scroll = ScrollIntent::ToRow(index, None);
+        }
+    }
+
+    pub(crate) fn selected_display(&self) -> Option<usize> {
+        self.display.index_of.get(self.selected.as_ref()?).copied()
+    }
+
+    pub(crate) fn selected_row(&self) -> Option<&PrRow> {
+        let index = self.selected_display()?;
+        self.display.pr_at(index).and_then(|row| self.rows.get(row))
+    }
+
+    pub(crate) fn row_at(&self, display: usize) -> Option<&PrRow> {
+        self.display
+            .pr_at(display)
+            .and_then(|row| self.rows.get(row))
+    }
+
+    fn key_at(&self, display: usize) -> Option<PrKey> {
+        self.row_at(display).map(|r| r.key.clone())
+    }
+
+    fn first_pr(&self) -> Option<PrKey> {
+        (0..self.display.rows.len()).find_map(|i| self.key_at(i))
+    }
+
+    pub(crate) fn select_key(&mut self, key: &PrKey) {
+        self.selected = Some(key.clone());
+        if let Some(index) = self.selected_display() {
+            self.scroll = ScrollIntent::ToRow(index, Some(Align::Center));
+        }
+    }
+
+    /// Display positions of PR rows (not group headers), in order.
+    fn pr_positions(&self) -> Vec<usize> {
+        (0..self.display.rows.len())
+            .filter(|i| self.display.pr_at(*i).is_some())
+            .collect()
+    }
+
+    /// Moves the selection by `delta` PR rows, clamped; with no selection, starts at an end.
+    pub(crate) fn nav(&mut self, delta: isize) {
+        let prs = self.pr_positions();
+        let Some(last) = prs.len().checked_sub(1) else {
+            return;
+        };
+        let current = self
+            .selected_display()
+            .and_then(|d| prs.iter().position(|p| *p == d));
+        let target = match current {
+            Some(at) => at.saturating_add_signed(delta).min(last),
+            None if delta > 0 => 0,
+            None => last,
+        };
+        self.select_keyboard(prs.get(target).copied());
+    }
+
+    pub(crate) fn nav_page(&mut self, down: bool) {
+        let rows = isize::try_from(PAGE).unwrap_or(1);
+        self.nav(if down { rows } else { -rows });
+    }
+
+    pub(crate) fn nav_edge(&mut self, last: bool) {
+        let len = self.display.rows.len();
+        let found = if last {
+            (0..len).rev().find(|i| self.display.pr_at(*i).is_some())
+        } else {
+            (0..len).find(|i| self.display.pr_at(*i).is_some())
+        };
+        self.select_keyboard(found);
+    }
+
+    /// The first PR of the next (or previous) group.
+    pub(crate) fn nav_group(&mut self, forward: bool) {
+        let current = self.selected_display().unwrap_or(0);
+        let headers: Vec<usize> = (0..self.display.rows.len())
+            .filter(|i| matches!(self.display.rows[*i], DisplayRow::Group(_)))
+            .collect();
+        let target = if forward {
+            headers.into_iter().find(|h| *h > current)
+        } else {
+            headers.into_iter().rev().find(|h| *h + 1 < current)
+        };
+        if let Some(header) = target {
+            let pr = (header..self.display.rows.len()).find(|i| self.display.pr_at(*i).is_some());
+            self.select_keyboard(pr);
+        }
+    }
+
+    fn select_keyboard(&mut self, display: Option<usize>) {
+        if let Some(index) = display {
+            self.selected = self.key_at(index);
+            self.keyboard_nav = true;
+            self.scroll = ScrollIntent::ToRow(index, None);
+        }
+    }
+
+    /// The group containing the selection (its span index).
+    fn selected_group(&self) -> Option<u32> {
+        let index = self.selected_display()?;
+        (0..=index).rev().find_map(|i| match self.display.rows[i] {
+            DisplayRow::Group(span) => Some(span),
+            DisplayRow::Pr(_) => None,
+        })
+    }
+
+    pub(crate) fn toggle_group(&mut self, span: u32) {
+        let Some(group) = self
+            .model
+            .groups
+            .get(usize::try_from(span).unwrap_or(usize::MAX))
+        else {
+            return;
+        };
+        let id = group_id(&group.key);
+        if !self.collapsed.remove(&id) {
+            self.collapsed.insert(id);
+        }
+        self.rebuild();
+    }
+
+    pub(crate) fn set_selected_group_collapsed(&mut self, collapsed: bool) {
+        let Some(span) = self.selected_group() else {
+            return;
+        };
+        let Some(group) = self
+            .model
+            .groups
+            .get(usize::try_from(span).unwrap_or(usize::MAX))
+        else {
+            return;
+        };
+        let id = group_id(&group.key);
+        let changed = if collapsed {
+            self.collapsed.insert(id)
+        } else {
+            self.collapsed.remove(&id)
+        };
+        if changed {
+            self.rebuild();
+        }
+    }
+
+    /// Restores default column widths and visibility.
+    pub(crate) fn reset_columns(&mut self) {
+        self.widths.clear();
+        self.hidden_columns.clear();
+        self.table_epoch = self.table_epoch.wrapping_add(1);
+    }
+
+    /// Writes the view's persisted parts.
+    pub(crate) fn write_ui_state(&self, ui: &mut UiState) {
+        ui.filter = self.query.clone();
+        ui.sort = self.sort;
+        ui.group = self.group;
+        ui.collapsed_groups = self.collapsed.iter().cloned().collect();
+        ui.selected.clone_from(&self.selected);
+        ui.columns.clone_from(&self.widths);
+        ui.hidden_columns.clone_from(&self.hidden_columns);
+    }
+}
+
+#[cfg(test)]
+mod tests;
