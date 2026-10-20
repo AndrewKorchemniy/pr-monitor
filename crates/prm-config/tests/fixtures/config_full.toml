@@ -1,0 +1,117 @@
+# PR Monitor configuration. Edited by the app; hand edits are fine while the app is closed.
+schema_version = 1
+
+[refresh]
+interval_minutes = 5        # 1..=60 (UI suggests 5–10)
+jitter_percent = 10         # 0..=25
+startup_delay_secs = 0      # 0..=120; delay of the first refresh after launch
+
+[notifications]
+enabled = true
+when_focused = "suppress"   # "suppress" | "show"  (window visible+focused ⇒ no OS toasts; in-app highlights still shown)
+max_per_refresh = 3         # 1..=5
+sound = true
+include_drafts = false
+
+[notifications.events]
+new_pr = true
+ready_for_review = true
+needs_re_review = true
+reviewed = true
+changes_requested = true
+new_vote = false
+new_comments = true
+comments_resolved = true
+reactivated = true
+closed = false
+new_push = false
+auth_problem = true
+
+[ui]
+theme = "system"            # "system" | <theme id>  (ids owned by prm-theme)
+theme_dark = "graphite"
+theme_light = "vellum"
+density = "compact"         # "compact" | "comfortable"
+font_scale = 1.0            # 0.75..=1.5
+animations = "auto"         # "auto" | "on" | "off"   (auto: off on software renderer/remote session)
+renderer = "auto"           # "auto" | "glow" | "wgpu"
+low_power = "auto"          # "auto" | "on" | "off"
+start_minimized = false
+close_to_tray = true
+minimize_to_tray = true
+launch_at_login = false
+show_org_column = "auto"    # "auto" (only when >1 enabled org) | "always" | "never"
+relative_times = true
+
+[network]
+proxy = "system"            # "system" | "none" | "pac" | "http://proxy.corp:8080"
+connect_timeout_secs = 10   # 2..=60
+request_timeout_secs = 30   # 5..=120
+max_concurrency = 6         # per org, 1..=8
+
+[diagnostics]
+log_level = "info"          # bin reads; PRMONITOR_LOG env overrides
+
+[[orgs]]
+id = "contoso"                              # optional; derived from url
+url = "https://dev.azure.com/contoso"
+label = "Contoso"
+enabled = true
+auth = "auto"                               # "auto" | "azure_cli" | "pat" | "entra"
+tenant = ""                                 # optional GUID override; empty = discover via X-VSS-ResourceTenant
+include_me = true
+drafts = "show"                             # "show" | "hide"
+muted = false
+org_wide_query = false                      # experimental, probed
+pat_expires_on = ""                         # optional "YYYY-MM-DD" for expiry reminders
+
+[orgs.review]
+empty_reviewer_list = "any_non_author_vote" # "any_non_author_vote" (default) | "nobody"
+
+[orgs.entra]                                # Advanced; never pre-filled
+client_id = ""
+tenant = ""                                 # GUID | domain | "organizations"; empty = discovered tenant
+
+[orgs.scope]
+all_projects = false
+
+[[orgs.scope.projects]]
+id = "a7573007-bbb3-4341-b726-0c4148a07853"
+name = "Payments"
+all_repos = true
+
+[[orgs.scope.projects]]
+id = "6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c"
+name = "Platform"
+all_repos = false
+repos = [
+  { id = "3411ebc1-d5aa-464f-9615-0b527bc66719", name = "api-gateway" },
+  { name = "auth-service" },
+]
+
+[orgs.people]
+tracked_authors = [
+  { id = "d6245f20-2af8-44f4-9451-8107cb2767db", name = "Normal Paulk", unique_name = "npaulk@contoso.com" },
+  { id = "81fa6389-0872-6fdd-a451-7ba7880f566a", name = "Jia-hao Tseng", unique_name = "jtseng@contoso.com" },
+]
+reviewers = [
+  { id = "81fa6389-0872-6fdd-a451-7ba7880f566a", name = "Jia-hao Tseng", unique_name = "jtseng@contoso.com" },
+  { id = "98d08d98-4b5c-4c0b-8d2e-1f0c5b6a7e91", name = "[Payments]\\Payments Team", group = true },
+]
+ignored_comment_authors = [
+  { id = "41113706-0000-4000-8000-000000000001", name = "GitHub Copilot" },
+]
+
+[[orgs]]
+url = "https://fabrikam.visualstudio.com"   # normalized to https://dev.azure.com/fabrikam on save
+label = "Fabrikam (contractor)"
+auth = "pat"
+include_me = false
+drafts = "hide"
+
+[orgs.scope]
+all_projects = true
+
+[orgs.people]
+tracked_authors = [ { id = "c1d2e3f4-0000-4000-8000-0000000000aa", name = "Ana Bell" } ]
+reviewers = []

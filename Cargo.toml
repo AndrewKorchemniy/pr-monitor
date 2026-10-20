@@ -31,6 +31,10 @@ url          = { version = "2.5.8", features = ["serde"] }
 thiserror    = "2.0.21"
 zeroize      = "1.9.1"
 insta        = { version = "1.49.0", features = ["json", "redactions"] }
+toml         = "1.1.8"
+tempfile     = "3.27.0"
+dirs         = "7.0.0"
+tracing      = "0.1.44"
 
 [workspace.lints.rust]
 unsafe_code = "deny"                # prm-platform opts in per module with #[allow(unsafe_code)] + SAFETY comments

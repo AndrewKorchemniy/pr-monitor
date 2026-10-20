@@ -1,0 +1,152 @@
+---
+source: crates/prm-config/src/schema/tests.rs
+expression: "toml::to_string_pretty(&config).unwrap()"
+---
+schema_version = 1
+
+[refresh]
+interval_minutes = 5
+jitter_percent = 10
+startup_delay_secs = 0
+
+[notifications]
+enabled = true
+when_focused = "suppress"
+max_per_refresh = 3
+sound = true
+include_drafts = false
+
+[notifications.events]
+new_pr = true
+ready_for_review = true
+needs_re_review = true
+reviewed = true
+changes_requested = true
+new_vote = false
+new_comments = true
+comments_resolved = true
+reactivated = true
+closed = false
+new_push = false
+auth_problem = true
+
+[ui]
+theme = "system"
+theme_dark = "graphite"
+theme_light = "vellum"
+density = "compact"
+font_scale = 1.0
+animations = "auto"
+renderer = "auto"
+low_power = "auto"
+start_minimized = false
+close_to_tray = true
+minimize_to_tray = true
+launch_at_login = false
+show_org_column = "auto"
+relative_times = true
+
+[network]
+proxy = "system"
+connect_timeout_secs = 10
+request_timeout_secs = 30
+max_concurrency = 6
+
+[diagnostics]
+log_level = "info"
+
+[[orgs]]
+id = "contoso"
+url = "https://dev.azure.com/contoso"
+label = "Contoso"
+enabled = true
+auth = "auto"
+tenant = ""
+include_me = true
+drafts = "show"
+muted = false
+org_wide_query = false
+pat_expires_on = ""
+
+[orgs.review]
+empty_reviewer_list = "any_non_author_vote"
+
+[orgs.entra]
+client_id = ""
+tenant = ""
+
+[orgs.scope]
+all_projects = false
+
+[[orgs.scope.projects]]
+id = "a7573007-bbb3-4341-b726-0c4148a07853"
+name = "Payments"
+all_repos = true
+
+[[orgs.scope.projects]]
+id = "6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c"
+name = "Platform"
+all_repos = false
+
+[[orgs.scope.projects.repos]]
+id = "3411ebc1-d5aa-464f-9615-0b527bc66719"
+name = "api-gateway"
+
+[[orgs.scope.projects.repos]]
+name = "auth-service"
+
+[[orgs.people.tracked_authors]]
+id = "d6245f20-2af8-44f4-9451-8107cb2767db"
+name = "Normal Paulk"
+unique_name = "npaulk@contoso.com"
+
+[[orgs.people.tracked_authors]]
+id = "81fa6389-0872-6fdd-a451-7ba7880f566a"
+name = "Jia-hao Tseng"
+unique_name = "jtseng@contoso.com"
+
+[[orgs.people.reviewers]]
+id = "81fa6389-0872-6fdd-a451-7ba7880f566a"
+name = "Jia-hao Tseng"
+unique_name = "jtseng@contoso.com"
+
+[[orgs.people.reviewers]]
+id = "98d08d98-4b5c-4c0b-8d2e-1f0c5b6a7e91"
+name = '[Payments]\Payments Team'
+group = true
+
+[[orgs.people.ignored_comment_authors]]
+id = "41113706-0000-4000-8000-000000000001"
+name = "GitHub Copilot"
+
+[[orgs]]
+id = "fabrikam"
+url = "https://dev.azure.com/fabrikam"
+label = "Fabrikam (contractor)"
+enabled = true
+auth = "pat"
+tenant = ""
+include_me = false
+drafts = "hide"
+muted = false
+org_wide_query = false
+pat_expires_on = ""
+
+[orgs.review]
+empty_reviewer_list = "any_non_author_vote"
+
+[orgs.entra]
+client_id = ""
+tenant = ""
+
+[orgs.scope]
+all_projects = true
+projects = []
+
+[orgs.people]
+reviewers = []
+ignored_comment_authors = []
+
+[[orgs.people.tracked_authors]]
+id = "c1d2e3f4-0000-4000-8000-0000000000aa"
+name = "Ana Bell"

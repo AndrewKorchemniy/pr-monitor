@@ -1,0 +1,206 @@
+---
+source: crates/prm-config/src/schema/tests.rs
+expression: "format!(\"{config:#?}\")"
+---
+Config {
+    schema_version: 1,
+    refresh: RefreshConfig {
+        interval_minutes: 5,
+        jitter_percent: 10,
+        startup_delay_secs: 0,
+    },
+    notifications: NotificationPrefs {
+        enabled: true,
+        when_focused: Suppress,
+        max_per_refresh: 3,
+        sound: true,
+        include_drafts: false,
+        events: EventToggles {
+            new_pr: true,
+            ready_for_review: true,
+            needs_re_review: true,
+            reviewed: true,
+            changes_requested: true,
+            new_vote: false,
+            new_comments: true,
+            comments_resolved: true,
+            reactivated: true,
+            closed: false,
+            new_push: false,
+            auth_problem: true,
+        },
+    },
+    ui: UiPrefs {
+        theme: "system",
+        theme_dark: "graphite",
+        theme_light: "vellum",
+        density: Compact,
+        font_scale: 1.0,
+        animations: Auto,
+        renderer: Auto,
+        low_power: Auto,
+        start_minimized: false,
+        close_to_tray: true,
+        minimize_to_tray: true,
+        launch_at_login: false,
+        show_org_column: Auto,
+        relative_times: true,
+    },
+    network: NetworkConfig {
+        proxy: System,
+        connect_timeout_secs: 10,
+        request_timeout_secs: 30,
+        max_concurrency: 6,
+    },
+    diagnostics: DiagnosticsConfig {
+        log_level: "info",
+    },
+    orgs: [
+        OrgProfile {
+            id: Some(
+                OrgId(
+                    "contoso",
+                ),
+            ),
+            url: "https://dev.azure.com/contoso",
+            label: "Contoso",
+            enabled: true,
+            auth: Auto,
+            tenant: "",
+            include_me: true,
+            drafts: Show,
+            muted: false,
+            org_wide_query: false,
+            pat_expires_on: "",
+            review: ReviewConfig {
+                empty_reviewer_list: AnyNonAuthorVote,
+            },
+            entra: EntraSettings {
+                client_id: "",
+                tenant: "",
+            },
+            scope: ScopeSpec {
+                all_projects: false,
+                projects: [
+                    ProjectScope {
+                        id: Some(
+                            ProjectId(a7573007-bbb3-4341-b726-0c4148a07853),
+                        ),
+                        name: "Payments",
+                        all_repos: true,
+                        repos: [],
+                    },
+                    ProjectScope {
+                        id: Some(
+                            ProjectId(6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c),
+                        ),
+                        name: "Platform",
+                        all_repos: false,
+                        repos: [
+                            RepoSel {
+                                id: Some(
+                                    RepoId(3411ebc1-d5aa-464f-9615-0b527bc66719),
+                                ),
+                                name: "api-gateway",
+                            },
+                            RepoSel {
+                                id: None,
+                                name: "auth-service",
+                            },
+                        ],
+                    },
+                ],
+            },
+            people: PeopleConfig {
+                tracked_authors: [
+                    Person {
+                        id: Vsid(d6245f20-2af8-44f4-9451-8107cb2767db),
+                        name: "Normal Paulk",
+                        unique_name: Some(
+                            "npaulk@contoso.com",
+                        ),
+                        group: false,
+                        descriptor: None,
+                    },
+                    Person {
+                        id: Vsid(81fa6389-0872-6fdd-a451-7ba7880f566a),
+                        name: "Jia-hao Tseng",
+                        unique_name: Some(
+                            "jtseng@contoso.com",
+                        ),
+                        group: false,
+                        descriptor: None,
+                    },
+                ],
+                reviewers: [
+                    Person {
+                        id: Vsid(81fa6389-0872-6fdd-a451-7ba7880f566a),
+                        name: "Jia-hao Tseng",
+                        unique_name: Some(
+                            "jtseng@contoso.com",
+                        ),
+                        group: false,
+                        descriptor: None,
+                    },
+                    Person {
+                        id: Vsid(98d08d98-4b5c-4c0b-8d2e-1f0c5b6a7e91),
+                        name: "[Payments]\\Payments Team",
+                        unique_name: None,
+                        group: true,
+                        descriptor: None,
+                    },
+                ],
+                ignored_comment_authors: [
+                    Person {
+                        id: Vsid(41113706-0000-4000-8000-000000000001),
+                        name: "GitHub Copilot",
+                        unique_name: None,
+                        group: false,
+                        descriptor: None,
+                    },
+                ],
+            },
+        },
+        OrgProfile {
+            id: Some(
+                OrgId(
+                    "fabrikam",
+                ),
+            ),
+            url: "https://dev.azure.com/fabrikam",
+            label: "Fabrikam (contractor)",
+            enabled: true,
+            auth: Pat,
+            tenant: "",
+            include_me: false,
+            drafts: Hide,
+            muted: false,
+            org_wide_query: false,
+            pat_expires_on: "",
+            review: ReviewConfig {
+                empty_reviewer_list: AnyNonAuthorVote,
+            },
+            entra: EntraSettings {
+                client_id: "",
+                tenant: "",
+            },
+            scope: ScopeSpec {
+                all_projects: true,
+                projects: [],
+            },
+            people: PeopleConfig {
+                tracked_authors: [
+                    Person {
+                        id: Vsid(c1d2e3f4-0000-4000-8000-0000000000aa),
+                        name: "Ana Bell",
+                        unique_name: None,
+                        group: false,
+                        descriptor: None,
+                    },
+                ],
+                reviewers: [],
+                ignored_comment_authors: [],
+            },
+        },
+    ],
+}

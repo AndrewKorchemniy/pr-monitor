@@ -1,0 +1,26 @@
+[refresh]
+interval_minutes = 600
+jitter_percent = 90
+
+[notifications]
+max_per_refresh = 0
+
+[ui]
+font_scale = 9.0
+density = "spacious"
+
+[network]
+max_concurrency = 50
+proxy = "not a url"
+
+[[orgs]]
+url = "https://github.com/contoso"
+
+[[orgs]]
+url = "dev.azure.com/Fabrikam"
+tenant = "not-a-guid"
+pat_expires_on = "tomorrow"
+entra = { client_id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46" }
+
+[[orgs]]
+url = "https://fabrikam.visualstudio.com"

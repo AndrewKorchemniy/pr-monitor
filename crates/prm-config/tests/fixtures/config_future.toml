@@ -1,0 +1,5 @@
+schema_version = 9
+some_new_section = { enabled = true }
+
+[refresh]
+interval_minutes = 7

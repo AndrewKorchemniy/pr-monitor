@@ -1,0 +1,73 @@
+---
+source: crates/prm-config/src/store/tests.rs
+expression: state
+---
+{
+  "schema_version": 1,
+  "saved_at": null,
+  "notifications_paused_until": null,
+  "orgs": {
+    "contoso": {
+      "tenant": null,
+      "me": null,
+      "last_good_method": null,
+      "signed_out": false,
+      "baseline": true,
+      "last_refresh_ok": null,
+      "org_wide_probe": null,
+      "records": {
+        "contoso/00000000-0000-0000-0000-000000000007/22": {
+          "pr": {
+            "key": "contoso/00000000-0000-0000-0000-000000000007/22",
+            "project": "00000000-0000-0000-0000-000000000001",
+            "project_name": "Payments",
+            "repo_name": "api",
+            "title": "PR 22",
+            "author": {
+              "id": "00000000-0000-0000-0000-000000000001",
+              "name": "Author One"
+            },
+            "created_at": "2023-11-14T22:13:20Z",
+            "closed_at": null,
+            "state": "active",
+            "draft": false,
+            "source_branch": "feature/x",
+            "target_branch": "main",
+            "merge_status": "succeeded",
+            "head_commit": null,
+            "auto_complete": false,
+            "reviewers": [],
+            "web_url": "https://dev.azure.com/contoso/Payments/_git/api/pullrequest/22"
+          },
+          "threads": [],
+          "fetched_at": "2023-11-14T22:13:20Z"
+        }
+      },
+      "tombstones": {},
+      "people": []
+    }
+  },
+  "seen": {},
+  "ui": {
+    "window": null,
+    "columns": {},
+    "hidden_columns": [],
+    "sort": {
+      "key": "status",
+      "descending": false
+    },
+    "group": "status",
+    "filter": {
+      "text": "",
+      "status": "all",
+      "org": null,
+      "unread_only": false,
+      "hide_drafts": false
+    },
+    "selected": null,
+    "collapsed_groups": [],
+    "settings_section": null,
+    "peek_open": true,
+    "peek_width": null
+  }
+}
