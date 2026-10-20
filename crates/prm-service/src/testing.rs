@@ -16,7 +16,7 @@ use std::{
 
 use prm_ado::testing::{FakeAdoApi, FakeConnector, FakeOrg};
 use prm_auth::testing::FakeAuthFactory;
-use prm_config::{Config, PersistedState, store::MemoryRepo};
+use prm_config::{Config, PersistedState, testing::MemoryRepo};
 use prm_domain::{
     OrgId, Timestamp,
     model::Catalog,

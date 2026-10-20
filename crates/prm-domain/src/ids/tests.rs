@@ -15,6 +15,13 @@ fn org_input_bare_name() {
 }
 
 #[test]
+fn org_web_url_round_trips_through_parse_org_input() {
+    let id = org("contoso");
+    assert_eq!(id.web_url(), "https://dev.azure.com/contoso");
+    assert_eq!(parse_org_input(&id.web_url()), Ok(id));
+}
+
+#[test]
 fn org_input_dev_azure_url_with_path() {
     assert_eq!(
         parse_org_input("dev.azure.com/Fabrikam").unwrap(),

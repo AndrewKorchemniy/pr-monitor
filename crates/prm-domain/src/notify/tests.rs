@@ -254,3 +254,93 @@ fn policy_pr_toast_links_and_tags() {
     assert!(toast.launch.starts_with("prmonitor://show?org=contoso"));
     assert!(toast.open_url.unwrap().ends_with("/pullrequest/7"));
 }
+
+fn closed(number: i32) -> ChangeEvent {
+    event(
+        number,
+        ChangeKind::Closed {
+            outcome: CloseOutcome::Completed,
+        },
+    )
+}
+
+fn retracted(plan: &NotificationPlan) -> Vec<String> {
+    plan.ops
+        .iter()
+        .filter_map(|op| match op {
+            NotifierOp::Retract { tag, .. } => Some(tag.clone()),
+            NotifierOp::Show(_) => None,
+        })
+        .collect()
+}
+
+fn sign_in_problem(name: &str) -> AuthProblem {
+    AuthProblem {
+        org: org(name),
+        org_label: Arc::from(name),
+        message: Arc::from("Sign in again."),
+    }
+}
+
+#[test]
+fn policy_closed_toast_replaces_instead_of_retracting() {
+    let mut setup = Setup::new(vec![closed(1)]);
+    setup.prefs.events.closed = true;
+    let plan = setup.plan();
+    assert_eq!(retracted(&plan), Vec::<String>::new());
+    assert_eq!(titles(&plan), vec!["Completed · !1"]);
+}
+
+/// The "closed" toggle used to skip retraction even when the closed toast was then gated,
+/// muted, filtered as a draft or folded into the summary, leaving a stale toast behind.
+#[test]
+fn policy_closed_retracts_when_closed_toast_is_dropped() {
+    let tag = key("contoso", 1, 1).tag();
+    type Arrange = fn(&mut Setup);
+    let cases: [(&str, Arrange); 5] = [
+        ("paused", |s| s.paused = true),
+        ("focused", |s| s.focused = true),
+        ("muted", |s| {
+            s.muted.insert(org("contoso"));
+        }),
+        ("draft", |s| s.events[0].pr.draft = true),
+        ("overflow", |s| {
+            s.prefs.max_per_refresh = 1;
+            s.events.push(new_comment(2));
+        }),
+    ];
+    for (name, arrange) in cases {
+        let mut setup = Setup::new(vec![closed(1)]);
+        setup.prefs.events.closed = true;
+        arrange(&mut setup);
+        let plan = setup.plan();
+        assert_eq!(retracted(&plan), vec![tag.clone()], "{name}: {plan:?}");
+        assert!(
+            shown(&plan).iter().all(|n| n.tag != tag),
+            "{name}: {plan:?}"
+        );
+    }
+}
+
+/// With one toast allowed, a sign-in toast used to leave no room, so every PR change of
+/// that refresh vanished without even a summary.
+#[test]
+fn policy_auth_toast_never_takes_the_last_slot() {
+    let mut setup = Setup::new((1..=2).map(new_comment).collect());
+    setup.prefs.max_per_refresh = 1;
+    setup.auth = vec![sign_in_problem("fabrikam")];
+    let plan = setup.plan();
+    let kinds: Vec<NotificationKind> = shown(&plan).iter().map(|n| n.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![NotificationKind::Auth, NotificationKind::Summary]
+    );
+}
+
+#[test]
+fn policy_muted_org_raises_no_sign_in_toast() {
+    let mut setup = Setup::new(vec![]);
+    setup.auth = vec![sign_in_problem("contoso")];
+    setup.muted.insert(org("contoso"));
+    assert_eq!(setup.plan(), NotificationPlan::default());
+}

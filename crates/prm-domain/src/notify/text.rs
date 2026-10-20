@@ -1,7 +1,11 @@
 //! Every user-visible toast string, in one place (English only for v1).
 
 use crate::{
-    diff::ChangeKind, model::VoteKind, tombstone::CloseOutcome, view::text::truncate_chars,
+    app::APP_DISPLAY_NAME,
+    diff::{ChangeKind, MAX_NAMED_AUTHORS},
+    model::VoteKind,
+    tombstone::CloseOutcome,
+    view::text::truncate_chars,
 };
 
 /// Names in toast titles are cut to this many characters.
@@ -15,7 +19,11 @@ pub const ACTION_OPEN_PR: &str = "Open PR";
 pub const ACTION_SHOW: &str = "Show";
 
 pub const TEST_TITLE: &str = "Notifications are working";
-pub const TEST_BODY: &str = "PR Monitor will tell you here when a pull request needs you.";
+
+/// Body of the test toast.
+pub fn test_body() -> String {
+    format!("{APP_DISPLAY_NAME} will tell you here when a pull request needs you.")
+}
 
 /// Title and optional detail line for one PR's headline change.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,18 +117,27 @@ fn comments_text(
     }
     let detail = match snippet {
         Some(s) => Some(format!("“{s}” — {first}")),
-        None => Some(author_list(authors, count)),
+        None => Some(author_list(authors)),
     };
     (format!("{count} new comments"), detail)
 }
 
-/// "Ann, Bob and 3 more", from up to two names.
-fn author_list(authors: &[std::sync::Arc<str>], count: u32) -> String {
-    let named: Vec<String> = authors.iter().take(2).map(|a| name(a)).collect();
-    let rest = count.saturating_sub(u32::try_from(named.len()).unwrap_or(u32::MAX));
-    let joined = named.join(", ");
-    if rest > 0 {
-        format!("{joined} and {rest} more")
+/// How many names a comment toast lists before "and others".
+const LISTED_AUTHORS: usize = 2;
+// why: events carry more distinct names than are listed, so a name past the list proves
+// "others" exist; the comment count cannot, since one person may post several comments.
+const _: () = assert!(LISTED_AUTHORS < MAX_NAMED_AUTHORS);
+
+/// "Ann", "Ann, Bob", or "Ann, Bob and others", from the event's distinct names.
+fn author_list(authors: &[std::sync::Arc<str>]) -> String {
+    let joined = authors
+        .iter()
+        .take(LISTED_AUTHORS)
+        .map(|a| name(a))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if authors.len() > LISTED_AUTHORS {
+        format!("{joined} and others")
     } else {
         joined
     }

@@ -41,10 +41,12 @@ impl GroupKey {
     }
 
     /// Status groups by attention rank; text and org groups alphabetically (case-insensitive).
+    /// Text keys that differ only in case are then ordered exactly, so each stays contiguous
+    /// and forms one span. Allocation-free, since it runs inside the sort.
     pub fn order(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Self::Status(a), Self::Status(b)) => a.attention_rank().cmp(&b.attention_rank()),
-            (Self::Text(a), Self::Text(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
+            (Self::Text(a), Self::Text(b)) => fold_case(a).cmp(fold_case(b)).then_with(|| a.cmp(b)),
             (Self::Org(a), Self::Org(b)) => a.cmp(b),
             // why: one GroupBy only ever produces one kind of key, so mixed pairs never occur.
             _ => Ordering::Equal,
@@ -59,6 +61,11 @@ impl GroupKey {
             Self::Org(_) => row.org_label.clone(),
         }
     }
+}
+
+/// The text lowercased char by char, without allocating.
+fn fold_case(text: &str) -> impl Iterator<Item = char> + '_ {
+    text.chars().flat_map(char::to_lowercase)
 }
 
 /// A contiguous run of rows (indices into the view) sharing a group key.

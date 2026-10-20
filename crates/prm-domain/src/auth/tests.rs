@@ -17,6 +17,16 @@ fn token_validity_with_skew() {
 }
 
 #[test]
+fn header_value_prefixes_the_scheme() {
+    for (header, expected) in [
+        (AuthHeader::Bearer(Secret::new("t")), "Bearer t"),
+        (AuthHeader::Basic(Secret::new("OnBhdA==")), "Basic OnBhdA=="),
+    ] {
+        assert_eq!(header.header_value().as_str(), expected);
+    }
+}
+
+#[test]
 fn actions_and_ranks_table() {
     let ca = AuthError::ConditionalAccessBlocked("AADSTS53003: blocked".into());
     assert_eq!(ca.severity(), AuthSeverity::Blocked);

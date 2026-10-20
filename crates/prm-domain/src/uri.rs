@@ -44,6 +44,7 @@ impl AppUri {
         if !url.scheme().eq_ignore_ascii_case(URI_SCHEME) {
             return Err(AppUriError::Scheme);
         }
+        reject_extra_parts(&url)?;
         let action = url.host_str().unwrap_or_default().to_ascii_lowercase();
         match action.as_str() {
             "show" => Ok(Self::Show {
@@ -56,7 +57,27 @@ impl AppUri {
     }
 }
 
-/// Reads the optional `org`, `repo`, `pr` triple; all three or none.
+/// Rejects userinfo, a port, a fragment and any path. A bare `/` is allowed because Windows
+/// protocol activation may append one.
+fn reject_extra_parts(url: &url::Url) -> Result<(), AppUriError> {
+    let extra = if !url.username().is_empty() || url.password().is_some() {
+        Some("user info")
+    } else if url.port().is_some() {
+        Some("port")
+    } else if url.fragment().is_some() {
+        Some("fragment")
+    } else if !matches!(url.path(), "" | "/") {
+        Some("path")
+    } else {
+        None
+    };
+    match extra {
+        Some(part) => Err(AppUriError::Invalid(part.to_owned())),
+        None => Ok(()),
+    }
+}
+
+/// Reads the optional `org`, `repo`, `pr` triple; all three or none, each at most once.
 fn parse_key(url: &url::Url) -> Result<Option<PrKey>, AppUriError> {
     let (mut org, mut repo, mut pr) = (None, None, None);
     for (name, value) in url.query_pairs() {
@@ -66,6 +87,9 @@ fn parse_key(url: &url::Url) -> Result<Option<PrKey>, AppUriError> {
             "pr" => &mut pr,
             other => return Err(AppUriError::Key(other.to_owned())),
         };
+        if slot.is_some() {
+            return Err(AppUriError::Key(name.into_owned()));
+        }
         *slot = Some(value.into_owned());
     }
     let (org, repo, pr) = match (org, repo, pr) {

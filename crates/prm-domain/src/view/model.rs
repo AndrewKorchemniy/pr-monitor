@@ -21,43 +21,45 @@ pub struct ViewModel {
 /// O(n log n); fast enough to rebuild on every keystroke for a thousand rows.
 pub fn build_view(rows: &[PrRow], query: &ViewQuery, sort: Sort, group: GroupBy) -> ViewModel {
     let filter = parse_filter(&query.text);
-    let mut visible = matching_rows(rows, query, &filter);
-    visible.sort_by(|a, b| {
-        let (ra, rb) = (&rows[*a], &rows[*b]);
-        GroupKey::of(ra, group)
-            .order(&GroupKey::of(rb, group))
-            .then_with(|| compare_rows(ra, rb, sort))
+    // Each visible row's group key is computed once, not once per comparison.
+    let mut visible = keyed_matching_rows(rows, query, &filter, group);
+    visible.sort_by(|(ka, a), (kb, b)| {
+        ka.order(kb)
+            .then_with(|| compare_rows(&rows[*a], &rows[*b], sort))
     });
     ViewModel {
-        groups: group_spans(rows, &visible, group),
-        counts: summarize(visible.iter().map(|i| &rows[*i])),
+        counts: summarize(visible.iter().map(|(_, i)| &rows[*i])),
         indices: visible
             .iter()
-            .map(|i| u32::try_from(*i).unwrap_or(u32::MAX))
+            .map(|(_, i)| u32::try_from(*i).unwrap_or(u32::MAX))
             .collect(),
+        groups: group_spans(rows, visible, group),
     }
 }
 
-fn matching_rows(rows: &[PrRow], query: &ViewQuery, filter: &ParsedFilter) -> Vec<usize> {
+fn keyed_matching_rows(
+    rows: &[PrRow],
+    query: &ViewQuery,
+    filter: &ParsedFilter,
+    group: GroupBy,
+) -> Vec<(GroupKey, usize)> {
     rows.iter()
         .enumerate()
         .filter(|(_, row)| row_matches(row, query, filter))
-        .map(|(i, _)| i)
+        .map(|(i, row)| (GroupKey::of(row, group), i))
         .collect()
 }
 
-fn group_spans(rows: &[PrRow], visible: &[usize], group: GroupBy) -> Vec<GroupSpan> {
+fn group_spans(rows: &[PrRow], visible: Vec<(GroupKey, usize)>, group: GroupBy) -> Vec<GroupSpan> {
     if group == GroupBy::None {
         return Vec::new();
     }
     let mut spans: Vec<GroupSpan> = Vec::new();
-    for (position, index) in visible.iter().enumerate() {
-        let row = &rows[*index];
-        let key = GroupKey::of(row, group);
+    for (position, (key, index)) in visible.into_iter().enumerate() {
         match spans.last_mut() {
             Some(span) if span.key == key => span.len += 1,
             Some(_) | None => spans.push(GroupSpan {
-                label: key.label(row),
+                label: key.label(&rows[index]),
                 key,
                 start: u32::try_from(position).unwrap_or(u32::MAX),
                 len: 1,

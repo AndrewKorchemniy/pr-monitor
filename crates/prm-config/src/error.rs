@@ -18,6 +18,11 @@ pub enum ConfigError {
     Parse { path: PathBuf, message: Arc<str> },
     #[error("cannot serialize: {0}")]
     Serialize(Arc<str>),
+    /// `config.toml` is protected for this session, so saving would destroy settings.
+    #[error(
+        "config.toml was left unchanged: it was written by a newer version or could not be read."
+    )]
+    ReadOnly,
     #[error("migration {from}→{to} failed: {message}")]
     Migration {
         from: u32,

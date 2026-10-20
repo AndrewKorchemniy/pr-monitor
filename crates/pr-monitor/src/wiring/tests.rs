@@ -46,10 +46,7 @@ fn initial_data_carries_config_and_state_issues() {
     let config = ConfigLoad {
         config: Config::default(),
         issues: vec![issue("config")],
-        first_run: true,
-        migrated_from: None,
-        newer_schema: false,
-        recovered: None,
+        read_only: false,
     };
     let state = StateLoad {
         state: PersistedState::default(),

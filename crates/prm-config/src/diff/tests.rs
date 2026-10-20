@@ -70,10 +70,6 @@ fn diff_configs_add_remove() {
         &config(&["contoso", "tailspin"]),
     );
     assert_eq!(
-        changes.added.iter().map(OrgId::as_str).collect::<Vec<_>>(),
-        vec!["tailspin"]
-    );
-    assert_eq!(
         changes
             .removed
             .iter()
@@ -90,5 +86,25 @@ fn diff_configs_global_sections() {
     let mut new = old.clone();
     new.ui.launch_at_login = true;
     let changes = diff_configs(&old, &new);
-    assert!(changes.ui && changes.autostart && !changes.refresh);
+    assert!(changes.autostart && !changes.refresh && !changes.network);
+}
+
+/// With an org listed twice, the index kept the last (disabled) duplicate, so an edit to the
+/// real first entry was missed and newly in-scope PRs toasted instead of rebaselining.
+#[test]
+fn diff_configs_duplicate_org_compares_the_first_entry() {
+    let old = config(&["contoso", "contoso"]);
+    let mut new = old.clone();
+    new.orgs[0].scope.all_projects = false;
+    let change = only_change(&old, &new);
+    assert!(change.scope && !change.enabled, "{change:?}");
+}
+
+#[test]
+fn diff_configs_label_only_needs_no_reaction() {
+    let old = config(&["contoso"]);
+    let mut new = old.clone();
+    new.orgs[0].label = "Contoso".into();
+    new.orgs[0].muted = true;
+    assert_eq!(diff_configs(&old, &new), ConfigChanges::default());
 }

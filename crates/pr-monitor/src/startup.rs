@@ -16,7 +16,9 @@ use std::{
 };
 
 use prm_auth::ChunkedSecretStore;
-use prm_config::{AppPaths, ConfigLoad, StateLoad, load_catalogs, load_config, load_state};
+use prm_config::{
+    AppPaths, ConfigLoad, FileRepo, StateLoad, load_catalogs, load_config, load_state,
+};
 use prm_domain::{
     app::{ENV_HOME, ENV_LOG, ENV_REGISTER, ENV_SECRET_STORE},
     ports::{Clock, PortError},
@@ -429,7 +431,7 @@ fn start_service(
             opener,
         },
         ports,
-        &base.paths,
+        FileRepo::from_load(base.paths.clone(), &config),
     );
     let handle = prm_service::spawn(deps, wiring::initial_data(config, state, catalogs, args))
         .map_err(|e| fatal(&e))?;

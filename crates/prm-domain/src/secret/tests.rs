@@ -9,6 +9,13 @@ fn secret_debug_is_redacted() {
 }
 
 #[test]
+fn secret_new_keeps_the_text_of_a_spare_capacity_string() {
+    let mut source = String::with_capacity(64);
+    source.push_str("hunter2");
+    assert_eq!(Secret::new(source).expose(), "hunter2");
+}
+
+#[test]
 fn token_id_stable() {
     assert_eq!(Secret::new("abc").id(), Secret::new("abc").id());
     assert_ne!(Secret::new("abc").id(), Secret::new("abx").id());

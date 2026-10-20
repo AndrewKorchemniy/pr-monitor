@@ -16,7 +16,7 @@ const BOT: u128 = 7;
 
 fn config() -> ClassifyConfig {
     ClassifyConfig {
-        reviewers: [vsid(REVIEWER)].into_iter().collect(),
+        reviewers: [vsid(REVIEWER), vsid(ME)].into_iter().collect(),
         ..ClassifyConfig::default()
     }
 }
@@ -246,6 +246,47 @@ fn diff_author_self_vote_ignored() {
     let before = record(pr(1).build(), vec![]);
     let after = record(pr(1).reviewer(person(AUTHOR, "Author"), 10).build(), vec![]);
     assert_no_events(Case::new(&[before], &[after]).run());
+}
+
+/// The user's own "Wait for author" vote used to raise a top-priority toast about themselves.
+#[test]
+fn diff_my_own_vote_raises_no_vote_event() {
+    let before = record(pr(1).build(), vec![]);
+    let after = record(pr(1).reviewer(person(ME, "Me"), -5).build(), vec![]);
+    assert_eq!(
+        Case::new(&[before], &[after]).kinds(),
+        vec![ChangeKind::Reviewed {
+            headline: VoteKind::WaitingForAuthor
+        }]
+    );
+}
+
+/// The toast quotes the newest comment next to `authors[0]`; with several commenters the
+/// quote used to be credited to whoever commented first in thread order.
+#[test]
+fn diff_new_comments_newest_author_leads() {
+    let before = record(pr(1).build(), vec![]);
+    let after = record(
+        pr(1).build(),
+        vec![
+            thread(1, &[(3, "Ann")]),
+            thread(5, &[(AUTHOR, "Author"), (4, "Bob")]),
+        ],
+    );
+    let kinds = Case::new(&[before], &[after]).kinds();
+    let [
+        ChangeKind::NewComments {
+            authors, snippet, ..
+        },
+    ] = kinds.as_slice()
+    else {
+        panic!("expected one NewComments, got {kinds:?}");
+    };
+    assert_eq!(snippet.as_deref(), Some("comment 2"));
+    assert_eq!(
+        authors.as_ref(),
+        [Arc::<str>::from("Bob"), Arc::<str>::from("Ann")]
+    );
 }
 
 #[test]
