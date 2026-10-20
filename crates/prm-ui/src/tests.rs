@@ -130,6 +130,7 @@ fn env() -> SettingsEnv<'static> {
             ("vellum".to_owned(), "Vellum".to_owned()),
         ],
         themes_dir: std::path::PathBuf::from("themes"),
+        theme_issues: vec!["midnight: text.muted fails contrast".to_owned()],
         build: BuildInfo {
             version: "0.1.0",
             git_sha: "0123456789ab",

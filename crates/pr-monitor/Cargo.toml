@@ -9,13 +9,47 @@ repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
 publish.workspace = true
+build = "build.rs"
 
 [[bin]]
 name = "pr-monitor"
 path = "src/main.rs"
 
-[build-dependencies]
-winresource = { workspace = true }
-
 [lints]
 workspace = true
+
+[dependencies]
+prm-domain = { workspace = true }
+prm-config = { workspace = true }
+prm-ado = { workspace = true }
+prm-auth = { workspace = true }
+prm-service = { workspace = true }
+prm-platform = { workspace = true }
+prm-theme = { workspace = true }
+prm-ui = { workspace = true }
+eframe = { workspace = true }
+raw-window-handle = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+url = { workspace = true }
+dirs = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+
+[dev-dependencies]
+prm-domain = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
+tempfile = { workspace = true }
+png = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }
+
+[build-dependencies]
+winresource = { workspace = true }
+png = { workspace = true }
+prm-theme = { workspace = true }

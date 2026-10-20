@@ -39,6 +39,7 @@ tray-icon = { workspace = true, features = ["ksni"] }
 
 [dev-dependencies]
 egui_kittest = { workspace = true }
+tempfile = { workspace = true }
 prm-domain = { workspace = true, features = ["test-support"] }
 prm-service = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["sync", "rt"] }

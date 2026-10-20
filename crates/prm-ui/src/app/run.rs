@@ -42,6 +42,12 @@ impl PrMonitorApp {
                     .map(|(id, entry)| (id.as_str().to_owned(), entry.file.name.clone()))
                     .collect(),
                 themes_dir: self.theme.themes_dir().to_path_buf(),
+                theme_issues: self
+                    .theme
+                    .issues
+                    .iter()
+                    .map(|i| format!("{}: {}", i.theme.as_str(), i.message))
+                    .collect(),
                 build: self.build,
                 licenses: self.licenses,
                 renderer_line: &renderer_line,

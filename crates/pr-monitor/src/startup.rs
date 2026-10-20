@@ -1,0 +1,474 @@
+//! Startup, in a fixed order: arguments, data root, the single-instance lock (a second launch
+//! forwards and exits before any logging or GPU work), files and logging, shell identity,
+//! activation, config, the service, the renderer, the window; then shutdown or a relaunch.
+
+use std::{
+    ffi::OsString,
+    io::Write as _,
+    path::PathBuf,
+    process::ExitCode,
+    sync::{Arc, atomic::AtomicBool},
+    time::{Duration, Instant},
+};
+
+use prm_auth::ChunkedSecretStore;
+use prm_config::{AppPaths, ConfigLoad, StateLoad, load_catalogs, load_config, load_state};
+use prm_domain::{
+    app::{ENV_HOME, ENV_LOG, ENV_REGISTER, ENV_SECRET_STORE},
+    ports::{Clock, PortError},
+    uri::AppUri,
+};
+use prm_platform::{
+    Acquired, ForwardOutcome, InstanceKey, InstanceLock, InstanceScope, HandoffRequest, HandoffServer,
+    PlatformAdapters, PlatformInit, RegistrationReport, RegistrationSpec, SecretBackendPref,
+    acquire_instance, adapters, console, ensure_shell_identity, forward_to_primary,
+    shared::registration::registration_scope,
+};
+use prm_service::{ServiceHandle, SystemClock, channel_sink};
+
+use crate::{
+    activation::{ActivationRouter, UiWaker},
+    assets, build_info,
+    cli::{self, Args, Mode},
+    copy, logging, net, panic,
+    renderer::{
+        MarkerFile, RendererChoice, RendererInputs, choose_renderer, is_renderer_init_error,
+    },
+    self_test,
+    shutdown::{self, Held},
+    ui_launch::{self, LaunchCtx},
+    unregister,
+    wiring::{self, Platform, Ports},
+};
+
+pub(crate) const EXIT_USAGE: u8 = 2;
+pub(crate) const EXIT_SELF_TEST: u8 = 3;
+pub(crate) const EXIT_NOT_RESPONDING: u8 = 4;
+
+/// The fallback child waits this long for its parent to exit.
+const PARENT_EXIT_WAIT: Duration = Duration::from_secs(5);
+/// A secondary gives a starting primary this long to accept the connection.
+const FORWARD_BUDGET: Duration = Duration::from_secs(2);
+const LOCK_RETRY: Duration = Duration::from_millis(100);
+const CRASH_LOGS_KEPT: usize = 10;
+
+/// What this launch does, decided from the arguments alone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum StartupPlan {
+    Print(String),
+    SelfTest,
+    Unregister { purge: bool },
+    Run,
+}
+
+pub(crate) fn plan(args: &Args) -> StartupPlan {
+    match args.mode {
+        Mode::Version => StartupPlan::Print(build_info::version_line()),
+        Mode::Help => StartupPlan::Print(cli::usage().to_owned()),
+        Mode::SelfTest => StartupPlan::SelfTest,
+        Mode::Unregister { purge } => StartupPlan::Unregister { purge },
+        Mode::Run => StartupPlan::Run,
+    }
+}
+
+/// What a second launch asks the running instance to do; `None` means nothing (autostart while
+/// already running).
+pub(crate) fn forward_request(args: &Args) -> Option<HandoffRequest> {
+    match (&args.activate, args.minimized) {
+        (Some(raw), _) => Some(AppUri::parse(raw).map_or(HandoffRequest::Show, HandoffRequest::Activate)),
+        (None, true) => None,
+        (None, false) => Some(HandoffRequest::Show),
+    }
+}
+
+pub(crate) fn run() -> ExitCode {
+    let started = Instant::now();
+    let args = match cli::parse_args(std::env::args_os().skip(1)) {
+        Ok(args) => args,
+        Err(error) => {
+            let text = copy::usage_error(&error.to_string(), cli::usage());
+            // why: from a terminal, print; from a shortcut or the protocol handler, show a dialog.
+            if console::attach_parent_console(false) {
+                let _ = writeln!(console::console_out(), "{text}");
+            } else {
+                console::fatal_dialog(copy::STARTUP_FAILED, &text);
+            }
+            return ExitCode::from(EXIT_USAGE);
+        }
+    };
+    if args.debug || args.mode != Mode::Run {
+        console::attach_parent_console(args.debug);
+    }
+    match plan(&args) {
+        StartupPlan::Print(text) => print_line(&text),
+        StartupPlan::SelfTest => self_test::run(),
+        StartupPlan::Unregister { purge } => match data_root(&args) {
+            Ok((root, scope, home)) => unregister::run(&root, scope, purge, home.as_deref()),
+            Err(error) => fatal(&error),
+        },
+        StartupPlan::Run => match data_root(&args) {
+            Ok((root, scope, home)) => primary_or_forward(
+                &args,
+                Root {
+                    path: root,
+                    scope,
+                    home,
+                },
+                started,
+            ),
+            Err(error) => fatal(&error),
+        },
+    }
+}
+
+fn print_line(text: &str) -> ExitCode {
+    let mut out = console::console_out();
+    let _ = writeln!(out, "{text}");
+    ExitCode::SUCCESS
+}
+
+fn fatal(error: &dyn std::fmt::Display) -> ExitCode {
+    tracing::error!(%error, "fatal");
+    console::fatal_dialog(copy::STARTUP_FAILED, &error.to_string());
+    ExitCode::FAILURE
+}
+
+/// The data folder and whether it is the default one.
+struct Root {
+    path: PathBuf,
+    scope: InstanceScope,
+    /// `--home` or `PRMONITOR_HOME`.
+    home: Option<PathBuf>,
+}
+
+fn data_root(
+    args: &Args,
+) -> Result<(PathBuf, InstanceScope, Option<PathBuf>), prm_config::ConfigError> {
+    let env_home = std::env::var_os(ENV_HOME).filter(|v| !v.is_empty());
+    let home = args
+        .home
+        .clone()
+        .or_else(|| env_home.clone().map(PathBuf::from));
+    let scope = if home.is_some() {
+        InstanceScope::Isolated
+    } else {
+        InstanceScope::Default
+    };
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let root = prm_config::resolve_root(args.home.clone(), env_home, dirs::data_local_dir(), &cwd)?;
+    Ok((root, scope, home))
+}
+
+/// The fallback child retries while its parent still holds the lock.
+fn acquire(root: &Root, budget: Option<Duration>) -> Result<(Acquired, InstanceKey), PortError> {
+    let deadline = budget.map(|b| Instant::now() + b);
+    loop {
+        let result = acquire_instance(&root.path, root.scope)?;
+        let retry =
+            matches!(result.0, Acquired::Secondary) && deadline.is_some_and(|d| Instant::now() < d);
+        if !retry {
+            return Ok(result);
+        }
+        std::thread::sleep(LOCK_RETRY);
+    }
+}
+
+fn primary_or_forward(args: &Args, root: Root, started: Instant) -> ExitCode {
+    if let Some(pid) = args.relaunched_after {
+        prm_platform::process::wait_for_exit(pid, PARENT_EXIT_WAIT);
+    }
+    match acquire(&root, args.relaunched_after.map(|_| PARENT_EXIT_WAIT)) {
+        Ok((Acquired::Primary(lock), key)) => primary(args, &root, lock, &key, started),
+        Ok((Acquired::Secondary, key)) => forward(&key, args),
+        Err(error) => fatal(&error),
+    }
+}
+
+fn forward(key: &InstanceKey, args: &Args) -> ExitCode {
+    let Some(request) = forward_request(args) else {
+        return ExitCode::SUCCESS;
+    };
+    match forward_to_primary(key, &request, FORWARD_BUDGET) {
+        ForwardOutcome::Delivered | ForwardOutcome::NoPrimary => ExitCode::SUCCESS,
+        ForwardOutcome::Rejected(reason) => fatal(&reason),
+        ForwardOutcome::NotResponding => {
+            console::fatal_dialog(copy::STARTUP_FAILED, copy::NOT_RESPONDING);
+            ExitCode::from(EXIT_NOT_RESPONDING)
+        }
+    }
+}
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|v| matches!(v.trim(), "1" | "true" | "yes"))
+}
+
+/// Files, logging, crash reports and the shell identity, before any window exists.
+struct Base {
+    paths: AppPaths,
+    clock: Arc<dyn Clock>,
+    log: logging::LogHandle,
+    init_phase: Arc<AtomicBool>,
+    registration: RegistrationReport,
+    exe: PathBuf,
+}
+
+fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
+    let paths = AppPaths::from_root(root.path.clone());
+    if let Err(error) = paths.ensure_dirs() {
+        console::fatal_dialog(copy::DATA_FOLDER, &error.to_string());
+        return Err(ExitCode::FAILURE);
+    }
+    // why: the local UTC offset must be read before other threads start (time crate soundness).
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
+    let log = logging::init(&paths.logs, args.debug, std::env::var(ENV_LOG).ok());
+    if !log.file_ok {
+        tracing::warn!("log files unavailable; logging to the console only");
+    }
+    let init_phase = panic::install(&paths.logs);
+    panic::prune_crash_logs(&paths.logs, CRASH_LOGS_KEPT);
+    let exe =
+        std::env::current_exe().unwrap_or_else(|_| PathBuf::from(prm_domain::app::APP_EXE_NAME));
+    let default_root = root.scope == InstanceScope::Default;
+    let registration = ensure_shell_identity(&RegistrationSpec {
+        exe: &exe,
+        icon_png_path: &paths.icon_png,
+        icon_png: assets::ICON_256_PNG,
+        scope: registration_scope(default_root, cfg!(debug_assertions), env_flag(ENV_REGISTER)),
+    });
+    Ok(Base {
+        paths,
+        clock,
+        log,
+        init_phase,
+        registration,
+        exe,
+    })
+}
+
+/// Activation (handoff and our own `--activate`), buffered until the service exists.
+struct Activation {
+    waker: Arc<UiWaker>,
+    quit: Arc<AtomicBool>,
+    router: Arc<ActivationRouter>,
+    handoff: Option<HandoffServer>,
+}
+
+fn activation(args: &Args, key: &InstanceKey) -> Activation {
+    let waker = Arc::new(UiWaker::default());
+    let quit = Arc::new(AtomicBool::new(false));
+    let router = Arc::new(ActivationRouter::new(Arc::clone(&waker), Arc::clone(&quit)));
+    let handoff = HandoffServer::start(
+        key,
+        Arc::clone(&router) as Arc<dyn prm_platform::ActivationSink>,
+    )
+    .inspect_err(|error| tracing::warn!(%error, "activation listener disabled"))
+    .ok();
+    if let Some(raw) = &args.activate {
+        router.activate_raw(raw);
+    }
+    Activation {
+        waker,
+        quit,
+        router,
+        handoff,
+    }
+}
+
+/// Loaded files plus the service started on them.
+struct Running {
+    handle: ServiceHandle,
+    events: std::sync::mpsc::Receiver<prm_service::AppEvent>,
+    shell: Arc<dyn prm_platform::DesktopShell>,
+    remote: bool,
+    start_hidden: bool,
+    window: Option<prm_config::WindowRect>,
+    renderer_pref: prm_config::schema::RendererPref,
+}
+
+/// The config, the persisted state and the cached catalogs.
+fn load(
+    paths: &AppPaths,
+) -> (
+    ConfigLoad,
+    StateLoad,
+    std::collections::HashMap<prm_domain::OrgId, prm_domain::model::Catalog>,
+) {
+    let config = load_config(paths);
+    let state = load_state(paths);
+    let ids: Vec<_> = config
+        .config
+        .orgs
+        .iter()
+        .filter_map(|o| o.org_id().cloned())
+        .collect();
+    let catalogs = load_catalogs(paths, &ids);
+    (config, state, catalogs)
+}
+
+fn platform(root: &Root, base: &Base, key: &InstanceKey) -> PlatformAdapters {
+    adapters(&PlatformInit {
+        paths: &base.paths,
+        exe: &base.exe,
+        scope: root.scope,
+        instance_suffix: &key.suffix,
+        registration: &base.registration,
+        secret_pref: SecretBackendPref::parse(std::env::var(ENV_SECRET_STORE).ok().as_deref()),
+        home_override: root.home.as_deref(),
+    })
+}
+
+fn start_service(
+    args: &Args,
+    root: &Root,
+    base: &Base,
+    key: &InstanceKey,
+    act: &Activation,
+) -> Result<Running, ExitCode> {
+    let (config, state, catalogs) = load(&base.paths);
+    base.log
+        .apply_level(&config.config.diagnostics.log_level, args.debug);
+    let PlatformAdapters {
+        notifier,
+        autostart,
+        opener,
+        shell,
+        secrets,
+    } = platform(root, base, key);
+    let session = shell.session();
+    tracing::info!(
+        version = build_info::VERSION,
+        sha = build_info::GIT_SHA,
+        os = shell.os_description(),
+        ?session,
+        ?args,
+        "starting"
+    );
+    let waker = Arc::clone(&act.waker);
+    let (sink, events) = channel_sink(move || waker.wake());
+    let ports = Ports {
+        transport: net::deferred_transport(&config.config.network),
+        secrets: Arc::new(ChunkedSecretStore::new(secrets)),
+        clock: Arc::clone(&base.clock),
+        events: Arc::new(sink),
+    };
+    let start_hidden = wiring::start_hidden(args, &config.config);
+    let renderer_pref = config.config.ui.renderer;
+    let window = state.state.ui.window;
+    let deps = wiring::deps(
+        Platform {
+            notifier,
+            autostart,
+            opener,
+        },
+        ports,
+        &base.paths,
+    );
+    let handle = prm_service::spawn(deps, wiring::initial_data(config, state, catalogs, args))
+        .map_err(|e| fatal(&e))?;
+    act.router.attach(Arc::new(handle.sender()));
+    Ok(Running {
+        handle,
+        events,
+        shell,
+        remote: session.is_remote(),
+        start_hidden,
+        window,
+        renderer_pref,
+    })
+}
+
+fn primary(
+    args: &Args,
+    root: &Root,
+    lock: InstanceLock,
+    key: &InstanceKey,
+    started: Instant,
+) -> ExitCode {
+    let base = match base(args, root) {
+        Ok(base) => base,
+        Err(code) => return code,
+    };
+    let act = activation(args, key);
+    let running = match start_service(args, root, &base, key, &act) {
+        Ok(running) => running,
+        Err(code) => return code,
+    };
+    tracing::info!(ms = started.elapsed().as_millis(), "service started");
+    let (choice, marker) = renderer(args, &base.paths, &running);
+    let result = ui_launch::run(LaunchCtx {
+        choice,
+        fallback_from: args.relaunched_after.map(|_| choice.kind.other()),
+        start_hidden: running.start_hidden,
+        remote_session: running.remote,
+        window: running.window,
+        paths: &base.paths,
+        shell: running.shell,
+        clock: base.clock,
+        handle: &running.handle,
+        events: running.events,
+        waker: act.waker,
+        quit: act.quit,
+        marker: Arc::clone(&marker),
+        init_phase: base.init_phase,
+    });
+    let held = Held {
+        handle: running.handle,
+        handoff: act.handoff,
+        lock,
+    };
+    finish(args, result, choice.kind, (held, &marker), started)
+}
+
+/// Picks the renderer and records the attempt (so a crash before the first frame counts).
+fn renderer(args: &Args, paths: &AppPaths, running: &Running) -> (RendererChoice, Arc<MarkerFile>) {
+    let marker = Arc::new(MarkerFile::new(
+        paths.cache.join("renderer.json"),
+        build_info::VERSION,
+    ));
+    let choice = choose_renderer(&RendererInputs {
+        cli: args.renderer,
+        config: running.renderer_pref,
+        remote: running.remote,
+        arch: std::env::consts::ARCH,
+        marker: marker.load().as_ref(),
+        version: build_info::VERSION,
+    });
+    tracing::info!(
+        renderer = choice.kind.as_arg(),
+        reason = choice.reason,
+        "renderer chosen"
+    );
+    marker.begin(choice.kind);
+    (choice, marker)
+}
+
+fn finish(
+    args: &Args,
+    result: Result<(), eframe::Error>,
+    tried: prm_ui::RendererKind,
+    (held, marker): (Held, &MarkerFile),
+    started: Instant,
+) -> ExitCode {
+    match result {
+        Ok(()) => shutdown::graceful(held, started),
+        Err(error) if is_renderer_init_error(&error, tried) && args.relaunched_after.is_none() => {
+            tracing::warn!(%error, renderer = tried.as_arg(), "renderer failed; relaunching with the other one");
+            marker.mark_failed(tried);
+            let relaunch: Vec<OsString> =
+                cli::relaunch_args(args, tried.other(), std::process::id());
+            shutdown::fallback_relaunch(held, relaunch)
+        }
+        Err(error) => {
+            tracing::error!(%error, "the window failed");
+            console::fatal_dialog(
+                copy::STARTUP_FAILED,
+                &copy::graphics_failed(&error.to_string()),
+            );
+            let _ = shutdown::graceful(held, started);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

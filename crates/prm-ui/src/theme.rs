@@ -142,15 +142,18 @@ pub(crate) struct ThemeRuntime {
     /// Bumped whenever the themes or policy change; styles are reapplied once per change.
     pub generation: u64,
     applied: u64,
+    /// Problems loading the user themes folder (kept across rebuilds).
+    dir_issues: Vec<ThemeIssue>,
+    /// Folder problems plus those of the themes in use.
     pub issues: Vec<ThemeIssue>,
 }
 
 impl ThemeRuntime {
     pub(crate) fn new(themes_dir: &Path, prefs: &UiPrefs, policy: RenderPolicy) -> Self {
-        let (registry, mut issues) = ThemeRegistry::builtin().with_user_dir(themes_dir);
+        let (registry, dir_issues) = ThemeRegistry::builtin().with_user_dir(themes_dir);
         let selection = selection_from(prefs);
         let set = resolve(&registry, &selection);
-        issues.extend(set.issues);
+        let issues = dir_issues.iter().cloned().chain(set.issues).collect();
         Self {
             scanner: ThemeDirScanner::new(themes_dir.to_path_buf()),
             themes_dir: themes_dir.to_path_buf(),
@@ -163,6 +166,7 @@ impl ThemeRuntime {
             policy,
             generation: 1,
             applied: 0,
+            dir_issues,
             issues,
         }
     }
@@ -173,7 +177,7 @@ impl ThemeRuntime {
             selection.theme.clone_from(preview);
         }
         let set = resolve(&self.registry, &selection);
-        self.issues = set.issues;
+        self.issues = self.dir_issues.iter().cloned().chain(set.issues).collect();
         self.dark = Arc::new(UiTheme::new(set.dark, self.policy));
         self.light = Arc::new(UiTheme::new(set.light, self.policy));
         self.follow_system = set.follow_system;
@@ -214,10 +218,10 @@ impl ThemeRuntime {
     }
 
     pub(crate) fn reload(&mut self) {
-        let (registry, issues) = ThemeRegistry::builtin().with_user_dir(&self.themes_dir);
+        let (registry, dir_issues) = ThemeRegistry::builtin().with_user_dir(&self.themes_dir);
         self.registry = registry;
+        self.dir_issues = dir_issues;
         self.rebuild();
-        self.issues.extend(issues);
     }
 
     pub(crate) fn registry(&self) -> &ThemeRegistry {
@@ -279,3 +283,6 @@ impl ThemeRuntime {
         MarkColors::from_palette(palette, crate::tray::bar_color(palette, badge))
     }
 }
+
+#[cfg(test)]
+mod tests;

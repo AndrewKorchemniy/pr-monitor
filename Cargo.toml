@@ -66,6 +66,10 @@ egui_extras  = { version = "0.37.0", default-features = false }   # TableBuilder
 egui_kittest = { version = "0.37.0", default-features = false }   # headless tests
 wgpu         = { version = "30.0.1", default-features = false, features = ["std"] }
 tray-icon    = { version = "0.26.1", default-features = false }
+# --- bin (M10) ---
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "registry", "tracing-log"] }
+tracing-appender = "0.2.5"
+png          = "0.18.1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"                # prm-platform opts in per module with #[allow(unsafe_code)] + SAFETY comments

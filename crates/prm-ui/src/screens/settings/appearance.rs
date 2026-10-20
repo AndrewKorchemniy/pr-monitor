@@ -50,6 +50,7 @@ pub(crate) fn page(
     if prefs.theme != before {
         cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
     }
+    issues(ui, &theme, &env.theme_issues);
     ui.add_space(space);
     widgets::field_label(ui, &theme, copy::DENSITY);
     ui.horizontal(|ui| {
@@ -70,6 +71,14 @@ pub(crate) fn page(
     widgets::muted(ui, &theme, copy::RESTART_HELP);
     ui.add_space(space);
     authoring(ui, cx, env);
+}
+
+/// Theme files that failed to load or to pass the contrast checks.
+fn issues(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, issues: &[String]) {
+    let color = theme.colors.tone(crate::theme::Tone::Warning).fg;
+    for issue in issues {
+        ui.label(egui::RichText::new(issue).color(color));
+    }
 }
 
 fn tristate(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, label: &str, value: &mut Tristate) {
