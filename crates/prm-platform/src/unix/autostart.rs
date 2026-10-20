@@ -1,4 +1,4 @@
-//! Launch at login via a LaunchAgent (macOS) or an XDG autostart entry (Linux).
+//! Launch at login via a `LaunchAgent` (macOS) or an XDG autostart entry (Linux).
 
 use std::path::Path;
 

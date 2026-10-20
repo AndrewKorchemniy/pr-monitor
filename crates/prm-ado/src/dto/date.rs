@@ -1,4 +1,4 @@
-//! Lenient date fields: unparseable or unset (`0001-01-01`) dates become `None`.
+//! Lenient date fields: unparsable or unset (`0001-01-01`) dates become `None`.
 
 use prm_domain::Timestamp;
 use serde::{Deserialize, Deserializer};

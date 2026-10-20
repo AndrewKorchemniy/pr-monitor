@@ -11,6 +11,6 @@ fn secret_debug_is_redacted() {
 #[test]
 fn token_id_stable() {
     assert_eq!(Secret::new("abc").id(), Secret::new("abc").id());
-    assert_ne!(Secret::new("abc").id(), Secret::new("abd").id());
+    assert_ne!(Secret::new("abc").id(), Secret::new("abx").id());
     assert_eq!(Secret::new("a").id(), TokenId(0xaf63_dc4c_8601_ec8c));
 }

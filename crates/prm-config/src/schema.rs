@@ -192,7 +192,7 @@ impl Default for NetworkConfig {
     }
 }
 
-/// `"system"` | `"none"` | `"pac"` | `"http://proxy:8080"`. Unparseable values become `System`.
+/// `"system"` | `"none"` | `"pac"` | `"http://proxy:8080"`. Unparsable values become `System`.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
 pub enum ProxyConfig {
