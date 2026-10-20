@@ -106,7 +106,7 @@ jobs:
       - name: Style greps (docs/RUST_STYLE.md)
         run: |
           if grep -rnE '^\s*mod tests\s*\{' crates --include=*.rs; then echo "::error::tests must live in <module>/tests.rs"; exit 1; fi
-          if grep -rn "thread::sleep" crates --include=tests.rs; then echo "::error::no sleeps in tests"; exit 1; fi
+          if grep -rn "thread::sleep" crates --include=tests.rs || grep -rn "thread::sleep" crates/*/src/tests; then echo "::error::no sleeps in tests"; exit 1; fi
           if find crates -name mod.rs | grep .; then echo "::error::use foo.rs + foo/, not mod.rs"; exit 1; fi
       - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:

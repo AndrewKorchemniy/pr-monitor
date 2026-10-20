@@ -165,6 +165,7 @@ pub struct FakeOrgAuth {
     snapshot: Mutex<AuthSnapshot>,
     stored_pats: Mutex<Vec<String>>,
     sign_in_delay: Option<Duration>,
+    sign_ins: AtomicUsize,
 }
 
 impl Default for FakeOrgAuth {
@@ -178,6 +179,7 @@ impl Default for FakeOrgAuth {
             }),
             stored_pats: Mutex::new(Vec::new()),
             sign_in_delay: None,
+            sign_ins: AtomicUsize::new(0),
         }
     }
 }
@@ -194,6 +196,15 @@ impl FakeOrgAuth {
     pub fn with_sign_in_delay(mut self, delay: Duration) -> Self {
         self.sign_in_delay = Some(delay);
         self
+    }
+
+    /// How many times `sign_in` was called (any method).
+    pub fn sign_ins(&self) -> usize {
+        self.sign_ins.load(Ordering::SeqCst)
+    }
+
+    pub fn set_snapshot(&self, snapshot: AuthSnapshot) {
+        *lock(&self.snapshot) = snapshot;
     }
 
     pub fn stored_pats(&self) -> Vec<String> {
@@ -215,6 +226,7 @@ impl OrgAuthenticator for FakeOrgAuth {
         _method: SignInMethod,
         cancel: CancellationToken,
     ) -> Result<AuthMethod, AuthError> {
+        self.sign_ins.fetch_add(1, Ordering::SeqCst);
         if let Some(delay) = self.sign_in_delay {
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}

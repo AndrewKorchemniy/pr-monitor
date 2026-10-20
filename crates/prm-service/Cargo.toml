@@ -7,5 +7,35 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+test-support = [
+    "prm-domain/test-support",
+    "prm-config/test-support",
+    "prm-ado/test-support",
+    "prm-auth/test-support",
+    "tokio/test-util",
+]
+
+[dependencies]
+prm-domain = { workspace = true }
+prm-config = { workspace = true }
+prm-ado = { workspace = true }
+prm-auth = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+tokio-util = { workspace = true }
+futures-util = { workspace = true }
+fastrand = { workspace = true }
+time = { workspace = true, features = ["local-offset"] }
+url = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+prm-domain = { workspace = true, features = ["test-support"] }
+prm-config = { workspace = true, features = ["test-support"] }
+prm-ado = { workspace = true, features = ["test-support"] }
+prm-auth = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["test-util", "rt"] }
+
 [lints]
 workspace = true
