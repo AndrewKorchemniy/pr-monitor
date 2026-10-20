@@ -2,6 +2,3 @@
 fail-fast = false
 failure-output = "immediate-final"
 slow-timeout = { period = "30s", terminate-after = 4 }
-
-[profile.ci.junit]
-path = "junit.xml"

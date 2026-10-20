@@ -24,7 +24,7 @@ jobs:
           cache: false
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.20.2   # exact pin, not bumped by Dependabot; keep in step with ci.yml
       - run: cargo deny --all-features --locked check advisories
 
   notices:
@@ -40,7 +40,7 @@ jobs:
           cache: false
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-about
+          tool: cargo-about@0.9.2   # exact pin, not bumped by Dependabot; keep in step with release.yml
       - run: |
           mkdir -p notices
           cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.html about.hbs
