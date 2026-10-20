@@ -1,5 +1,8 @@
 //! Running external commands (`az`) hidden, with a timeout and cancellation that kill the whole
 //! process tree. Behind a trait so tests never spawn anything.
+//!
+//! Commands always run in `%SystemRoot%` on Windows, so a planted `az.cmd` in the working
+//! directory is ignored, and never open a console window (`CREATE_NO_WINDOW`).
 
 use std::{ffi::OsString, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
@@ -11,19 +14,25 @@ pub struct ProcessSpec {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub env: Vec<(OsString, OsString)>,
-    /// Defaults to `%SystemRoot%` on Windows, so a planted `az.cmd` in the working dir is ignored.
-    pub cwd: Option<PathBuf>,
     pub timeout: Duration,
-    /// No console window (Windows `CREATE_NO_WINDOW`).
-    pub hide_window: bool,
 }
 
-/// `stdout` may contain a token: never log it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// `stdout` may contain a token: never log it. `Debug` shows only its length.
+#[derive(Clone, PartialEq, Eq)]
 pub struct ProcessOutput {
     pub status: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: String,
+}
+
+impl std::fmt::Debug for ProcessOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProcessOutput")
+            .field("status", &self.status)
+            .field("stdout_len", &self.stdout.len())
+            .field("stderr", &self.stderr)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -93,14 +102,15 @@ fn build_command(spec: &ProcessSpec) -> tokio::process::Command {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let cwd = spec.cwd.clone().or_else(system_root);
-    if let Some(cwd) = cwd {
+    if let Some(cwd) = system_root() {
         command.current_dir(cwd);
     }
     #[cfg(windows)]
-    if spec.hide_window {
-        command.creation_flags(crate::consts::CREATE_NO_WINDOW);
-    }
+    command.creation_flags(crate::consts::CREATE_NO_WINDOW);
+    // why: `az` on Unix is a shell wrapper that runs Python as a child; its own process group
+    // lets `kill_tree` kill both instead of orphaning Python.
+    #[cfg(unix)]
+    command.process_group(0);
     command
 }
 
@@ -128,27 +138,13 @@ fn system_root() -> Option<PathBuf> {
     }
 }
 
-/// `az` on Windows is `cmd.exe` running Python: killing `cmd` alone orphans Python, so kill the
-/// tree. Elsewhere `kill_on_drop` is enough.
+/// `az` is a wrapper (`cmd.exe` on Windows, a shell script elsewhere) running Python: killing
+/// the wrapper alone orphans Python, so kill the whole tree or process group.
 async fn kill_tree(pid: Option<u32>) {
-    let Some(pid) = pid.filter(|_| cfg!(windows)) else {
+    let Some(pid) = pid else {
         return;
     };
-    let taskkill = system_root().map_or_else(
-        || PathBuf::from("taskkill.exe"),
-        |r| r.join("System32").join("taskkill.exe"),
-    );
-    let spec = ProcessSpec {
-        program: taskkill,
-        args: ["/PID", &pid.to_string(), "/T", "/F"]
-            .iter()
-            .map(OsString::from)
-            .collect(),
-        env: Vec::new(),
-        cwd: None,
-        timeout: crate::consts::TREE_KILL_TIMEOUT,
-        hide_window: true,
-    };
+    let spec = tree_kill_spec(pid);
     let mut command = build_command(&spec);
     let wait = async {
         if let Ok(mut child) = command.spawn() {
@@ -156,6 +152,41 @@ async fn kill_tree(pid: Option<u32>) {
         }
     };
     if tokio::time::timeout(spec.timeout, wait).await.is_err() {
-        tracing::warn!(pid, "taskkill did not finish in time");
+        tracing::warn!(pid, "process tree kill did not finish in time");
     }
 }
+
+/// `taskkill /T /F` on Windows; elsewhere `kill -KILL` on the process group that
+/// `build_command` put the child in.
+fn tree_kill_spec(pid: u32) -> ProcessSpec {
+    let (program, args) = if cfg!(windows) {
+        let taskkill = system_root().map_or_else(
+            || PathBuf::from("taskkill.exe"),
+            |r| r.join("System32").join("taskkill.exe"),
+        );
+        (
+            taskkill,
+            vec![
+                "/PID".to_owned(),
+                pid.to_string(),
+                "/T".to_owned(),
+                "/F".to_owned(),
+            ],
+        )
+    } else {
+        let group = format!("-{pid}");
+        (
+            PathBuf::from("/bin/kill"),
+            vec!["-KILL".to_owned(), "--".to_owned(), group],
+        )
+    };
+    ProcessSpec {
+        program,
+        args: args.into_iter().map(OsString::from).collect(),
+        env: Vec::new(),
+        timeout: crate::consts::TREE_KILL_TIMEOUT,
+    }
+}
+
+#[cfg(test)]
+mod tests;

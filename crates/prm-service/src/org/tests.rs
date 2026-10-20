@@ -105,6 +105,49 @@ fn org_absorb_records_tenant_once() {
     assert_eq!(data.tenant.map(|t| t.discovered_at), Some(ts(10)));
 }
 
+const OVERRIDE: &str = "00000000-0000-0000-0000-0000000000d1";
+
+/// The override tenant was saved as a discovered tenant and stayed in use for a week after
+/// the user removed a wrong override.
+#[test]
+fn org_absorb_does_not_save_the_override_tenant() {
+    let profile = OrgProfile {
+        tenant: OVERRIDE.into(),
+        ..profile()
+    };
+    let mut data = OrgData::new(org(ORG), profile, None, None, ts(0));
+    let tenant = TenantInfo::from_id(uuid::Uuid::from_u128(0xd1));
+    data.absorb(
+        Fetched {
+            tenant: Some(tenant),
+            ..fetched(&[])
+        },
+        ts(10),
+    );
+    assert_eq!(data.tenant, None);
+}
+
+#[test]
+fn org_set_profile_override_change_forgets_saved_tenant() {
+    let mut data = data();
+    let tenant = TenantInfo::from_id(uuid::Uuid::from_u128(7));
+    data.absorb(
+        Fetched {
+            tenant: Some(tenant),
+            ..fetched(&[])
+        },
+        ts(10),
+    );
+    data.set_profile(profile(), ts(20));
+    assert!(data.tenant.is_some(), "unchanged override keeps the tenant");
+    let with_override = OrgProfile {
+        tenant: OVERRIDE.into(),
+        ..profile()
+    };
+    data.set_profile(with_override, ts(30));
+    assert_eq!(data.tenant, None);
+}
+
 #[test]
 fn org_persisted_roundtrip_keeps_baseline_and_records() {
     let mut data = data();

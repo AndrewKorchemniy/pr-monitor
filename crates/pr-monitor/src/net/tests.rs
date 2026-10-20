@@ -77,7 +77,6 @@ fn request() -> HttpRequest {
         url: url::Url::parse("https://dev.azure.com/contoso").expect("url"),
         headers: http::HeaderMap::new(),
         body: None,
-        timeout: None,
     }
 }
 

@@ -121,6 +121,10 @@ impl OrgData {
 
     /// Takes a new profile for the same org; labels and rules follow.
     pub(crate) fn set_profile(&mut self, profile: OrgProfile, now: Timestamp) {
+        if profile.tenant_override() != self.profile.tenant_override() {
+            // A tenant saved while an override was set may be the override: rediscover.
+            self.tenant = None;
+        }
         self.label = profile.display_label();
         self.classify = profile.classify_config();
         self.profile = profile;
@@ -157,7 +161,10 @@ impl OrgData {
     /// Applies a successful refresh and returns its change events (none on the baseline).
     pub(crate) fn absorb(&mut self, fetched: Fetched, now: Timestamp) -> Absorbed {
         self.me = Some(fetched.me);
+        // why: with an override the auth tenant *is* the override; saving it as discovered
+        // would keep it in use for `TENANT_TTL` after the override is removed.
         if let Some(info) = fetched.tenant
+            && self.profile.tenant_override().is_none()
             && self.tenant.is_none_or(|t| t.info != info)
         {
             self.tenant = Some(TenantCache {

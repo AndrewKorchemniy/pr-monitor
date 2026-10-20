@@ -7,21 +7,43 @@ use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use url::Url;
 
-#[derive(Clone, Debug)]
+/// One request. The body may hold secrets (refresh tokens, auth codes), so `Debug` shows only
+/// its length.
+#[derive(Clone)]
 pub struct HttpRequest {
     pub method: Method,
     pub url: Url,
     pub headers: HeaderMap,
     pub body: Option<Bytes>,
-    /// Overrides the transport's request timeout.
-    pub timeout: Option<Duration>,
 }
 
-#[derive(Clone, Debug)]
+impl std::fmt::Debug for HttpRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpRequest")
+            .field("method", &self.method)
+            .field("url", &self.url.as_str())
+            .field("headers", &self.headers)
+            .field("body_len", &self.body.as_ref().map(Bytes::len))
+            .finish()
+    }
+}
+
+/// One response. The body may hold tokens, so `Debug` shows only its length.
+#[derive(Clone)]
 pub struct HttpResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
+}
+
+impl std::fmt::Debug for HttpResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpResponse")
+            .field("status", &self.status)
+            .field("headers", &self.headers)
+            .field("body_len", &self.body.len())
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -104,9 +126,6 @@ impl HttpTransport for ReqwestTransport {
             .headers(request.headers);
         if let Some(body) = request.body {
             builder = builder.body(body);
-        }
-        if let Some(timeout) = request.timeout {
-            builder = builder.timeout(timeout);
         }
         let response = builder.send().await.map_err(map_error)?;
         let status = response.status();

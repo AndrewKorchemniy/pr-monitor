@@ -128,8 +128,9 @@ impl Entry {
     }
 }
 
-/// Whether a name carries any visible text.
-fn non_blank(s: &str) -> bool {
+/// Whether text carries anything but whitespace. The workspace's single "blank string" rule:
+/// names, unique names, paths and configured tenants all use it.
+pub fn non_blank(s: &str) -> bool {
     !s.trim().is_empty()
 }
 

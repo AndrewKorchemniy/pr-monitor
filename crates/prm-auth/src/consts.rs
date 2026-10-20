@@ -18,6 +18,8 @@ pub const AZ_LOGIN_TIMEOUT: Duration = prm_domain::auth::INTERACTIVE_SIGN_IN_TIM
 pub const ENTRA_SIGNIN_TIMEOUT: Duration = prm_domain::auth::INTERACTIVE_SIGN_IN_TIMEOUT;
 /// Assumed lifetime when `az` reports no expiry and the token isn't a readable JWT.
 pub const AZ_FALLBACK_LIFETIME: Duration = Duration::from_secs(300);
+/// Assumed lifetime when an Entra token response has no (or a zero) `expires_in`.
+pub const ENTRA_FALLBACK_LIFETIME: Duration = Duration::from_secs(300);
 /// A cached tenant is trusted for this long before rediscovery.
 pub const TENANT_TTL: Duration = Duration::from_hours(7 * 24);
 /// Bound on waiting for `taskkill` after a timeout or cancel.

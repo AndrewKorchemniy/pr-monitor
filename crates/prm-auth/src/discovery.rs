@@ -7,6 +7,8 @@ use http::{HeaderMap, Method};
 use prm_ado::{HttpTransport, OrgEndpoint, consts::H_RESOURCE_TENANT, http::HttpRequest};
 use prm_domain::auth::{AuthError, TenantInfo};
 
+use crate::source::network;
+
 pub struct TenantDiscovery {
     transport: Arc<dyn HttpTransport>,
 }
@@ -22,13 +24,8 @@ impl TenantDiscovery {
             url: endpoint.org_root(),
             headers: HeaderMap::new(),
             body: None,
-            timeout: None,
         };
-        let response = self
-            .transport
-            .send(request)
-            .await
-            .map_err(|e| AuthError::Network(e.to_string().into()))?;
+        let response = self.transport.send(request).await.map_err(network)?;
         if response.status.as_u16() == 404 {
             return Err(AuthError::Other(
                 "Azure DevOps doesn't know this organization.".into(),

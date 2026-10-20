@@ -129,8 +129,4 @@ impl SecretStore for DpapiFileStore {
             Err(error) => Err(unavailable(error)),
         }
     }
-
-    fn max_value_len(&self) -> Option<usize> {
-        None
-    }
 }

@@ -6,7 +6,8 @@ use super::*;
 fn skip_pager_short_page_continues_until_empty() {
     let mut pager = SkipPager::new(10);
     let (items, step) = pager.accept(vec![1, 2, 3], |x| *x);
-    assert_eq!((items.len(), step), (3, PageStep::Continue { skip: 3 }));
+    assert_eq!((items.len(), step), (3, PageStep::Continue));
+    assert_eq!(pager.skip(), 3);
     let (items, step) = pager.accept(Vec::<i32>::new(), |x| *x);
     assert_eq!((items.len(), step), (0, PageStep::Done));
 }

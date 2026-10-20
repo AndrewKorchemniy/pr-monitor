@@ -9,7 +9,7 @@ use prm_domain::{
         CommentDigest, CommentKind, MergeStatus, PrState, Project, PullRequest, Repository,
         Reviewer, ThreadDigest, ThreadStatus, Vote,
     },
-    person::{CandidateSource, PersonCandidate},
+    person::{CandidateSource, PersonCandidate, non_blank},
     view::text::{snippet, strip_ref_prefix},
 };
 
@@ -29,7 +29,7 @@ fn text(s: String) -> Arc<str> {
 }
 
 fn opt_text(s: Option<String>) -> Option<Arc<str>> {
-    s.filter(|v| !v.trim().is_empty()).map(Arc::from)
+    s.filter(|v| non_blank(v)).map(Arc::from)
 }
 
 pub(crate) fn person(d: IdentityRefDto) -> Person {
@@ -167,7 +167,6 @@ pub(crate) fn project(d: ProjectDto) -> Project {
     Project {
         id: ProjectId(d.id),
         name: text(d.name),
-        state: text(d.state.unwrap_or_default()),
     }
 }
 
@@ -196,7 +195,7 @@ pub(crate) fn ims_person(d: ImsIdentityDto) -> Person {
     let unique_name = property("Account").or_else(|| property("Mail"));
     let name = d
         .custom_display_name
-        .filter(|n| !n.trim().is_empty())
+        .filter(|n| non_blank(n))
         .or(d.provider_display_name)
         .unwrap_or_default();
     Person {

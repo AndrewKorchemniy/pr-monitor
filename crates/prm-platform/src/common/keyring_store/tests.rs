@@ -43,7 +43,6 @@ fn keyring_store_enforces_max() {
         store.set(&key(), &too_long),
         Err(SecretStoreError::TooLong(CREDMAN_LIMIT + 1))
     );
-    assert_eq!(store.max_value_len(), Some(CREDMAN_LIMIT));
 }
 
 #[test]

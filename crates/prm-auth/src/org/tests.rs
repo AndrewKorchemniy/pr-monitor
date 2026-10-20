@@ -34,12 +34,25 @@ struct Fixture {
 fn fixture(mode: AuthMode, signed_out: bool, override_tenant: bool) -> Fixture {
     let runner = Arc::new(FakeCommandRunner::default().answer("account", success(TOKEN_OK)));
     let secrets = Arc::new(InMemorySecretStore::default());
-    let clock: Arc<ManualClock> = Arc::new(ManualClock::new(ts(1_000)));
     let transport = Arc::new(FakeTransport::new([Scripted::json(401, "").header(
         "x-vss-resourcetenant",
         "00000000-0000-0000-0000-0000000000aa",
     )]));
-    let spec = AuthSpec {
+    let auth = build(
+        spec(mode, signed_out, override_tenant),
+        runner.clone(),
+        secrets.clone(),
+        transport,
+    );
+    Fixture {
+        auth,
+        runner,
+        secrets,
+    }
+}
+
+fn spec(mode: AuthMode, signed_out: bool, override_tenant: bool) -> AuthSpec {
+    AuthSpec {
         org: org("contoso"),
         endpoint: OrgEndpoint::new(org("contoso")),
         mode,
@@ -48,10 +61,19 @@ fn fixture(mode: AuthMode, signed_out: bool, override_tenant: bool) -> Fixture {
         entra: None,
         preferred: None,
         signed_out,
-    };
+    }
+}
+
+fn build(
+    spec: AuthSpec,
+    runner: Arc<FakeCommandRunner>,
+    secrets: Arc<dyn SecretStore>,
+    transport: Arc<FakeTransport>,
+) -> OrgAuth {
+    let clock: Arc<ManualClock> = Arc::new(ManualClock::new(ts(1_000)));
     let sources = Sources {
         az: Arc::new(AzureCliSource::new(
-            runner.clone(),
+            runner,
             AzLocator::fixed("az.cmd".into()),
             clock.clone(),
         )),
@@ -60,7 +82,7 @@ fn fixture(mode: AuthMode, signed_out: bool, override_tenant: bool) -> Fixture {
             None,
             EntraDeps {
                 transport: transport.clone(),
-                secrets: secrets.clone(),
+                secrets,
                 opener: Arc::new(RecordingUrlOpener::default()),
                 clock: clock.clone(),
             },
@@ -68,12 +90,7 @@ fn fixture(mode: AuthMode, signed_out: bool, override_tenant: bool) -> Fixture {
         )),
     };
     let cache = TokenCache::new(clock.clone(), TOKEN_SKEW, NEG_CACHE_TTL);
-    let auth = OrgAuth::new(spec, sources, cache, TenantDiscovery::new(transport), clock);
-    Fixture {
-        auth,
-        runner,
-        secrets,
-    }
+    OrgAuth::new(spec, sources, cache, TenantDiscovery::new(transport), clock)
 }
 
 #[tokio::test]
@@ -175,4 +192,80 @@ async fn org_auth_az_login_then_token() {
             .unwrap()
             .is_none()
     );
+}
+
+/// A failed tenant discovery used to send another `HEAD` before every request, even with a
+/// valid token cached.
+#[tokio::test]
+async fn org_auth_failed_discovery_not_repeated_per_request() {
+    let runner = Arc::new(FakeCommandRunner::default().answer("account", success(TOKEN_OK)));
+    let transport = Arc::new(FakeTransport::default());
+    let auth = build(
+        spec(AuthMode::AzureCli, false, false),
+        runner.clone(),
+        Arc::new(InMemorySecretStore::default()),
+        transport.clone(),
+    );
+    for _ in 0..3 {
+        auth.access_token(None).await.unwrap();
+    }
+    assert_eq!(transport.requests().len(), 1, "one discovery attempt");
+    assert_eq!(runner.specs().len(), 1, "one az run");
+    assert_eq!(auth.tenant(), None);
+}
+
+/// A store whose deletes of one key fail.
+#[derive(Debug)]
+struct FailingDelete {
+    inner: InMemorySecretStore,
+    key: SecretKey,
+}
+
+impl SecretStore for FailingDelete {
+    fn get(
+        &self,
+        key: &SecretKey,
+    ) -> Result<Option<prm_domain::secret::SecretBytes>, crate::secrets::SecretStoreError> {
+        self.inner.get(key)
+    }
+
+    fn set(&self, key: &SecretKey, value: &[u8]) -> Result<(), crate::secrets::SecretStoreError> {
+        self.inner.set(key, value)
+    }
+
+    fn delete(&self, key: &SecretKey) -> Result<(), crate::secrets::SecretStoreError> {
+        if *key == self.key {
+            return Err(crate::secrets::SecretStoreError::Unavailable(
+                "locked".into(),
+            ));
+        }
+        self.inner.delete(key)
+    }
+}
+
+/// A failed PAT delete used to skip deleting the Entra refresh token.
+#[tokio::test]
+async fn org_auth_sign_out_deletes_entra_token_when_pat_delete_fails() {
+    let secrets = Arc::new(FailingDelete {
+        inner: InMemorySecretStore::default(),
+        key: SecretKey::pat(&org("contoso")),
+    });
+    let refresh = SecretKey::entra_refresh(&org("contoso"));
+    secrets.set(&refresh, b"refresh-token").unwrap();
+    let auth = build(
+        spec(AuthMode::Auto, false, true),
+        Arc::new(FakeCommandRunner::default()),
+        secrets.clone(),
+        Arc::new(FakeTransport::default()),
+    );
+    assert!(auth.sign_out().await.is_err());
+    assert_eq!(secrets.get(&refresh).unwrap(), None);
+}
+
+#[tokio::test]
+async fn org_auth_cheap_accessors_match_snapshot() {
+    let f = fixture(AuthMode::AzureCli, false, true);
+    f.auth.access_token(None).await.unwrap();
+    assert_eq!(f.auth.method(), f.auth.snapshot().method);
+    assert_eq!(f.auth.tenant(), Some(TenantInfo::from_id(TENANT)));
 }

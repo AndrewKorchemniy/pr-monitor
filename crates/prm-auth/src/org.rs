@@ -57,7 +57,17 @@ pub trait OrgAuthenticator: Credential {
     async fn store_pat(&self, pat: Secret) -> Result<(), AuthError>;
     /// Deletes stored secrets; no silent sign-in until the user signs in again.
     async fn sign_out(&self) -> Result<(), AuthError>;
+    /// Everything the UI shows. Availability reads the secret store and looks for `az`, so it
+    /// blocks briefly; callers needing one field use `method` or `tenant`.
     fn snapshot(&self) -> AuthSnapshot;
+    /// The method that produced the last token, without the snapshot's store reads.
+    fn method(&self) -> Option<AuthMethod> {
+        self.snapshot().method
+    }
+    /// The tenant in use (the override when set), without the snapshot's store reads.
+    fn tenant(&self) -> Option<TenantInfo> {
+        self.snapshot().tenant
+    }
 }
 
 /// How to authenticate one org (from config and persisted state).
@@ -176,8 +186,15 @@ impl Credential for OrgAuth {
         if self.signed_out.load(Ordering::SeqCst) {
             return Err(AuthError::SignedOut);
         }
-        let ctx = self.context().await;
-        let token = self.cache.get(rejected, || self.acquire(&ctx)).await?;
+        // why: the tenant is resolved inside the single-flight acquisition, so a cached token
+        // never waits on discovery and a failed discovery is throttled by the negative cache.
+        let token = self
+            .cache
+            .get(rejected, || async move {
+                let ctx = self.context().await;
+                self.acquire(&ctx).await
+            })
+            .await?;
         self.remember(&token);
         Ok(token)
     }
@@ -221,8 +238,10 @@ impl OrgAuthenticator for OrgAuth {
         self.signed_out.store(true, Ordering::SeqCst);
         self.cache.invalidate().await;
         *self.last.lock().unwrap_or_else(PoisonError::into_inner) = None;
-        self.sources.pat.delete()?;
-        self.sources.entra.forget()
+        // Both deletes run even if the first fails; the first error is reported.
+        let pat = self.sources.pat.delete();
+        let entra = self.sources.entra.forget();
+        pat.and(entra)
     }
 
     fn snapshot(&self) -> AuthSnapshot {
@@ -239,6 +258,17 @@ impl OrgAuthenticator for OrgAuth {
                 entra_signed_in: self.sources.entra.has_refresh_token(),
             },
         }
+    }
+
+    fn method(&self) -> Option<AuthMethod> {
+        self.last
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .map(|(method, _)| method)
+    }
+
+    fn tenant(&self) -> Option<TenantInfo> {
+        *self.tenant.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

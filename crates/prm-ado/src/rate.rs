@@ -42,16 +42,11 @@ impl RateSnapshot {
     }
 }
 
-#[derive(Debug, Default)]
-struct GateState {
-    not_before: Option<Instant>,
-    snapshot: RateSnapshot,
-}
-
-/// Shared by all requests of one org. The lock is never held across an `.await`.
+/// Shared by all requests of one org. The lock is never held across an `.await`. Requests
+/// wait out the snapshot's `throttled_until`, so what the UI shows is what the gate enforces.
 #[derive(Debug, Default)]
 pub struct RateGate {
-    state: Mutex<GateState>,
+    state: Mutex<RateSnapshot>,
 }
 
 impl RateGate {
@@ -67,8 +62,7 @@ impl RateGate {
         if let Some(wait) = parse_retry_after(headers) {
             self.push(wait);
         }
-        let mut state = self.lock();
-        let snap = &mut state.snapshot;
+        let mut snap = self.lock();
         snap.limit = header_f64(headers, H_RL_LIMIT).or(snap.limit);
         snap.remaining = header_f64(headers, H_RL_REMAINING).or(snap.remaining);
         snap.delay_applied = header_f64(headers, H_RL_DELAY);
@@ -83,23 +77,22 @@ impl RateGate {
     /// Makes every request wait at least `wait` from now.
     pub fn push(&self, wait: Duration) {
         let until = Instant::now() + wait.min(MAX_RETRY_AFTER);
-        let mut state = self.lock();
-        let later = state
-            .not_before
+        let mut snap = self.lock();
+        let later = snap
+            .throttled_until
             .map_or(until, |existing| existing.max(until));
-        state.not_before = Some(later);
-        state.snapshot.throttled_until = Some(later);
+        snap.throttled_until = Some(later);
     }
 
     pub fn snapshot(&self) -> RateSnapshot {
-        self.lock().snapshot.clone()
+        self.lock().clone()
     }
 
     fn not_before(&self) -> Option<Instant> {
-        self.lock().not_before
+        self.lock().throttled_until
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, RateSnapshot> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

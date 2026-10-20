@@ -133,7 +133,7 @@ async fn refresh(ctx: RefreshCtx) -> Result<RefreshOutput, RefreshFailure> {
     scope_stats.repos_failed = failed_repo_count(&scope, &listed.failed);
     let fetched = Fetched {
         me,
-        tenant: ctx.auth.snapshot().tenant,
+        tenant: ctx.auth.tenant(),
         catalog: refetched.then_some(catalog),
         scope_stats,
         scope_issues: scope.issues,
@@ -185,7 +185,9 @@ pub(crate) async fn fetch_catalog(api: &dyn AdoApi, now: Timestamp) -> Result<Ca
     })
 }
 
-/// The org-wide query is used only when opted in and a probe passed within the last day.
+/// The org-wide query is used only when opted in and a probe passed within the last day. A
+/// probe that failed without a verdict (auth, network, throttling) keeps the previous result,
+/// so the next refresh probes again instead of falling back for a day.
 async fn org_wide_probe(ctx: &RefreshCtx, catalog: &Catalog) -> Option<ProbeCache> {
     if !ctx.profile.org_wide_query {
         return ctx.org_wide;
@@ -197,11 +199,16 @@ async fn org_wide_probe(ctx: &RefreshCtx, catalog: &Catalog) -> Option<ProbeCach
     {
         return Some(cached);
     }
-    let probe = ctx.api.probe_org_wide(catalog.projects.len()).await;
-    Some(ProbeCache {
-        ok: matches!(probe, Ok(OrgWideProbe::Supported)),
-        at: now,
-    })
+    match ctx.api.probe_org_wide(catalog.projects.len()).await {
+        Ok(probe) => Some(ProbeCache {
+            ok: probe == OrgWideProbe::Supported,
+            at: now,
+        }),
+        Err(error) => {
+            tracing::info!(org = %ctx.org, error = %error, "org-wide probe failed; will retry");
+            ctx.org_wide
+        }
+    }
 }
 
 struct Listed {
@@ -407,3 +414,6 @@ fn failed_repo_count(scope: &ResolvedScope, failed: &[(PrQuery, AdoError)]) -> u
         .count();
     count(failed_repos)
 }
+
+#[cfg(test)]
+mod tests;

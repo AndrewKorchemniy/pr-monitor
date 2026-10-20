@@ -5,7 +5,6 @@ pub(crate) fn catalog() -> Catalog {
     let proj = |n: u128, name: &str| Project {
         id: ProjectId::from_u128(n),
         name: name.into(),
-        state: "wellFormed".into(),
     };
     let repo = |n: u128, p: u128, name: &str, disabled: bool, maint: bool| Repository {
         id: RepoId::from_u128(n),

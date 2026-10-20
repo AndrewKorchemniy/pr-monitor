@@ -74,10 +74,6 @@ impl SecretStore for KeyringSecretStore {
             Err(error) => Err(map_keyring_error(&error, 0)),
         }
     }
-
-    fn max_value_len(&self) -> Option<usize> {
-        self.max
-    }
 }
 
 #[cfg(test)]
