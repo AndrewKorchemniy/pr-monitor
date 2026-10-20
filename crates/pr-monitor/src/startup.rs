@@ -1,13 +1,17 @@
-//! Startup, in a fixed order: arguments, data root, the single-instance lock (a second launch
-//! forwards and exits before any logging or GPU work), files and logging, shell identity,
-//! activation, config, the service, the renderer, the window; then shutdown or a relaunch.
+//! Startup, in a fixed order: the panic hook, arguments, data root, the single-instance lock (a
+//! second launch forwards and exits before any logging or GPU work, or takes over from a primary
+//! that is quitting), files and logging, shell identity, activation, config, the service, the
+//! renderer, the window; then shutdown or a relaunch.
 
 use std::{
     ffi::OsString,
     io::Write as _,
     path::PathBuf,
     process::ExitCode,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -32,7 +36,8 @@ use crate::{
     cli::{self, Args, Mode},
     copy, logging, net, panic,
     renderer::{
-        MarkerFile, RendererChoice, RendererInputs, choose_renderer, is_renderer_init_error,
+        GLOW_FAILED, MarkerFile, RendererChoice, RendererInputs, choose_renderer,
+        is_renderer_init_error,
     },
     self_test,
     shutdown::{self, Held},
@@ -49,8 +54,47 @@ pub(crate) const EXIT_NOT_RESPONDING: u8 = 4;
 const PARENT_EXIT_WAIT: Duration = Duration::from_secs(5);
 /// A secondary gives a starting primary this long to accept the connection.
 const FORWARD_BUDGET: Duration = Duration::from_secs(2);
+/// With no primary listening, a launch waits this long for a quitting one to release the lock.
+const HANDOFF: Duration = Duration::from_secs(5);
 const LOCK_RETRY: Duration = Duration::from_millis(100);
 const CRASH_LOGS_KEPT: usize = 10;
+
+/// What this process knows from its first line on.
+struct Launch {
+    started: Instant,
+    /// True until the first frame (from `panic::install`).
+    init_phase: Arc<AtomicBool>,
+}
+
+/// What a second launch does after trying to reach the primary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Next {
+    /// The primary has the request.
+    Done,
+    Fatal(String),
+    NotResponding,
+    /// Nobody is listening: the primary is quitting (or crashed), so wait for the lock.
+    TakeOver,
+}
+
+pub(crate) fn after_forward(outcome: ForwardOutcome) -> Next {
+    match outcome {
+        ForwardOutcome::Delivered => Next::Done,
+        ForwardOutcome::Rejected(reason) => Next::Fatal(reason),
+        ForwardOutcome::NoPrimary => Next::TakeOver,
+        ForwardOutcome::NotResponding => Next::NotResponding,
+    }
+}
+
+/// A renderer that failed to start gets one relaunch with the other, but only before the first
+/// frame: after that the window worked and a relaunch would hide a real bug.
+pub(crate) const fn should_relaunch(
+    init_error: bool,
+    already_relaunched: bool,
+    first_frame_seen: bool,
+) -> bool {
+    init_error && !already_relaunched && !first_frame_seen
+}
 
 /// What this launch does, decided from the arguments alone.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,7 +126,10 @@ pub(crate) fn forward_request(args: &Args) -> Option<HandoffRequest> {
 }
 
 pub(crate) fn run() -> ExitCode {
-    let started = Instant::now();
+    let launch = Launch {
+        init_phase: panic::install(),
+        started: Instant::now(),
+    };
     let args = match cli::parse_args(std::env::args_os().skip(1)) {
         Ok(args) => args,
         Err(error) => {
@@ -100,8 +147,14 @@ pub(crate) fn run() -> ExitCode {
         console::attach_parent_console(args.debug);
     }
     match plan(&args) {
-        StartupPlan::Print(text) => print_line(&text),
-        StartupPlan::SelfTest => self_test::run(),
+        StartupPlan::Print(text) => {
+            panic::suppress_dialogs();
+            print_line(&text)
+        }
+        StartupPlan::SelfTest => {
+            panic::suppress_dialogs();
+            self_test::run()
+        }
         StartupPlan::Unregister { purge } => match data_root(&args) {
             Ok((root, scope, home)) => unregister::run(&root, scope, purge, home.as_deref()),
             Err(error) => fatal(&error),
@@ -114,7 +167,7 @@ pub(crate) fn run() -> ExitCode {
                     scope,
                     home,
                 },
-                started,
+                &launch,
             ),
             Err(error) => fatal(&error),
         },
@@ -173,29 +226,44 @@ fn acquire(root: &Root, budget: Option<Duration>) -> Result<(Acquired, InstanceK
     }
 }
 
-fn primary_or_forward(args: &Args, root: Root, started: Instant) -> ExitCode {
+fn primary_or_forward(args: &Args, root: Root, launch: &Launch) -> ExitCode {
     if let Some(pid) = args.relaunched_after {
         prm_platform::process::wait_for_exit(pid, PARENT_EXIT_WAIT);
     }
     match acquire(&root, args.relaunched_after.map(|_| PARENT_EXIT_WAIT)) {
-        Ok((Acquired::Primary(lock), key)) => primary(args, &root, lock, &key, started),
-        Ok((Acquired::Secondary, key)) => forward(&key, args),
+        Ok((Acquired::Primary(lock), key)) => primary(args, &root, lock, &key, launch),
+        Ok((Acquired::Secondary, key)) => forward(args, &root, &key, launch),
         Err(error) => fatal(&error),
     }
 }
 
-fn forward(key: &InstanceKey, args: &Args) -> ExitCode {
+fn forward(args: &Args, root: &Root, key: &InstanceKey, launch: &Launch) -> ExitCode {
     let Some(request) = forward_request(args) else {
         return ExitCode::SUCCESS;
     };
-    match forward_to_primary(key, &request, FORWARD_BUDGET) {
-        ForwardOutcome::Delivered | ForwardOutcome::NoPrimary => ExitCode::SUCCESS,
-        ForwardOutcome::Rejected(reason) => fatal(&reason),
-        ForwardOutcome::NotResponding => {
-            console::fatal_dialog(copy::STARTUP_FAILED, copy::NOT_RESPONDING);
-            ExitCode::from(EXIT_NOT_RESPONDING)
-        }
+    match after_forward(forward_to_primary(key, &request, FORWARD_BUDGET)) {
+        Next::Done => ExitCode::SUCCESS,
+        Next::Fatal(reason) => fatal(&reason),
+        Next::NotResponding => not_responding(),
+        Next::TakeOver => take_over(args, root, launch),
     }
+}
+
+/// The primary stopped listening (it is quitting): wait for its lock and become the primary.
+fn take_over(args: &Args, root: &Root, launch: &Launch) -> ExitCode {
+    match acquire(root, Some(HANDOFF)) {
+        Ok((Acquired::Primary(lock), key)) => {
+            tracing::info!("took over from a primary that was quitting");
+            primary(args, root, lock, &key, launch)
+        }
+        Ok((Acquired::Secondary, _)) => not_responding(),
+        Err(error) => fatal(&error),
+    }
+}
+
+fn not_responding() -> ExitCode {
+    console::fatal_dialog(copy::STARTUP_FAILED, copy::NOT_RESPONDING);
+    ExitCode::from(EXIT_NOT_RESPONDING)
 }
 
 fn env_flag(name: &str) -> bool {
@@ -207,7 +275,6 @@ struct Base {
     paths: AppPaths,
     clock: Arc<dyn Clock>,
     log: logging::LogHandle,
-    init_phase: Arc<AtomicBool>,
     registration: RegistrationReport,
     exe: PathBuf,
 }
@@ -218,13 +285,13 @@ fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
         console::fatal_dialog(copy::DATA_FOLDER, &error.to_string());
         return Err(ExitCode::FAILURE);
     }
+    panic::set_log_dir(&paths.logs);
     // why: the local UTC offset must be read before other threads start (time crate soundness).
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
     let log = logging::init(&paths.logs, args.debug, std::env::var(ENV_LOG).ok());
     if !log.file_ok {
         tracing::warn!("log files unavailable; logging to the console only");
     }
-    let init_phase = panic::install(&paths.logs);
     panic::prune_crash_logs(&paths.logs, CRASH_LOGS_KEPT);
     let exe =
         std::env::current_exe().unwrap_or_else(|_| PathBuf::from(prm_domain::app::APP_EXE_NAME));
@@ -239,7 +306,6 @@ fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
         paths,
         clock,
         log,
-        init_phase,
         registration,
         exe,
     })
@@ -382,7 +448,7 @@ fn primary(
     root: &Root,
     lock: InstanceLock,
     key: &InstanceKey,
-    started: Instant,
+    launch: &Launch,
 ) -> ExitCode {
     let base = match base(args, root) {
         Ok(base) => base,
@@ -393,7 +459,7 @@ fn primary(
         Ok(running) => running,
         Err(code) => return code,
     };
-    tracing::info!(ms = started.elapsed().as_millis(), "service started");
+    tracing::info!(ms = launch.started.elapsed().as_millis(), "service started");
     let (choice, marker) = renderer(args, &base.paths, &running);
     let result = ui_launch::run(LaunchCtx {
         choice,
@@ -409,14 +475,14 @@ fn primary(
         waker: act.waker,
         quit: act.quit,
         marker: Arc::clone(&marker),
-        init_phase: base.init_phase,
+        init_phase: Arc::clone(&launch.init_phase),
     });
     let held = Held {
         handle: running.handle,
         handoff: act.handoff,
         lock,
     };
-    finish(args, result, choice.kind, (held, &marker), started)
+    finish(args, result, choice.kind, (held, &marker), launch)
 }
 
 /// Picks the renderer and records the attempt (so a crash before the first frame counts).
@@ -425,14 +491,18 @@ fn renderer(args: &Args, paths: &AppPaths, running: &Running) -> (RendererChoice
         paths.cache.join("renderer.json"),
         build_info::VERSION,
     ));
+    let previous = marker.load();
     let choice = choose_renderer(&RendererInputs {
         cli: args.renderer,
         config: running.renderer_pref,
         remote: running.remote,
         arch: std::env::consts::ARCH,
-        marker: marker.load().as_ref(),
+        marker: previous.as_ref(),
         version: build_info::VERSION,
     });
+    if choice.reason == GLOW_FAILED {
+        tracing::warn!(marker = ?previous, "OpenGL failed before on this version; using wgpu");
+    }
     tracing::info!(
         renderer = choice.kind.as_arg(),
         reason = choice.reason,
@@ -447,11 +517,18 @@ fn finish(
     result: Result<(), eframe::Error>,
     tried: prm_ui::RendererKind,
     (held, marker): (Held, &MarkerFile),
-    started: Instant,
+    launch: &Launch,
 ) -> ExitCode {
+    let first_frame_seen = !launch.init_phase.load(Ordering::Relaxed);
     match result {
-        Ok(()) => shutdown::graceful(held, started),
-        Err(error) if is_renderer_init_error(&error, tried) && args.relaunched_after.is_none() => {
+        Ok(()) => shutdown::graceful(held, launch.started),
+        Err(error)
+            if should_relaunch(
+                is_renderer_init_error(&error, tried),
+                args.relaunched_after.is_some(),
+                first_frame_seen,
+            ) =>
+        {
             tracing::warn!(%error, renderer = tried.as_arg(), "renderer failed; relaunching with the other one");
             marker.mark_failed(tried);
             let relaunch: Vec<OsString> =
@@ -459,12 +536,14 @@ fn finish(
             shutdown::fallback_relaunch(held, relaunch)
         }
         Err(error) => {
-            tracing::error!(%error, "the window failed");
-            console::fatal_dialog(
-                copy::STARTUP_FAILED,
-                &copy::graphics_failed(&error.to_string()),
-            );
-            let _ = shutdown::graceful(held, started);
+            tracing::error!(%error, first_frame_seen, "the window failed");
+            let detail = error.to_string();
+            if first_frame_seen {
+                console::fatal_dialog(copy::CRASHED_TITLE, &copy::crashed(&detail, None));
+            } else {
+                console::fatal_dialog(copy::STARTUP_FAILED, &copy::graphics_failed(&detail));
+            }
+            let _ = shutdown::graceful(held, launch.started);
             ExitCode::FAILURE
         }
     }

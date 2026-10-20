@@ -47,3 +47,42 @@ fn a_second_launch_forwards_links_shows_or_stays_quiet() {
     assert_eq!(forward_request(&autostart), None);
     assert_eq!(forward_request(&Args::default()), Some(HandoffRequest::Show));
 }
+
+#[test]
+fn after_forward_takes_over_only_when_nobody_listens() {
+    let cases = [
+        (ForwardOutcome::Delivered, Next::Done),
+        (
+            ForwardOutcome::Rejected("bad request".to_owned()),
+            Next::Fatal("bad request".to_owned()),
+        ),
+        (ForwardOutcome::NoPrimary, Next::TakeOver),
+        (ForwardOutcome::NotResponding, Next::NotResponding),
+    ];
+    for (outcome, expected) in cases {
+        let label = format!("{outcome:?}");
+        assert_eq!(after_forward(outcome), expected, "{label}");
+    }
+}
+
+#[test]
+fn should_relaunch_only_for_a_first_init_error_before_the_first_frame() {
+    // (init_error, already_relaunched, first_frame_seen) -> relaunch
+    let cases = [
+        ((true, false, false), true),
+        ((true, true, false), false),
+        ((true, false, true), false),
+        ((true, true, true), false),
+        ((false, false, false), false),
+        ((false, true, false), false),
+        ((false, false, true), false),
+        ((false, true, true), false),
+    ];
+    for ((init_error, relaunched, frame), expected) in cases {
+        assert_eq!(
+            should_relaunch(init_error, relaunched, frame),
+            expected,
+            "init_error={init_error} already_relaunched={relaunched} first_frame_seen={frame}"
+        );
+    }
+}

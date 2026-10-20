@@ -1,18 +1,24 @@
-//! Panics: a crash log next to the logs (first five only), a dialog while starting up, then the
-//! default hook. Background panics in jobs are caught by the service; the tray keeps running.
+//! Panics: one hook, installed first. A crash log next to the logs once their folder is known
+//! (first five only); one dialog for a main-thread panic (startup or after the window was up);
+//! then the default hook. Background panics in jobs are caught by the service.
 
 use std::{
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 
-use crate::{build_info, logging::redact::redact};
+use crate::{build_info, copy, logging::redact::redact};
 
 /// Crash files written per run.
 const MAX_REPORTS: u32 = 5;
+
+/// Where crash reports go; unset until the data folder exists (no reports before that).
+static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+/// Only the first main-thread panic shows a dialog.
+static SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// What a crash report says.
 pub(crate) struct CrashInfo<'a> {
@@ -21,6 +27,15 @@ pub(crate) struct CrashInfo<'a> {
     pub thread: &'a str,
     pub image_base: Option<usize>,
     pub backtrace: &'a str,
+}
+
+/// Which dialog a panic shows.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PanicDialog {
+    /// Before the first frame.
+    Startup,
+    /// After the window was up (otherwise the tray icon would just disappear).
+    Crashed,
 }
 
 /// Plain text; `image_base` lets a PDB symbolize the addresses offline.
@@ -40,44 +55,92 @@ pub(crate) fn crash_report(info: &CrashInfo<'_>) -> String {
     )
 }
 
-/// Installs the hook; the returned flag is true until the first frame (dialogs only then).
-pub(crate) fn install(logs: &Path) -> Arc<AtomicBool> {
+/// Only main-thread panics show a dialog, and only the first one (`shown` is set by the call).
+pub(crate) fn panic_dialog(
+    in_init: bool,
+    on_main: bool,
+    shown: &AtomicBool,
+) -> Option<PanicDialog> {
+    if !on_main || shown.swap(true, Ordering::Relaxed) {
+        return None;
+    }
+    Some(if in_init {
+        PanicDialog::Startup
+    } else {
+        PanicDialog::Crashed
+    })
+}
+
+/// No panic dialogs from now on (console-only modes, which also run unattended in CI).
+pub(crate) fn suppress_dialogs() {
+    SHOWN.store(true, Ordering::Relaxed);
+}
+
+/// Crash reports go to `logs` from now on (the first call wins).
+pub(crate) fn set_log_dir(logs: &Path) {
+    let _ = LOG_DIR.set(logs.to_path_buf());
+}
+
+/// Installs the hook; the returned flag is true until the first frame.
+pub(crate) fn install() -> Arc<AtomicBool> {
     let init_phase = Arc::new(AtomicBool::new(true));
-    let count = Arc::new(AtomicU32::new(0));
-    let dir = logs.to_path_buf();
+    let count = AtomicU32::new(0);
     let in_init = Arc::clone(&init_phase);
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
         let thread = std::thread::current();
         let name = thread.name().unwrap_or("unnamed");
         let message = panic.payload_as_str().unwrap_or("non-string panic payload");
-        if count.fetch_add(1, Ordering::Relaxed) < MAX_REPORTS {
-            write_report(
-                &dir,
-                &CrashInfo {
-                    message,
-                    location: panic.location().map(ToString::to_string),
-                    thread: name,
-                    image_base: prm_platform::process::image_base(),
-                    backtrace: &std::backtrace::Backtrace::force_capture().to_string(),
-                },
-            );
-        }
+        let report = LOG_DIR
+            .get()
+            .filter(|_| count.fetch_add(1, Ordering::Relaxed) < MAX_REPORTS)
+            .and_then(|dir| {
+                write_report(
+                    dir,
+                    &CrashInfo {
+                        message,
+                        location: panic.location().map(ToString::to_string),
+                        thread: name,
+                        image_base: prm_platform::process::image_base(),
+                        backtrace: &std::backtrace::Backtrace::force_capture().to_string(),
+                    },
+                )
+            });
         tracing::error!(target: "panic", thread = name, message, "panic");
-        if in_init.load(Ordering::Relaxed) && name == "main" {
-            prm_platform::console::fatal_dialog("PR Monitor couldn't start", message);
-        }
+        show_dialog(
+            panic_dialog(in_init.load(Ordering::Relaxed), name == "main", &SHOWN),
+            message,
+            report.as_deref(),
+        );
         default(panic);
     }));
     init_phase
 }
 
-fn write_report(dir: &Path, info: &CrashInfo<'_>) {
+fn show_dialog(dialog: Option<PanicDialog>, message: &str, report: Option<&Path>) {
+    match dialog {
+        Some(PanicDialog::Startup) => {
+            prm_platform::console::fatal_dialog(copy::STARTUP_FAILED, message);
+        }
+        Some(PanicDialog::Crashed) => {
+            prm_platform::console::fatal_dialog(
+                copy::CRASHED_TITLE,
+                &copy::crashed(message, report),
+            );
+        }
+        None => {}
+    }
+}
+
+/// Writes one redacted report; the path when it was written.
+pub(crate) fn write_report(dir: &Path, info: &CrashInfo<'_>) -> Option<PathBuf> {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let path = dir.join(format!("crash-{secs}-{}.log", std::process::id()));
-    let _ = std::fs::write(path, redact(&crash_report(info)).as_bytes());
+    std::fs::write(&path, redact(&crash_report(info)).as_bytes())
+        .ok()
+        .map(|()| path)
 }
 
 /// Keeps the newest `keep` crash logs.

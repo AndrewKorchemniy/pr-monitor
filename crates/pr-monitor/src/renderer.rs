@@ -42,6 +42,16 @@ const fn explicit(pref: RendererPref) -> Option<RendererKind> {
     }
 }
 
+/// OpenGL failed on this version: recorded as failed, or attempted without reaching a frame.
+/// Both `choose_renderer` and `MarkerFile::begin` use it, so a crashed OpenGL start is not
+/// forgotten after one good wgpu run.
+pub(crate) fn glow_broke(m: &GpuMarker, version: &str) -> bool {
+    m.version == version && (m.glow_failed || (m.attempt == Some(RendererKind::Glow) && !m.ok))
+}
+
+/// The reason when OpenGL failed on this version (logged at warn with the marker).
+pub(crate) const GLOW_FAILED: &str = "previous OpenGL failure";
+
 /// The first rule that applies wins.
 pub(crate) fn choose_renderer(input: &RendererInputs<'_>) -> RendererChoice {
     let choice = |kind, reason| RendererChoice { kind, reason };
@@ -57,12 +67,8 @@ pub(crate) fn choose_renderer(input: &RendererInputs<'_>) -> RendererChoice {
     if input.remote {
         return choice(RendererKind::Wgpu, "remote session");
     }
-    let glow_broke = input.marker.is_some_and(|m| {
-        m.version == input.version
-            && (m.glow_failed || (m.attempt == Some(RendererKind::Glow) && !m.ok))
-    });
-    if glow_broke {
-        return choice(RendererKind::Wgpu, "previous OpenGL failure");
+    if input.marker.is_some_and(|m| glow_broke(m, input.version)) {
+        return choice(RendererKind::Wgpu, GLOW_FAILED);
     }
     choice(RendererKind::Glow, "default")
 }
@@ -100,9 +106,7 @@ impl MarkerFile {
 
     /// Before the window opens: an attempt that never reaches `mark_ok` counts as a failure.
     pub(crate) fn begin(&self, kind: RendererKind) {
-        let glow_failed = self
-            .load()
-            .is_some_and(|m| m.version == self.version && m.glow_failed);
+        let glow_failed = self.load().is_some_and(|m| glow_broke(&m, self.version));
         self.save(&GpuMarker {
             version: self.version.to_owned(),
             attempt: Some(kind),

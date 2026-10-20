@@ -28,7 +28,7 @@ use crate::{
     link::{ServiceLink, StateCheck},
     notices::NoticeStack,
     render::{
-        AdapterFacts, RenderEnv, adapter_facts,
+        AdapterFacts, RenderEnv, RendererKind, adapter_facts,
         hover_bands::HoverBands,
         policy::{RenderFacts, RenderPolicy},
         repaint::{RepaintInputs, next_repaint},
@@ -101,6 +101,7 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
     let mut link = ServiceLink::new(init.commands, init.state, init.events);
     let state = link.latest();
     let adapter = adapter_facts(cc);
+    log_graphics(init.render, adapter.as_ref());
     if init.start_hidden {
         init.host.set_cloaked(cc, true);
     }
@@ -164,6 +165,17 @@ fn restore_dashboard(state: &AppState, row_pitch: f32) -> DashboardUi {
         width: ui.peek_width,
     };
     DashboardUi::new(view, peek)
+}
+
+/// One line a support request can quote: the GPU, the renderer and why it was picked.
+fn log_graphics(render: RenderEnv, adapter: Option<&AdapterFacts>) {
+    tracing::info!(
+        adapter = ?adapter,
+        renderer = render.renderer.as_arg(),
+        fallback_from = render.fallback_from.map(RendererKind::as_arg),
+        remote_session = render.remote_session,
+        "graphics ready"
+    );
 }
 
 fn resolve_policy(
