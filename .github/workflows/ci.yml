@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "37 5 * * 1"           # weekly drift run (toolchain, runner images, tool pins)
   workflow_dispatch:
 
 permissions:
@@ -51,13 +53,13 @@ jobs:
         with:
           persist-credentials: false
       - if: runner.os == 'Linux'
-        uses: ./.github/actions/linux-deps
+        uses: ./.github/actions/linux-deps   # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest@0.9.148    # exact pin; Dependabot does not bump install-action tools
       - run: cargo lint
       - run: cargo t --profile ci
       - run: cargo test --workspace --doc --all-features --locked
@@ -81,7 +83,7 @@ jobs:
       - run: cargo check --workspace --all-targets --all-features --locked
 
   hygiene:
-    name: hygiene (typos, deny, shear, zizmor)
+    name: hygiene (typos, deny, shear, zizmor, actionlint)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -94,7 +96,8 @@ jobs:
           cache: false
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-deny,cargo-shear
+          # exact pins; Dependabot does not bump these (keep cargo-deny in step with audit.yml)
+          tool: cargo-deny@0.20.2,cargo-shear@1.14.0
       - name: cargo deny (bans, licenses, sources) per target
         run: |
           for t in x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu aarch64-apple-darwin; do
@@ -108,9 +111,24 @@ jobs:
           if grep -rnE '^\s*mod tests\s*\{' crates --include=*.rs; then echo "::error::tests must live in <module>/tests.rs"; exit 1; fi
           if grep -rn "thread::sleep" crates --include=tests.rs || grep -rn "thread::sleep" crates/*/src/tests; then echo "::error::no sleeps in tests"; exit 1; fi
           if find crates -name mod.rs | grep .; then echo "::error::use foo.rs + foo/, not mod.rs"; exit 1; fi
+      - name: actionlint (workflow syntax + shellcheck)
+        env:
+          # install-action has no actionlint manifest at the pinned SHA; exact release + checksum instead.
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8   # linux_amd64.tar.gz
+        run: |
+          set -euo pipefail
+          f="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          d="$RUNNER_TEMP/actionlint"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 -o "$d/$f" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$f"
+          echo "$ACTIONLINT_SHA256  $d/$f" | sha256sum -c -
+          tar -xzf "$d/$f" -C "$d" actionlint
+          "$d/actionlint" -color      # runs the preinstalled ubuntu-latest ShellCheck on run: blocks
       - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
           advanced-security: false   # fail the job on findings
+          version: "1.31.1"          # exact pin (default is latest, so new audits could break CI); not bumped by Dependabot
 
   build-windows:
     name: build (windows-x64, release)
@@ -144,7 +162,6 @@ jobs:
 
   build-windows-arm64:
     name: build (windows-arm64, release)
-    if: github.event_name != 'pull_request'     # main only; arm runner queues are slower
     runs-on: windows-11-arm
     timeout-minutes: 60
     steps:

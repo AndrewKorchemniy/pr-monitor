@@ -4,9 +4,17 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      mode:
+        description: >-
+          dry-run: build, verify and upload dist/ as an artifact (no release touched).
+          release-current (main only): draft v<crates/pr-monitor version> at this commit, build, attest, upload, then go-live.
+          recover: rebuild an existing DRAFT release named by `tag`.
+        type: choice
+        options: [dry-run, release-current, recover]
+        default: dry-run
       tag:
-        description: "Recovery only: existing tag whose DRAFT release should be rebuilt and published (e.g. v0.3.0)"
-        required: true
+        description: "recover only: tag of the existing DRAFT release to rebuild (e.g. v0.3.0)"
+        required: false
         type: string
 
 permissions: {}
@@ -46,7 +54,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/linux-deps    # insurance in case release-plz compiles the crate [UNVERIFIED]
+      # linux-deps: insurance in case release-plz compiles the crate [UNVERIFIED]
+      - uses: ./.github/actions/linux-deps    # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
@@ -62,12 +71,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write              # push tag + create draft release
+      contents: write              # push tag + create draft release (release-plz, release-current)
       pull-requests: read          # detect the merged release PR
+    concurrency:                   # serialize dispatches (no duplicate drafts); push runs get a unique group so none is ever cancelled
+      group: release-meta-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.run_id }}
+      cancel-in-progress: false
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       ref: ${{ steps.meta.outputs.ref }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,25 +99,72 @@ jobs:
       - id: meta
         env:
           EVENT: ${{ github.event_name }}
+          MODE: ${{ inputs.mode }}
           INPUT_TAG: ${{ inputs.tag }}
           RELEASES: ${{ steps.rp.outputs.releases }}
           SHA: ${{ github.sha }}
+          GIT_REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          SIGNING: ${{ vars.SIGNING_PROVIDER }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = workflow_dispatch ]; then
-            [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::bad tag '$INPUT_TAG'"; exit 1; }
-            tag="$INPUT_TAG"; ref="refs/tags/$INPUT_TAG"
-          else
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          # The release (drafts included; a draft has no git tag yet) named $1 as JSON, or nothing.
+          release_json() {
+            gh api --paginate "repos/$REPO/releases?per_page=100" | jq -cs --arg t "$1" '[.[][] | select(.tag_name == $t)][0] // empty'
+          }
+          tag_exists() { gh api "repos/$REPO/git/ref/tags/$1" --silent 2>/dev/null || git rev-parse -q --verify "refs/tags/$1" >/dev/null; }
+          dry_run=false
+          if [ "$EVENT" = push ]; then
             tag=$(jq -r '[.[] | select(.package_name == "pr-monitor") | .tag][0] // empty' <<<"${RELEASES:-[]}")
-            ref="$SHA"
+            version="${tag#v}"; ref="$SHA"
+          else
+            version=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name == "pr-monitor") | .version')
+            case "$MODE" in
+              dry-run)
+                dry_run=true; tag=""; ref="$SHA"
+                ;;
+              release-current)
+                [ "$GIT_REF" = refs/heads/main ] || { echo "::error::release-current runs only on main (got $GIT_REF)"; exit 1; }
+                tag="v$version"; ref="$SHA"
+                [[ "$tag" =~ $semver ]] || { echo "::error::bad version '$version' in crates/pr-monitor/Cargo.toml"; exit 1; }
+                existing=$(release_json "$tag")
+                if [ -n "$existing" ] || tag_exists "$tag"; then
+                  echo "::error::release or tag $tag already exists; bump the version in crates/pr-monitor/Cargo.toml (or use mode recover for an unpublished draft)"
+                  exit 1
+                fi
+                notes="Verify: \`gh attestation verify pr-monitor-windows-x64.exe -R $REPO\` · checksums in \`SHA256SUMS.txt\` · PDBs attached for crash symbolization."
+                if [ "$SIGNING" != signpath ] && [ "$SIGNING" != azure ]; then
+                  notes="Binaries are not code-signed yet; Windows SmartScreen may warn (More info > Run anyway)."$'\n\n'"$notes"
+                fi
+                gh release create "$tag" -R "$REPO" --draft --target "$SHA" \
+                  --title "PR Monitor $tag" --notes "$notes" --generate-notes
+                ;;
+              recover)
+                [[ "$INPUT_TAG" =~ $semver ]] || { echo "::error::bad tag '$INPUT_TAG'"; exit 1; }
+                tag="$INPUT_TAG"; version="${tag#v}"
+                rel=$(release_json "$tag")
+                draft=missing; [ -z "$rel" ] || draft=$(jq -r '.draft' <<<"$rel")
+                [ "$draft" = true ] || { echo "::error::$tag is not an unpublished draft release (draft=$draft); published releases are immutable, bump the version instead"; exit 1; }
+                if tag_exists "$tag"; then
+                  ref="refs/tags/$tag"                          # release-plz pushes the tag with its draft
+                else
+                  ref=$(jq -r '.target_commitish' <<<"$rel")    # release-current draft: tag appears on publish
+                fi
+                ;;
+              *)
+                echo "::error::unknown mode '$MODE'"; exit 1
+                ;;
+            esac
           fi
-          { echo "tag=$tag"; echo "version=${tag#v}"; echo "ref=$ref"; } >> "$GITHUB_OUTPUT"
-          echo "release tag: '${tag:-<none>}'" >> "$GITHUB_STEP_SUMMARY"
+          { echo "tag=$tag"; echo "version=$version"; echo "ref=$ref"; echo "dry_run=$dry_run"; } >> "$GITHUB_OUTPUT"
+          echo "mode: ${MODE:-$EVENT} · release tag: '${tag:-<none>}' · version: '${version:-<none>}' · ref: '$ref'" >> "$GITHUB_STEP_SUMMARY"
 
   notices:
     name: notices + SBOM
     needs: release
-    if: needs.release.outputs.tag != ''
+    if: needs.release.outputs.tag != '' || needs.release.outputs.dry_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -119,12 +179,13 @@ jobs:
           cache: false
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-about,cargo-cyclonedx
+          # exact pins; Dependabot does not bump these (keep cargo-about in step with audit.yml)
+          tool: cargo-about@0.9.2,cargo-cyclonedx@0.5.9
       - run: |
           set -euo pipefail
           mkdir -p notices
-          cargo about generate --locked -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.html about.hbs
-          cargo about generate --locked -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.txt about-text.hbs
+          cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.html about.hbs
+          cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.txt about-text.hbs
           for pair in x64:x86_64-pc-windows-msvc arm64:aarch64-pc-windows-msvc; do
             arch=${pair%%:*}; triple=${pair#*:}
             cargo cyclonedx --manifest-path crates/pr-monitor/Cargo.toml --format json --spec-version 1.5 \
@@ -140,7 +201,7 @@ jobs:
   build:
     name: build (windows-${{ matrix.arch }})
     needs: [release, notices]
-    if: needs.release.outputs.tag != ''
+    if: needs.release.outputs.tag != '' || needs.release.outputs.dry_run == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -166,7 +227,7 @@ jobs:
           target: ${{ matrix.target }}
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-auditable        # prebuilt exists for aarch64_windows (verified)
+          tool: cargo-auditable@0.7.7  # exact pin, not bumped by Dependabot; prebuilt exists for aarch64_windows (verified)
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: notices
@@ -175,7 +236,8 @@ jobs:
         env:
           PRM_THIRD_PARTY_LICENSES: ${{ github.workspace }}/notices/THIRD-PARTY-LICENSES.txt
         run: |
-          export PRM_BUILD_SHA="$(git rev-parse HEAD)"
+          PRM_BUILD_SHA="$(git rev-parse HEAD)"
+          export PRM_BUILD_SHA
           cargo auditable build --release --locked -p pr-monitor --target "$TARGET"
       - name: Verify (PE, size, static CRT, ProductVersion, self-test)
         shell: pwsh
@@ -199,7 +261,9 @@ jobs:
   sign:                                       # phase hook; skipped while SIGNING_PROVIDER is none/unset
     name: sign
     needs: [release, build]
-    if: vars.SIGNING_PROVIDER == 'signpath' || vars.SIGNING_PROVIDER == 'azure'
+    if: >-
+      needs.release.outputs.dry_run != 'true' &&
+      (vars.SIGNING_PROVIDER == 'signpath' || vars.SIGNING_PROVIDER == 'azure')
     runs-on: windows-latest                   # Azure signing action requires Windows x64
     timeout-minutes: 60
     environment: release                      # signing secrets/vars live here
@@ -272,9 +336,11 @@ jobs:
       (needs.sign.result == 'success' || needs.sign.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: release
+    concurrency:                   # job-level only: workflow-level could cancel a pending release-plz run
+      group: publish-${{ needs.release.outputs.tag || github.run_id }}
+      cancel-in-progress: false
     permissions:
-      contents: write              # upload assets, publish the draft
+      contents: write              # upload assets to the draft
       id-token: write              # Sigstore OIDC for attestations
       attestations: write          # persist attestations
       artifact-metadata: write     # actions/attest v4 storage records
@@ -318,7 +384,19 @@ jobs:
           rm -f THIRD-PARTY-LICENSES.txt          # embedded in the exe
           sha256sum -- *.exe *.zip *.pdb *.cdx.json THIRD-PARTY-LICENSES.html > SHA256SUMS.txt
           ls -la
+      - name: Warn when unsigned
+        if: needs.sign.result == 'skipped'
+        run: echo "::warning::Release ${TAG:-dry-run} is not Authenticode-signed"
+      - name: Upload dist (dry-run)
+        if: needs.release.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dry-run
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
       - name: Attest provenance
+        if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
@@ -326,27 +404,53 @@ jobs:
             dist/*.zip
             dist/*.pdb
       - name: Attest SBOM (x64)
+        if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/pr-monitor-windows-x64.exe
           sbom-path: dist/pr-monitor-windows-x64.cdx.json
       - name: Attest SBOM (arm64)
+        if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/pr-monitor-windows-arm64.exe
           sbom-path: dist/pr-monitor-windows-arm64.cdx.json
-      - name: Upload to draft, then publish
+      - name: Upload to draft
+        if: needs.release.outputs.dry_run != 'true'
         run: |
           set -euo pipefail
           gh release upload "$TAG" -R "$REPO" --clobber \
             dist/*.exe dist/*.zip dist/*.pdb dist/*.cdx.json dist/THIRD-PARTY-LICENSES.html dist/SHA256SUMS.txt
+
+  go-live:                         # human gate: the `release` environment requires a reviewer
+    name: go-live
+    needs: [release, publish]
+    if: needs.release.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    concurrency:
+      group: publish-${{ needs.release.outputs.tag || github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: write              # publish the draft (this creates the tag for release-current drafts)
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      VERSION: ${{ needs.release.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Publish the draft
+        run: |
+          set -euo pipefail
           if [[ "$VERSION" == *-* ]]; then gh release edit "$TAG" -R "$REPO" --draft=false --prerelease
           else gh release edit "$TAG" -R "$REPO" --draft=false --latest; fi
+          echo "published $TAG" >> "$GITHUB_STEP_SUMMARY"
 
   winget:
     name: winget
-    needs: [release, publish]
-    if: vars.WINGET_ENABLED == 'true'
+    needs: [release, go-live]
+    if: vars.WINGET_ENABLED == 'true' && needs.release.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: release
