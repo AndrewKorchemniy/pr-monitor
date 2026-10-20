@@ -1,5 +1,5 @@
 //! The filter box: `@author repo:name org:x !123 is:draft is:unread is:conflict` plus free
-//! terms (all ANDed, case-insensitive).
+//! terms (all must match, case-insensitive).
 
 use serde::{Deserialize, Serialize};
 

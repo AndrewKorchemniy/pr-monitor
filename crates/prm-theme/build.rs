@@ -1,4 +1,8 @@
 //! Embeds every `themes/*.toml` as a built-in theme, so adding a theme is adding one file.
+#![expect(
+    clippy::panic,
+    reason = "a build script reports a broken checkout by failing the build"
+)]
 
 use std::{env, fmt::Write as _, fs, path::PathBuf};
 

@@ -1,6 +1,7 @@
 //! Authentication for Azure DevOps: Azure CLI session (default), "Sign in with Microsoft" via
 //! `az login`, personal access tokens, and an advanced Entra sign-in with the organization's
 //! own app. Per org: tenant discovery, a single-flight token cache and an Auto chain.
+#![forbid(unsafe_code)]
 
 pub mod azcli;
 pub mod cache;

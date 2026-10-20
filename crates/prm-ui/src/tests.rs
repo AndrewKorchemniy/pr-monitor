@@ -1,4 +1,4 @@
-//! Screens rendered headlessly with egui_kittest: what a user sees and what clicking does.
+//! Screens rendered headlessly with `egui_kittest`: what a user sees and what clicking does.
 //! Accessibility checks are on and a missing glyph fails the test.
 
 use std::sync::Arc;

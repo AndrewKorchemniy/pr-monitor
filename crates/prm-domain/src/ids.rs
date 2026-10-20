@@ -8,7 +8,7 @@ use url::Url;
 use crate::hash::fnv64;
 
 /// Declares a GUID newtype with Display/Debug/FromStr. A macro because three identical
-/// types (Vsid, ProjectId, RepoId) need the same ~40 lines and distinct types are the point.
+/// types (`Vsid`, `ProjectId`, `RepoId`) need the same ~40 lines and distinct types are the point.
 macro_rules! uuid_id {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*

@@ -1,5 +1,9 @@
 //! Deterministic builders and fakes for tests in this and downstream crates
 //! (enabled by `#[cfg(test)]` or the `test-support` feature).
+#![allow(
+    clippy::panic,
+    reason = "test fixtures fail loudly on bad literals; the lint is silent under cfg(test), so expect would be unfulfilled there"
+)]
 
 use std::sync::{Arc, Mutex, PoisonError};
 

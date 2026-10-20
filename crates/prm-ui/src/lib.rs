@@ -1,5 +1,6 @@
 //! prm-ui: the egui dashboard, settings, tray and window behaviour. It knows nothing of the
 //! platform; the bin bridges platform services through [`UiHost`].
+#![forbid(unsafe_code)]
 
 mod actions;
 mod app;

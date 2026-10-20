@@ -143,6 +143,10 @@ write the clear code and add a `// why:` comment that explains the exception.
 4. **No `unwrap` or `expect` outside tests.** Use `?`, `get()`, saturating arithmetic and
    `let … else`. If an invariant truly cannot fail, write
    `#[expect(clippy::expect_used, reason = "…")]`. [lint `unwrap_used`, `expect_used`]
+5. **No `panic!` or `unimplemented!` outside tests.** Return an error, or degrade gracefully and
+   log. Test fixtures that fail loudly on bad literals use a module-level allow with a reason; a
+   build script may panic to fail the build. [lint `panic`, `unimplemented`; clippy.toml
+   `allow-panic-in-tests`]
 
 ## 8. Comments and docs
 
@@ -185,15 +189,25 @@ write the clear code and add a `// why:` comment that explains the exception.
    and read every `.snap` diff like code. Use `assert_eq!` for scalars. [review]
 5. **Fixtures go in `crates/<crate>/tests/fixtures/`**: trimmed, scrubbed real payloads, loaded
    with `include_str!`. [review]
+6. **Tests that run the built exe live in `crates/pr-monitor/tests/cli.rs`**, using
+   `env!("CARGO_BIN_EXE_pr-monitor")`, a temporary `PRMONITOR_HOME` and a bounded wait. They never
+   start Run mode or `--unregister` (no windows, dialogs or registry). [review]
+7. **A regression test says what broke.** Its `///` doc names the issue (#N) when there is one and
+   the user-visible failure; assertion messages include captured output. [review]
+8. **Parsers of untrusted input** (activation URIs, the handoff frame) get a seeded mutation sweep that
+   asserts they never panic and that every successful parse round-trips. [review]
 
 ## 11. Suppressions, `unsafe` and dependencies
 
 1. **Suppress with `#[expect(lint, reason = "…")]`**, as narrowly as possible. Use `#[allow]` only
    for cfg-dependent lints, and give it a reason. Workspace-wide allows live only in `Cargo.toml`,
    each with a comment. [lint `allow_attributes_without_reason`]
-2. **`unsafe` is allowed only in `prm-platform`**, with per-module `#[allow(unsafe_code, reason)]`.
+2. **`unsafe` is allowed only in `prm-platform/src/win/*`**, with per-module
+   `#[allow(unsafe_code, reason)]`. Every other crate root says `#![forbid(unsafe_code)]`, so no
+   local allow can slip past review.
    Each block makes one FFI call, carries a `// SAFETY:` comment, and sits behind a safe wrapper.
-   [lint `unsafe_code`, `undocumented_unsafe_blocks`, `multiple_unsafe_ops_per_block`]
+   [lint `unsafe_code` (forbid outside prm-platform), `undocumented_unsafe_blocks`,
+   `multiple_unsafe_ops_per_block`]
 3. **Declare every dependency in `[workspace.dependencies]`, and add it in the change that first
    uses it.**
    - Use minimal features and stay within MSRV 1.95.

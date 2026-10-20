@@ -1,5 +1,6 @@
 //! PR Monitor's files: `config.toml` (user settings, multi-org), `state.json` (machine state),
 //! catalog caches, and where they live. Loads never fail; writes are atomic.
+#![forbid(unsafe_code)]
 
 pub mod diff;
 pub mod error;

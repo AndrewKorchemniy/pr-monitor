@@ -238,7 +238,7 @@ pub struct ThreadDigest {
     pub status: ThreadStatus,
     #[serde(default)]
     pub deleted: bool,
-    /// `properties.CodeReviewThreadType.$value` (VoteUpdate, RefUpdate, ...).
+    /// `properties.CodeReviewThreadType.$value` (`VoteUpdate`, `RefUpdate`, ...).
     #[serde(default)]
     pub system_type: Option<Arc<str>>,
     #[serde(default)]

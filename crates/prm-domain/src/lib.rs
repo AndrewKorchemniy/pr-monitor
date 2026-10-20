@@ -1,5 +1,6 @@
 //! Pure, synchronous domain model and rules for PR Monitor: ids, classification, diffing,
 //! notification policy and the dashboard view model. No IO, no async, no UI.
+#![forbid(unsafe_code)]
 
 pub mod app;
 pub mod auth;

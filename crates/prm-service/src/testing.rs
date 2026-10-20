@@ -1,5 +1,9 @@
 //! Hand-written fakes for the service's own ports, a clock that follows tokio's paused time,
 //! and `ServiceHarness`, which runs the real actor against fakes.
+#![allow(
+    clippy::panic,
+    reason = "test fixtures fail loudly on bad literals; the lint is silent under cfg(test), so expect would be unfulfilled there"
+)]
 
 use std::{
     collections::HashMap,

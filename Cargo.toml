@@ -72,31 +72,32 @@ tracing-appender = "0.2.5"
 png          = "0.18.1"
 
 [workspace.lints.rust]
-unsafe_code = "deny"                # prm-platform opts in per module with #[allow(unsafe_code)] + SAFETY comments
+unsafe_code = "deny"                # every crate but prm-platform also has #![forbid(unsafe_code)]; prm-platform opts in per win/* module with SAFETY comments
 rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
 unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-similar_names = "allow"
-struct_excessive_bools = "allow"
-cast_precision_loss = "allow"
-doc_markdown = "allow"
-needless_pass_by_value = "allow"
-items_after_statements = "allow"
-return_self_not_must_use = "allow"
-missing_fields_in_debug = "allow"
-implicit_hasher = "allow"
-match_same_arms = "allow"
-struct_field_names = "allow"
+module_name_repetitions = "allow"   # prm_* crates repeat their domain in type names by design (OrgStatus in prm-service)
+must_use_candidate = "allow"   # too noisy on getters; #[must_use] is added where ignoring a value is a bug
+missing_errors_doc = "allow"   # error enums are documented on the type, not on every fn
+missing_panics_doc = "allow"   # panics are forbidden outside tests (unwrap_used, expect_used, panic)
+similar_names = "allow"   # domain pairs like org/orgs and row/rows are clearer than renamed variables
+struct_excessive_bools = "allow"   # config and UI state structs mirror TOML toggles
+cast_precision_loss = "allow"   # UI geometry converts counts to f32 everywhere
+needless_pass_by_value = "allow"   # Arc/value params keep call sites simple at actor boundaries
+items_after_statements = "allow"   # local helper fns and consts next to their only use
+return_self_not_must_use = "allow"   # builder-style fixtures in tests
+missing_fields_in_debug = "allow"   # Debug impls deliberately omit secrets
+implicit_hasher = "allow"   # no caller supplies a custom hasher
+match_same_arms = "allow"   # arms listed per variant for exhaustiveness, not deduplicated
+struct_field_names = "allow"   # serde field names mirror the config file
 unwrap_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
+panic = "warn"                     # allow-panic-in-tests in clippy.toml; fixtures use #[expect]
+unimplemented = "warn"
 print_stdout = "warn"
 print_stderr = "warn"
 undocumented_unsafe_blocks = "warn"
@@ -107,6 +108,9 @@ allow_attributes_without_reason = "warn"
 multiple_unsafe_ops_per_block = "warn"
 excessive_nesting = "warn"
 wildcard_enum_match_arm = "warn"
+
+[profile.dev]
+debug = "line-tables-only"         # backtraces keep file:line; builds and target/ stay small (dev-ui and tests inherit)
 
 [profile.release]
 opt-level = 3

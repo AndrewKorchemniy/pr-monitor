@@ -168,7 +168,7 @@ pub(crate) fn visible_columns(width: f32, show_org: bool, hidden: &[String]) -> 
         .collect()
 }
 
-/// A stable id for the visible set, so egui_extras width state never mismatches the count.
+/// A stable id for the visible set, so `egui_extras` width state never mismatches the count.
 pub(crate) fn columns_hash(columns: &[ColumnSpec]) -> u64 {
     columns
         .iter()

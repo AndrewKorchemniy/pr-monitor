@@ -1,6 +1,7 @@
 //! A typed Azure DevOps REST client for PR Monitor: URL building, the request pipeline
 //! (headers, rate gate, retries, token refresh, sign-in-page detection), paging, and mapping
 //! wire JSON to domain types. Transport and credential are injected seams.
+#![forbid(unsafe_code)]
 
 pub mod api;
 pub mod client;

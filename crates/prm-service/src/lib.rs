@@ -1,6 +1,7 @@
 //! The service layer: a single actor on its own thread that schedules refreshes, classifies and
 //! diffs PRs, plans toasts, persists state and publishes an immutable `AppState` for the UI.
 //! Also re-exports every port, so adapters and the bin depend on one crate.
+#![forbid(unsafe_code)]
 
 mod actor;
 mod auth_machine;

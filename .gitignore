@@ -25,3 +25,4 @@ Thumbs.db
 *.profraw
 *.log
 .claude/settings.local.json
+.claude/worktrees/

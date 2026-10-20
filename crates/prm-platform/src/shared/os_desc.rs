@@ -13,7 +13,7 @@ pub struct OsFacts<'a> {
     pub arch: &'a str,
 }
 
-/// For example "Windows 11 24H2 (26100.2033) x86_64".
+/// For example `Windows 11 24H2 (26100.2033) x86_64`.
 pub fn format_os_description(facts: &OsFacts<'_>) -> String {
     let mut product = facts.product.unwrap_or("Windows").to_owned();
     if facts.build.is_some_and(|b| b >= WINDOWS_11_BUILD) {

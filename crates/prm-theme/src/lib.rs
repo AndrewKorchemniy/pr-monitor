@@ -1,6 +1,7 @@
 //! Themes, independent of any UI toolkit: theme files (seeds + overrides), the OKLab derivation
 //! of a full semantic palette, WCAG validation, metrics, the theme registry, and the brand mark.
 //! Adding a theme is adding one TOML file.
+#![forbid(unsafe_code)]
 
 pub mod builtin;
 pub mod color;

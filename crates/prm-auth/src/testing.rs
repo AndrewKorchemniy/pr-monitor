@@ -1,4 +1,8 @@
 //! Fakes for tests here and in prm-service (enabled by `test-support`).
+#![allow(
+    clippy::panic,
+    reason = "test fixtures fail loudly on bad literals; the lint is silent under cfg(test), so expect would be unfulfilled there"
+)]
 
 use std::{
     collections::VecDeque,
