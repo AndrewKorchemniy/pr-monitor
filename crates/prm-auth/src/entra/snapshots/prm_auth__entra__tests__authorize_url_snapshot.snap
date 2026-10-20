@@ -1,0 +1,5 @@
+---
+source: crates/prm-auth/src/entra/tests.rs
+expression: "authorize_url(&config(), &request).as_str()"
+---
+https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?client_id=00000000-0000-0000-0000-0000000000c1&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A51234&response_mode=query&scope=499b84ac-1321-427f-aa17-267ca6975798%2F.default+offline_access+openid+profile&state=state-1&code_challenge=iMnq5o6zALKXGivsnlom_0F5_WYda32GHkxlV7mq7hQ&code_challenge_method=S256&prompt=select_account&login_hint=jane%40contoso.com

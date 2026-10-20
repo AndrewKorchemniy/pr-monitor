@@ -1,0 +1,1 @@
+{ "token_type": "Bearer", "scope": "499b84ac-1321-427f-aa17-267ca6975798/user_impersonation", "expires_in": 3599, "access_token": "access-1", "refresh_token": "refresh-2", "id_token": "id" }

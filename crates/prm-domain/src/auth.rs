@@ -99,6 +99,13 @@ pub enum AuthHeader {
 }
 
 impl AuthHeader {
+    /// The secret inside, for its log-safe id.
+    pub fn secret(&self) -> &Secret {
+        match self {
+            Self::Bearer(s) | Self::Basic(s) => s,
+        }
+    }
+
     /// The full `Authorization` header value.
     pub fn header_value(&self) -> String {
         match self {
