@@ -1,0 +1,5 @@
+---
+source: crates/prm-platform/src/shared/toast_xml/tests.rs
+expression: toast_xml(&spec_from(&pr_toast()))
+---
+<toast launch="prmonitor://show?org=contoso&amp;repo=00000000-0000-0000-0000-000000000001&amp;pr=22" activationType="protocol"><visual><binding template="ToastGeneric"><text hint-maxLines="1">2 new comments · !22</text><text>A new feature</text><text>Rev: looks good, one nit</text><text placement="attribution">api-gateway · Ann</text></binding></visual><actions><action content="Open PR" activationType="protocol" arguments="https://dev.azure.com/contoso/Payments/_git/api-gateway/pullrequest/22"/><action content="Show" activationType="protocol" arguments="prmonitor://show?org=contoso&amp;repo=00000000-0000-0000-0000-000000000001&amp;pr=22"/></actions></toast>

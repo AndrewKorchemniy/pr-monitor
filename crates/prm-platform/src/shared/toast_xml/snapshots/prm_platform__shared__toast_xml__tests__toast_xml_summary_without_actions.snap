@@ -1,0 +1,5 @@
+---
+source: crates/prm-platform/src/shared/toast_xml/tests.rs
+expression: toast_xml(&spec_from(&summary))
+---
+<toast launch="prmonitor://show" activationType="protocol"><visual><binding template="ToastGeneric"><text hint-maxLines="1">5 pull requests changed</text><text>Fix token refresh, Paging terminator, and 3 more</text></binding></visual><audio silent="true"/></toast>

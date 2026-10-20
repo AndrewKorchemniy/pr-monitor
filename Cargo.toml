@@ -48,6 +48,18 @@ sha2         = "0.11.1"
 getrandom    = "0.4.3"
 which        = "8.0.6"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
+# --- platform (M8) ---
+windows      = "0.62.2"
+windows-registry = "0.6.1"                       # NOT 0.100 (pulls windows-result/strings 0.100)
+keyring-core = "1.0.1"
+windows-native-keyring-store = { version = "1.1.0", default-features = false }   # no "search" => no regex
+apple-native-keyring-store = { version = "1.0.2", default-features = false }
+zbus-secret-service-keyring-store = { version = "1.0.1", default-features = false }
+interprocess = { version = "2.4.6", default-features = false, features = ["tokio"] }
+webbrowser   = { version = "1.2.4", features = ["hardened"] }
+notify-rust  = { version = "4.18.2", default-features = false }   # mac/linux only
+auto-launch  = "0.6.0"                                           # mac/linux only
+raw-window-handle = "0.6.2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"                # prm-platform opts in per module with #[allow(unsafe_code)] + SAFETY comments

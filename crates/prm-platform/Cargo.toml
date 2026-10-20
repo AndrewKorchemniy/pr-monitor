@@ -9,3 +9,59 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+prm-domain = { workspace = true }
+prm-config = { workspace = true }
+prm-auth = { workspace = true }
+prm-service = { workspace = true }
+tokio = { workspace = true, features = ["rt", "net", "io-util", "time", "sync", "macros"] }
+interprocess = { workspace = true }
+keyring-core = { workspace = true }
+webbrowser = { workspace = true }
+raw-window-handle = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-registry = { workspace = true }
+windows-native-keyring-store = { workspace = true }
+windows = { workspace = true, features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_Security_Cryptography",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_Graphics_Dwm",
+    "Win32_Networking_WinHttp",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+notify-rust = { workspace = true }
+apple-native-keyring-store = { workspace = true, features = ["keychain"] }
+auto-launch = { workspace = true }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+notify-rust = { workspace = true, features = ["z"] }
+zbus-secret-service-keyring-store = { workspace = true, features = ["rt-async-io-crypto-rust"] }
+auto-launch = { workspace = true }
+
+[dev-dependencies]
+prm-domain = { workspace = true, features = ["test-support"] }
+prm-auth = { workspace = true, features = ["test-support"] }
+keyring-core = { workspace = true, features = ["sample"] }
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
+tempfile = { workspace = true }
+insta = { workspace = true }

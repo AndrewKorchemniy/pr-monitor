@@ -1,0 +1,9 @@
+---
+source: crates/prm-platform/src/shared/handoff_codec/tests.rs
+expression: lines.concat()
+---
+{"v":1,"cmd":"show"}
+{"v":1,"cmd":"activate","uri":"prmonitor://show?org=contoso&repo=00000000-0000-0000-0000-000000000001&pr=22"}
+{"v":1,"cmd":"quit"}
+{"v":1,"ok":true}
+{"v":1,"ok":false,"error":"invalid uri"}
