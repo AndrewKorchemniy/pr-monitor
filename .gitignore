@@ -23,3 +23,5 @@ size-*.json
 .DS_Store
 Thumbs.db
 *.profraw
+*.log
+.claude/settings.local.json

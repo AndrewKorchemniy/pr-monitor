@@ -29,6 +29,8 @@ git_release_body = """
 {{ changelog }}
 
 ---
+Binaries are not code-signed yet; Windows SmartScreen may warn (More info > Run anyway). Verify with the attestation and SHA256SUMS.txt.
+
 Verify: `gh attestation verify pr-monitor-windows-x64.exe -R AndrewKorchemniy/pr-monitor` · checksums in `SHA256SUMS.txt` · PDBs attached for crash symbolization.
 """
 
