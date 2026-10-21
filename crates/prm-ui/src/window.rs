@@ -177,7 +177,11 @@ impl WindowController {
             self.track_placement(ctx);
             self.maximized = maximized.unwrap_or(false);
         }
-        if self.visible && minimized == Some(true) {
+        // why: until `take_show` sends a pending show, `minimized` describes the hidden window,
+        // and one hidden to the tray while minimized stays minimized. Hiding it again here would
+        // drop the show, so no tray click could ever bring it back.
+        let on_screen = self.visible && self.show_request.is_none();
+        if on_screen && minimized == Some(true) {
             self.uncloak_pending |= self.reveal.minimized();
             if self.minimize_to_tray && has_tray {
                 self.hide(ctx);
