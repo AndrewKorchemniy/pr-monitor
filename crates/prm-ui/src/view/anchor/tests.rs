@@ -4,6 +4,9 @@ use prm_domain::testing::key;
 
 use super::*;
 
+/// Table rows 24 pt apart.
+const PITCH: Pitch = Pitch::uniform(24.0);
+
 /// PR rows `keys` at display positions 0..n, with optional header rows first.
 fn list(headers: usize, keys: &[PrKey]) -> DisplayList {
     let mut rows: Vec<DisplayRow> = (0..headers)
@@ -21,31 +24,50 @@ fn list(headers: usize, keys: &[PrKey]) -> DisplayList {
 fn capture_prefers_the_selection_over_the_top_row() {
     let (a, b) = (key("o", 1, 1), key("o", 1, 2));
     let shown = list(0, &[a.clone(), b.clone()]);
-    let snapshot = capture(&shown, Some(&b), Some(0), 24.0).expect("anchor");
+    let snapshot = capture(&shown, Some(&b), (Some(0), 24.0), PITCH).expect("anchor");
     assert_eq!((snapshot.key, snapshot.display_index), (b, 1));
-    let top = capture(&shown, None, Some(0), 24.0).expect("anchor");
+    let top = capture(&shown, None, (Some(0), 24.0), PITCH).expect("anchor");
     assert_eq!(top.key, a);
-    assert_eq!(capture(&shown, None, None, 0.0), None);
+    assert_eq!(capture(&shown, None, (None, 0.0), PITCH), None);
 }
 
 #[test]
 fn restore_shifts_the_offset_by_how_far_the_anchor_moved() {
     let (a, b) = (key("o", 1, 1), key("o", 1, 2));
-    let snapshot =
-        capture(&list(0, &[a.clone(), b.clone()]), Some(&b), None, 48.0).expect("anchor");
+    let before = list(0, &[a.clone(), b.clone()]);
+    let snapshot = capture(&before, Some(&b), (None, 48.0), PITCH).expect("anchor");
     let moved_down = list(2, &[a, b]);
     assert_eq!(
-        restore(&snapshot, &moved_down, 24.0),
+        restore(&snapshot, &moved_down, PITCH),
         AnchorResult::Offset(96.0)
+    );
+}
+
+/// Cards are taller than the group headers between them, so the anchor moves by the heights of
+/// the rows that came before it, not by a count of rows.
+#[test]
+fn restore_counts_the_heights_of_the_rows_above_the_anchor() {
+    let (a, b) = (key("o", 1, 1), key("o", 1, 2));
+    let cards = Pitch {
+        pr: 78.0,
+        group: 36.0,
+    };
+    let before = list(1, &[a.clone(), b.clone()]);
+    let snapshot = capture(&before, Some(&b), (None, 200.0), cards).expect("anchor");
+    assert_eq!(snapshot.top, 114.0);
+    assert_eq!(
+        restore(&snapshot, &list(2, &[a, b]), cards),
+        AnchorResult::Offset(236.0)
     );
 }
 
 #[test]
 fn restore_never_scrolls_above_the_top() {
     let (a, b) = (key("o", 1, 1), key("o", 1, 2));
-    let snapshot = capture(&list(0, &[a.clone(), b.clone()]), Some(&b), None, 0.0).expect("anchor");
+    let before = list(0, &[a.clone(), b.clone()]);
+    let snapshot = capture(&before, Some(&b), (None, 0.0), PITCH).expect("anchor");
     assert_eq!(
-        restore(&snapshot, &list(0, &[b, a]), 24.0),
+        restore(&snapshot, &list(0, &[b, a]), PITCH),
         AnchorResult::Offset(0.0)
     );
 }
@@ -56,13 +78,13 @@ fn a_vanished_selection_selects_the_row_now_in_its_place() {
     let snapshot = capture(
         &list(0, &[a.clone(), b, c.clone()]),
         Some(&key("o", 1, 2)),
-        None,
-        0.0,
+        (None, 0.0),
+        PITCH,
     )
     .expect("anchor");
     assert_eq!(
-        restore(&snapshot, &list(0, &[a, c]), 24.0),
+        restore(&snapshot, &list(0, &[a, c]), PITCH),
         AnchorResult::SelectNeighbor { index: 1 }
     );
-    assert_eq!(restore(&snapshot, &list(0, &[]), 24.0), AnchorResult::None);
+    assert_eq!(restore(&snapshot, &list(0, &[]), PITCH), AnchorResult::None);
 }

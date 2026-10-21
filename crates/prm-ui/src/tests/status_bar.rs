@@ -223,3 +223,29 @@ fn status_bar_shows_the_refresh_state_at_every_width() {
         }
     }
 }
+
+/// The counts were the one thing that never gave way, so below 720 pt they ran into the refresh
+/// state; now they shorten to their glyph and number, and say what they count on hover.
+#[test]
+fn status_bar_counts_shorten_to_their_numbers_and_say_what_they_count() {
+    let mut h = dashboard(busy_state(), unfiltered, WINDOW.x);
+    let summary = h.state().state.summary;
+    let label = copy::status_count(summary.active_comments, PrStatus::ActiveComments);
+    let full = h.get_by_label(&label).rect().width();
+    h.set_size(NARROW);
+    h.run();
+    let short = h.get_by_label(&label).rect().width();
+    assert!(short < full / 2.0, "{short} pt, {full} pt at full length");
+    h.get_by_label(&label).hover();
+    h.run();
+    assert_eq!(
+        h.query_all_by_label(&label).count(),
+        2,
+        "its tooltip names it"
+    );
+    let reading = copy::reading_progress(12, 40);
+    assert!(
+        segments(&h).iter().any(|(text, _)| *text == reading),
+        "the refresh state shortens but keeps its full name"
+    );
+}

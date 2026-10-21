@@ -136,7 +136,7 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
                 pr(
                     4,
                     4681,
-                    "Credential Manager chunking for long tokens",
+                    "Credential Manager chunking for long tokens, so sign-ins that outgrow one entry survive a restart",
                     &leo,
                     8,
                 )

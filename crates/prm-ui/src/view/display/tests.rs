@@ -55,3 +55,27 @@ fn group_ids_are_stable_strings() {
     );
     assert_eq!(group_id(&GroupKey::None), "");
 }
+
+#[test]
+fn pitch_finds_tops_and_rows_when_cards_are_taller_than_headers() {
+    let rows = [DisplayRow::Group(0), DisplayRow::Pr(0), DisplayRow::Pr(1)];
+    let pitch = Pitch {
+        pr: 78.0,
+        group: 36.0,
+    };
+    let tops: Vec<f32> = (0..=3).map(|i| pitch.top_of(&rows, i)).collect();
+    assert_eq!(tops, [0.0, 36.0, 114.0, 192.0]);
+    let cases = [
+        (0.0, 0),
+        (35.9, 0),
+        (36.0, 1),
+        (113.0, 1),
+        (114.0, 2),
+        (900.0, 2),
+    ];
+    for (y, index) in cases {
+        assert_eq!(pitch.index_at(&rows, y), index, "at {y}");
+    }
+    assert_eq!(Pitch::uniform(36.0).index_at(&rows, 80.0), 2);
+    assert_eq!(pitch.index_at(&[], 10.0), 0);
+}

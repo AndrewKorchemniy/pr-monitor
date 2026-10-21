@@ -24,6 +24,12 @@ pub(crate) const PROJECTS_FAILED: &str = "Couldn't load projects";
 pub(crate) const CHANGED_TOOLTIP: &str = "Changed since you last looked";
 pub(crate) const DRAFT: &str = "Draft";
 pub(crate) const GROUP: &str = "Group";
+pub(crate) const SORT: &str = "Sort";
+pub(crate) const LAST_ACTIVITY: &str = "Last activity";
+pub(crate) const ASCENDING: &str = "Ascending";
+pub(crate) const DESCENDING: &str = "Descending";
+/// Between the facts on a card's detail line.
+pub(crate) const DETAIL_SEPARATOR: &str = " · ";
 pub(crate) const CONFLICTS: &str = "Merge conflicts";
 pub(crate) const REVIEWS: &str = "Reviews";
 pub(crate) const NO_OPEN_THREADS: &str = "No open threads.";
@@ -266,6 +272,11 @@ pub(crate) fn changed_count(count: u32) -> String {
     format!("{count} Changed")
 }
 
+/// A menu button's name for screen readers and its tooltip when only its icon shows.
+pub(crate) fn menu_value(label: &str, value: &str) -> String {
+    format!("{label}: {value}")
+}
+
 pub(crate) fn identity(org: &str, method: Option<AuthMethod>) -> String {
     match method {
         Some(method) => format!("{org} · {}", method.label()),
@@ -299,6 +310,16 @@ pub(crate) fn listing_progress(done: u32, total: u32) -> String {
 
 pub(crate) fn reading_progress(done: u32, total: u32) -> String {
     format!("Reading comments {done}/{total}")
+}
+
+/// `listing_progress` in a narrow status bar.
+pub(crate) fn listing_short(done: u32, total: u32) -> String {
+    format!("Listing {done}/{total}")
+}
+
+/// `reading_progress` in a narrow status bar.
+pub(crate) fn reading_short(done: u32, total: u32) -> String {
+    format!("Reading {done}/{total}")
 }
 
 pub(crate) fn repos(n: u32) -> String {
@@ -539,6 +560,9 @@ pub(crate) const ALL: &[&str] = &[
     SIGN_IN_TO_SEARCH,
     ADDING,
     GROUP_SUFFIX,
+    DETAIL_SEPARATOR,
+    LAST_ACTIVITY,
+    DESCENDING,
     PROJECTS_FAILED,
     SAVE_FAILED,
     TEST_SENT,

@@ -38,7 +38,7 @@ use crate::{
     theme::{ThemeRuntime, UiTheme, fonts, selection_from},
     tray::{TrayController, TrayMsg},
     ui_state::{Layout, PeekLayout, UiStateSync},
-    view::{DashboardView, changes::ChangeLog},
+    view::{DashboardView, changes::ChangeLog, display::Pitch},
     window::{WindowController, WindowLaunch},
 };
 
@@ -382,7 +382,7 @@ impl PrMonitorApp {
         );
         self.theme.set_policy(policy);
         ctx.set_zoom_factor(prefs.font_scale);
-        self.dash.view.row_pitch = row_pitch(self.theme.current(ctx));
+        self.dash.view.pitch = Pitch::uniform(row_pitch(self.theme.current(ctx)));
         if let Some(settings) = &mut self.settings {
             settings.on_applied(config.clone());
         }

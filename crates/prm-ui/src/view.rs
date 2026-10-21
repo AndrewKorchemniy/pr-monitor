@@ -22,7 +22,7 @@ use prm_domain::{
 use crate::view::{
     anchor::{AnchorResult, capture, restore},
     columns::{Choices, ColumnId, Visibility},
-    display::{DisplayList, DisplayRow, build_display, group_id},
+    display::{DisplayList, DisplayRow, Pitch, build_display, group_id},
 };
 
 /// Rows a page-up/down moves.
@@ -62,7 +62,8 @@ pub(crate) struct DashboardView {
     pub hidden_columns: Vec<String>,
     pub offset_y: f32,
     pub top_visible: Option<usize>,
-    pub row_pitch: f32,
+    /// How far apart the list drew its rows last frame (table rows, or cards and headers).
+    pub pitch: Pitch,
     /// Bumped by "reset columns" so the table forgets its stored widths.
     pub table_epoch: u32,
     /// The table's id salt last frame (column set, epoch); when it changes the table keeps its
@@ -95,7 +96,7 @@ impl DashboardView {
             hidden_columns: ui.hidden_columns.clone(),
             offset_y: 0.0,
             top_visible: None,
-            row_pitch,
+            pitch: Pitch::uniform(row_pitch),
             table_epoch: 0,
             table_salt: None,
             squeezed: Vec::new(),
@@ -120,8 +121,8 @@ impl DashboardView {
         let snapshot = capture(
             &self.display,
             self.selected.as_ref(),
-            self.top_visible,
-            self.offset_y,
+            (self.top_visible, self.offset_y),
+            self.pitch,
         );
         self.rows = rows;
         self.rows_generation = generation;
@@ -129,7 +130,7 @@ impl DashboardView {
         let Some(snapshot) = snapshot else {
             return;
         };
-        match restore(&snapshot, &self.display, self.row_pitch) {
+        match restore(&snapshot, &self.display, self.pitch) {
             AnchorResult::Offset(offset) => self.scroll = ScrollIntent::Offset(offset),
             AnchorResult::SelectNeighbor { index } => {
                 if self.selected.is_some() {

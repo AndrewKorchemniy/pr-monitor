@@ -1,7 +1,9 @@
-//! Banners under the toolbar: the most severe first, the rest behind "+N more".
+//! Banners under the toolbar: the most severe first, the rest behind "+N more". The text wraps
+//! to the room the buttons leave; in a narrow window the buttons move under the text.
 
 use eframe::egui::{self, RichText};
 use prm_config::Severity;
+use prm_domain::auth::UserAction;
 use prm_service::state::Banner;
 
 use crate::{
@@ -52,6 +54,9 @@ pub(crate) fn banners(
 
 /// The severity icon, in points.
 const ICON: f32 = 12.0;
+/// Narrower than this beside the buttons, the text gets the whole width and the buttons go
+/// under it (points).
+const TEXT_MIN: f32 = 240.0;
 
 fn banner(
     ui: &mut egui::Ui,
@@ -70,7 +75,8 @@ fn banner(
     });
 }
 
-/// The icon, the title and detail, then the buttons on the right.
+/// The icon, the title and detail, then the buttons on the right, or under the text when the
+/// banner is too narrow for both.
 fn row(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -78,21 +84,68 @@ fn row(
     expanded: &mut bool,
 ) {
     let theme = cx.theme.clone();
-    let fit = Fit::of(ui, &theme, item, more);
+    let mut fit = Fit::of(ui, &theme, item, more);
+    // why: the buttons' width is known once they are laid out, so it is kept from the last
+    // pass; a new or changed width discards the pass, so a wrong layout is never shown.
+    let id = egui::Id::unique(("banner_buttons", item.id.as_ref()));
+    let known = ui.data(|d| d.get_temp::<f32>(id));
+    let gap = ui.spacing().item_spacing.x;
+    let beside = ui.available_width() - ICON - gap - known.unwrap_or(0.0) - gap;
+    let stacked = fit.buttons && beside < TEXT_MIN;
+    if stacked {
+        fit.text_top = 0.0;
+    }
     ui.vertical(|ui| {
         ui.add_space(fit.text_top + (fit.title - ICON) / 2.0);
         let color = theme.colors.tone(severity_tone(item.severity)).solid;
         icons::show(ui, severity_icon(item.severity), ICON, color);
     });
-    ui.vertical(|ui| {
-        ui.add_space(fit.text_top);
-        text(ui, &theme, item);
-    });
-    if fit.buttons {
-        let size = egui::vec2(ui.available_width(), fit.row);
-        let right = egui::Layout::right_to_left(egui::Align::Center);
-        ui.allocate_ui_with_layout(size, right, |ui| buttons(ui, cx, item, more, expanded));
+    if !fit.buttons {
+        ui.vertical(|ui| text(ui, &theme, item));
+        return;
     }
+    let measured = if stacked {
+        ui.vertical(|ui| {
+            text(ui, &theme, item);
+            ui.horizontal_wrapped(|ui| buttons(ui, cx, (item, more), (expanded, Edge::Left)))
+                .inner
+        })
+        .inner
+    } else {
+        side_by_side(ui, cx, (item, more), (expanded, &fit), beside)
+    };
+    if known.is_none_or(|width| (width - measured).abs() > 0.5) {
+        ui.data_mut(|d| d.insert_temp(id, measured));
+        ui.ctx().request_discard("banner buttons measured");
+    }
+}
+
+/// The text wrapped to `width` points, then the buttons on the right, centred on the text.
+/// Returns the buttons' width.
+fn side_by_side(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    (item, more): (&Banner, Option<usize>),
+    (expanded, fit): (&mut bool, &Fit),
+    width: f32,
+) -> f32 {
+    let theme = cx.theme.clone();
+    let column = egui::Layout::top_down(egui::Align::Min);
+    let text_h = ui
+        .allocate_ui_with_layout(egui::vec2(width, fit.row), column, |ui| {
+            ui.set_width(width);
+            ui.add_space(fit.text_top);
+            text(ui, &theme, item);
+        })
+        .response
+        .rect
+        .height();
+    let size = egui::vec2(ui.available_width(), fit.row.max(text_h));
+    let right = egui::Layout::right_to_left(egui::Align::Center);
+    ui.allocate_ui_with_layout(size, right, |ui| {
+        buttons(ui, cx, (item, more), (expanded, Edge::Right))
+    })
+    .inner
 }
 
 /// How a banner's row is sized: the title's line, the row (the text, or a button if taller)
@@ -128,32 +181,84 @@ impl Fit {
 }
 
 fn text(ui: &mut egui::Ui, theme: &UiTheme, item: &Banner) {
-    ui.label(RichText::new(item.title.as_ref()).font(theme.fonts.body_strong.clone()));
+    let title = RichText::new(item.title.as_ref()).font(theme.fonts.body_strong.clone());
+    ui.add(egui::Label::new(title).wrap());
     if let Some(detail) = &item.detail {
-        ui.label(RichText::new(detail.as_ref()).color(theme.colors.text_secondary));
+        let detail = RichText::new(detail.as_ref()).color(theme.colors.text_secondary);
+        ui.add(egui::Label::new(detail).wrap());
     }
 }
 
-/// Right to left: close, "+N more", then the suggested actions.
+/// The edge of the banner the buttons line up from.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Edge {
+    /// Beside the text, close at the far right.
+    Right,
+    /// Under the text, the suggested action first.
+    Left,
+}
+
+/// Reading left to right: the suggested actions, "+N more", then close. Returns how wide they
+/// are side by side, however the layout wraps them (points).
 fn buttons(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
-    item: &Banner,
-    more: Option<usize>,
-    expanded: &mut bool,
-) {
-    if item.dismissible && ui.small_button(copy::CLOSE).clicked() {
+    (item, more): (&Banner, Option<usize>),
+    (expanded, edge): (&mut bool, Edge),
+) -> f32 {
+    let widths = match edge {
+        Edge::Right => [
+            close_button(ui, cx, item),
+            more_link(ui, more, expanded),
+            action_button(ui, cx, (item, item.secondary.as_ref())),
+            action_button(ui, cx, (item, item.action.as_ref())),
+        ],
+        Edge::Left => [
+            action_button(ui, cx, (item, item.action.as_ref())),
+            action_button(ui, cx, (item, item.secondary.as_ref())),
+            more_link(ui, more, expanded),
+            close_button(ui, cx, item),
+        ],
+    };
+    let shown = widths.iter().flatten().count();
+    let gaps = ui.spacing().item_spacing.x * shown.saturating_sub(1) as f32;
+    widths.iter().flatten().sum::<f32>() + gaps
+}
+
+/// Dismisses a banner that may be dismissed; its width when shown.
+fn close_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, item: &Banner) -> Option<f32> {
+    if !item.dismissible {
+        return None;
+    }
+    let response = ui.small_button(copy::CLOSE);
+    if response.clicked() {
         cx.push(UiAction::DismissBanner(item.id.clone()));
     }
-    if more.is_some_and(|n| ui.link(copy::more_banners(n)).clicked()) {
+    Some(response.rect.width())
+}
+
+/// "+N more", which shows every banner; its width when shown.
+fn more_link(ui: &mut egui::Ui, more: Option<usize>, expanded: &mut bool) -> Option<f32> {
+    let response = ui.link(copy::more_banners(more?));
+    if response.clicked() {
         *expanded = true;
     }
-    for action in [&item.secondary, &item.action].into_iter().flatten() {
-        if ui.button(copy::user_action_label(action)).clicked() {
-            cx.push(UiAction::User {
-                org: item.org.clone(),
-                action: action.clone(),
-            });
-        }
+    Some(response.rect.width())
+}
+
+/// A suggested fix, when the banner has one; its width when shown.
+fn action_button(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    (item, action): (&Banner, Option<&UserAction>),
+) -> Option<f32> {
+    let action = action?;
+    let response = ui.button(copy::user_action_label(action));
+    if response.clicked() {
+        cx.push(UiAction::User {
+            org: item.org.clone(),
+            action: action.clone(),
+        });
     }
+    Some(response.rect.width())
 }

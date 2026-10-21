@@ -55,6 +55,8 @@ pub(super) struct Slot<'a> {
     pub hook: Hook<'a>,
     /// The points that decide whether it fits: its width, or more for text that ticks.
     fit: f32,
+    /// The same for its short text, when it has one (`Segment::with_short`).
+    compact_fit: f32,
     pub shown: bool,
 }
 
@@ -62,11 +64,34 @@ impl<'a> Slot<'a> {
     pub(super) fn new(theme: &UiTheme, segment: Segment<'a>, rank: Rank, hook: Hook<'a>) -> Self {
         Self {
             fit: segment.width(theme),
+            compact_fit: 0.0,
             segment,
             rank,
             hook,
             shown: false,
         }
+    }
+
+    /// Shows its short text from now on, if it has one.
+    fn compact(&mut self, theme: &UiTheme) {
+        if self.segment.has_short() {
+            self.segment.compact = true;
+            self.fit = self.segment.width(theme).max(self.compact_fit);
+        }
+    }
+
+    /// Its short text fits as the widest of `texts`, with every digit at its widest.
+    pub(super) fn with_short_room_for(
+        mut self,
+        ui: &egui::Ui,
+        theme: &UiTheme,
+        texts: &[&str],
+    ) -> Self {
+        self.compact_fit = texts
+            .iter()
+            .map(|text| sizing_width(ui, theme, text))
+            .fold(0.0, f32::max);
+        self
     }
 
     /// Plain information.
@@ -79,6 +104,16 @@ impl<'a> Slot<'a> {
     ) -> Self {
         let segment = Segment::new(ui, theme, None, text, Kind::Info);
         Self::new(theme, segment, rank, hook)
+    }
+
+    /// The rank whose neighbours it sits with, without a hairline between: collapsed org dots,
+    /// and compact counts.
+    pub(super) const fn cluster(&self) -> Option<Rank> {
+        if self.segment.collapsed || self.segment.compact {
+            Some(self.rank)
+        } else {
+            None
+        }
     }
 
     /// Fits as the widest of its own text and `texts` with every digit at its widest, so text
@@ -104,9 +139,17 @@ fn sizing_width(ui: &egui::Ui, theme: &UiTheme, text: &str) -> f32 {
 }
 
 /// Hands out `room` points rank by rank: the counts always show, and every other segment
-/// shows when it fits. One that does not fit leaves its room to smaller ones after it.
+/// shows when it fits. One that does not fit leaves its room to smaller ones after it. While
+/// the counts and the refresh state do not fit side by side, the counts drop their labels
+/// (glyph and number), then the refresh state shortens ("Reading 12/40").
 pub(super) fn fit(mut room: f32, theme: &UiTheme, left: &mut [Slot<'_>], right: &mut [Slot<'_>]) {
     let separator = separator_width(theme);
+    for rank in [Rank::Counts, Rank::Refresh] {
+        if crowded(room, separator, left, right) {
+            compact(rank, theme, left);
+            compact(rank, theme, right);
+        }
+    }
     for rank in RANKS {
         match rank {
             Rank::OrgNames => expand_orgs(&mut room, theme, left),
@@ -124,13 +167,33 @@ pub(super) fn fit(mut room: f32, theme: &UiTheme, left: &mut [Slot<'_>], right: 
     }
 }
 
+fn compact(rank: Rank, theme: &UiTheme, slots: &mut [Slot<'_>]) {
+    for slot in slots.iter_mut().filter(|s| s.rank == rank) {
+        slot.compact(theme);
+    }
+}
+
+/// Whether the counts and the refresh state, as they are now, need more than `room`.
+fn crowded(room: f32, separator: f32, left: &[Slot<'_>], right: &[Slot<'_>]) -> bool {
+    let need = |rank: Rank| {
+        let slots = || left.iter().chain(right).filter(move |s| s.rank == rank);
+        let separators = if slots().any(|s| s.cluster().is_some()) {
+            1
+        } else {
+            slots().count()
+        };
+        slots().map(|s| s.fit).sum::<f32>() + separator * separators as f32
+    };
+    need(Rank::Counts) + need(Rank::Refresh) > room
+}
+
 /// Shows each slot of `rank` that fits in `room`, charging it a separator too unless it joins
-/// the collapsed one before it.
+/// the cluster before it.
 fn place(room: &mut f32, separator: f32, rank: Rank, slots: &mut [Slot<'_>]) {
     let mut joinable = false;
     for slot in slots.iter_mut().filter(|s| s.rank == rank) {
-        let collapsed = slot.segment.collapsed;
-        let joins = joinable && collapsed;
+        let clustered = slot.cluster().is_some();
+        let joins = joinable && clustered;
         let cost = if joins {
             slot.fit
         } else {
@@ -139,7 +202,7 @@ fn place(room: &mut f32, separator: f32, rank: Rank, slots: &mut [Slot<'_>]) {
         slot.shown = rank == Rank::Counts || cost <= *room;
         if slot.shown {
             *room -= cost;
-            joinable = collapsed;
+            joinable = clustered;
         }
     }
 }

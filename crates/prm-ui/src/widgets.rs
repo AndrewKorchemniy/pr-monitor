@@ -10,6 +10,7 @@ pub(crate) mod modal;
 pub(crate) mod palette_view;
 pub(crate) mod peek;
 pub(crate) mod people_picker;
+pub(crate) mod pr_cards;
 pub(crate) mod pr_table;
 pub(crate) mod scope_picker;
 pub(crate) mod slider;

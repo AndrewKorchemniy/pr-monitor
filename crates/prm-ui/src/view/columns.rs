@@ -101,17 +101,6 @@ impl ColumnSpec {
     pub(crate) const fn visibility(&self) -> Visibility {
         self.id.visibility()
     }
-
-    /// The least room the column takes: its dragged or default width, Title its minimum, and
-    /// the margin `margin` (points).
-    fn narrowest(&self, margin: f32, saved: Option<f32>) -> f32 {
-        match self.width {
-            Width::Exact => margin,
-            Width::Fixed(width) => width,
-            Width::Remainder => self.min,
-            Width::Initial(width) => saved.unwrap_or(width).max(self.min),
-        }
-    }
 }
 
 #[expect(
@@ -277,6 +266,33 @@ pub(crate) struct ColumnLayout<'a> {
     pub widths: &'a BTreeMap<String, f32>,
 }
 
+/// How far a resizable column may shrink to fit the window.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Give {
+    /// To its default width, or its dragged width when that is narrower: a dragged width gives
+    /// way before any column drops, and no column is squeezed below its default while one can.
+    ToDefault,
+    /// To its minimum, once only the columns that never drop are left.
+    ToMinimum,
+}
+
+/// The room a column, or columns side by side, would like and the least they can do with
+/// (points).
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct Span {
+    preferred: f32,
+    floor: f32,
+}
+
+impl Span {
+    const fn fixed(width: f32) -> Self {
+        Self {
+            preferred: width,
+            floor: width,
+        }
+    }
+}
+
 impl ColumnLayout<'_> {
     fn wants(&self, column: &ColumnSpec) -> bool {
         match column.visibility() {
@@ -287,13 +303,60 @@ impl ColumnLayout<'_> {
         }
     }
 
-    /// The room `columns` need side by side, Title at its minimum (points).
-    fn needed(&self, columns: &[ColumnSpec], room: Room) -> f32 {
-        let spaced: f32 = columns
-            .iter()
-            .map(|c| c.narrowest(room.margin, self.widths.get(c.key).copied()) + room.gap)
-            .sum();
-        spaced - room.gap
+    /// A column's room: its dragged or default width, Title its minimum and the margin
+    /// `room.margin`.
+    fn span(&self, column: &ColumnSpec, room: Room, give: Give) -> Span {
+        match column.width {
+            Width::Exact => Span::fixed(room.margin),
+            Width::Fixed(width) => Span::fixed(width),
+            Width::Remainder => Span::fixed(column.min),
+            Width::Initial(default) => {
+                let saved = self.widths.get(column.key).copied();
+                let preferred = saved.unwrap_or(default).max(column.min);
+                let floor = match give {
+                    Give::ToDefault => preferred.min(default),
+                    Give::ToMinimum => column.min,
+                };
+                Span { preferred, floor }
+            }
+        }
+    }
+
+    /// The room `columns` need side by side, gaps included.
+    fn needed<'c>(
+        &self,
+        columns: impl IntoIterator<Item = &'c ColumnSpec>,
+        room: Room,
+        give: Give,
+    ) -> Span {
+        let mut total = Span::fixed(0.0);
+        for (index, column) in columns.into_iter().enumerate() {
+            let gap = if index == 0 { 0.0 } else { room.gap };
+            let span = self.span(column, room, give);
+            total.preferred += span.preferred + gap;
+            total.floor += span.floor + gap;
+        }
+        total
+    }
+
+    /// Gives each resizable column this frame's width: the preferred ones while they fit, else
+    /// each gives up the same share of its room above its floor until they do. The dragged
+    /// widths themselves stay as the user left them.
+    fn fit_widths(&self, columns: &mut [ColumnSpec], room: Room, give: Give) {
+        let needed = self.needed(columns.iter(), room, give);
+        let spare = needed.preferred - needed.floor;
+        let share = if needed.preferred <= room.width || spare <= 0.0 {
+            1.0
+        } else {
+            ((room.width - needed.floor) / spare).clamp(0.0, 1.0)
+        };
+        for column in columns.iter_mut() {
+            if column.is_resizable() {
+                let span = self.span(column, room, give);
+                let width = span.floor + (span.preferred - span.floor) * share;
+                column.width = Width::Initial(width.floor().max(column.min));
+            }
+        }
     }
 }
 
@@ -316,21 +379,50 @@ pub(crate) fn chosen(column: &ColumnSpec, hidden: &[String]) -> bool {
     }
 }
 
-/// Columns in order: the user's choice, then, while they need more room than there is, the
-/// next column in `SQUEEZE_ORDER` drops out. So hiding a column leaves room for others, and
-/// the table never runs past its right edge.
+/// Columns in order, each resizable one at this frame's width (`Width::Initial`). First the
+/// user's choice; while that needs more room than there is, dragged widths give way (down to
+/// the defaults), then the next column in `SQUEEZE_ORDER` drops out, and once only the core is
+/// left its columns shrink to their minimums. So hiding a column leaves room for others, and
+/// the table never runs past its right edge while its core fits.
 pub(crate) fn visible_columns(room: Room, layout: &ColumnLayout<'_>) -> Vec<ColumnSpec> {
     let mut columns: Vec<ColumnSpec> = COLUMNS.into_iter().filter(|c| layout.wants(c)).collect();
     if layout.group == GroupBy::Status {
         compact_status(&mut columns);
     }
+    let fits =
+        |columns: &[ColumnSpec]| layout.needed(columns, room, Give::ToDefault).floor <= room.width;
     for id in SQUEEZE_ORDER {
-        if layout.needed(&columns, room) <= room.width {
+        if fits(&columns) {
             break;
         }
         columns.retain(|c| c.id != id);
     }
+    let give = if fits(&columns) {
+        Give::ToDefault
+    } else {
+        Give::ToMinimum
+    };
+    layout.fit_widths(&mut columns, room, give);
     columns
+}
+
+/// Whether a table is worth showing in `room`: its columns that never drop and the last one
+/// that does (Comments), at their default widths, ungrouped, with Title at its minimum.
+/// Narrower, the dashboard lists cards instead, since a table of only its core columns would
+/// hide the repository, author, reviews and comments that a card still shows.
+pub(crate) fn fits_table(room: Room) -> bool {
+    let defaults = BTreeMap::new();
+    let layout = ColumnLayout {
+        group: GroupBy::None,
+        show_org: false,
+        hidden: &[],
+        widths: &defaults,
+    };
+    let last = SQUEEZE_ORDER.last().copied();
+    let minimal = COLUMNS
+        .iter()
+        .filter(|c| !SQUEEZE_ORDER.contains(&c.id) || Some(c.id) == last);
+    layout.needed(minimal, room, Give::ToDefault).floor <= room.width
 }
 
 /// Grouped by status, the group header already names it: the status cell shows only its glyph.

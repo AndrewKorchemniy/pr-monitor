@@ -32,10 +32,12 @@ use crate::{
     widgets::people_picker::Step as Highlight,
 };
 
+mod responsive;
+
 /// What the pointer does once a scene has settled (hover a control, open a menu).
 type Pointer = fn(&mut Harness<'_, Fixture>);
 
-/// The smallest window the app allows (`render::MIN_SIZE` wide), a little taller.
+/// A small window that still shows the table, where it has no room for some chosen columns.
 const SMALL_WINDOW: egui::Vec2 = egui::vec2(720.0, 620.0);
 
 /// Scenes that need the pointer: hover states, the column menu, and the settings column
@@ -84,6 +86,7 @@ fn pointer_scenes() -> Vec<(Scene, Pointer)> {
         ),
     ];
     all.extend(small_window_scenes());
+    all.extend(responsive::pointer_scenes());
     all
 }
 
@@ -261,7 +264,7 @@ fn people_scenes() -> [Named; 5] {
 }
 
 /// Banners of every shape: one line, a title with a detail and actions, and a dismissible one.
-fn banner_shapes(f: &mut Fixture) {
+pub(super) fn banner_shapes(f: &mut Fixture) {
     let plain = |id: &str, severity, title: &str| Banner {
         id: Arc::from(id),
         severity,
@@ -373,6 +376,7 @@ fn scenes() -> Vec<Scene> {
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
     all.extend(status_bar_scenes());
+    all.extend(responsive::scenes());
     all.extend(banner_scenes());
     all.extend(settings_scenes());
     all

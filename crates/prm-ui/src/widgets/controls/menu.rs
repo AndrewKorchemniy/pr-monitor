@@ -3,10 +3,13 @@
 
 use eframe::egui::{self, Rect, Sense, pos2, vec2};
 
-use super::{Check, ghost_chrome, hover_color, paint_check};
-use crate::theme::{
-    UiTheme,
-    icons::{self, Icon},
+use super::{Check, Chrome, ghost_chrome, hover_color, paint_check, square_icon_button};
+use crate::{
+    copy,
+    theme::{
+        UiTheme,
+        icons::{self, Icon},
+    },
 };
 
 /// The check box in a `menu_check` row.
@@ -14,6 +17,23 @@ const MENU_MARK: f32 = 14.0;
 
 /// The space between a button and the menu it opens.
 pub(crate) const MENU_GAP: f32 = 6.0;
+
+/// The chevron at the end of a `menu_button`.
+const CHEVRON: f32 = 10.0;
+
+/// How wide a `menu_button` reading `label` and `value` is (points).
+pub(crate) fn menu_button_width(ui: &egui::Ui, theme: &UiTheme, label: &str, value: &str) -> f32 {
+    let m = &theme.tokens.metrics;
+    let width = |text: &str| {
+        let font = theme.fonts.body.clone();
+        let galley = ui
+            .painter()
+            .layout_no_wrap(text.to_owned(), font, theme.colors.text_primary);
+        galley.size().x
+    };
+    let (pad, gap) = (m.space.lg, m.space.sm);
+    pad + width(label) + gap + width(value) + gap + 2.0 + CHEVRON + pad
+}
 
 /// A ghost button reading "Label  Value ⌄" that opens a menu (callers attach the popup with
 /// `egui::Popup::menu`); it stays filled while that menu is open.
@@ -28,8 +48,8 @@ pub(crate) fn menu_button(
     let painter = ui.painter().clone();
     let label_g = painter.layout_no_wrap(label.to_owned(), font.clone(), theme.colors.text_muted);
     let value_g = painter.layout_no_wrap(value.to_owned(), font, theme.colors.text_primary);
-    let (pad, gap, chevron) = (m.space.lg, m.space.sm, 10.0);
-    let width = pad + label_g.size().x + gap + value_g.size().x + gap + 2.0 + chevron + pad;
+    let (pad, gap, chevron) = (m.space.lg, m.space.sm, CHEVRON);
+    let width = menu_button_width(ui, theme, label, value);
     let (rect, response) =
         ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
@@ -57,7 +77,22 @@ pub(crate) fn menu_button(
         Icon::ChevronDown,
         hover_color(theme, &response),
     );
-    let name = format!("{label}: {value}");
+    let name = copy::menu_value(label, value);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &name));
+    response
+}
+
+/// `menu_button` as a square ghost icon, for a toolbar short of room. "Label: Value" is its
+/// tooltip and its name for screen readers; it stays filled while its menu is open.
+pub(crate) fn menu_icon_button(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    icon: Icon,
+    (label, value): (&str, &str),
+) -> egui::Response {
+    let name = copy::menu_value(label, value);
+    let response = square_icon_button(ui, theme, (icon, &name), Chrome::Ghost);
+    let response = response.on_hover_text(&name);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &name));
     response
 }

@@ -146,6 +146,11 @@ impl PrMonitorApp {
     }
 
     fn run_pr(&mut self, ctx: &egui::Context, command: PrCommand) {
+        if command == PrCommand::Peek && self.dash.peek.open {
+            // why: closing needs no row, and the selection may have gone since it opened.
+            self.dash.peek.open = false;
+            return;
+        }
         let Some(row) = self.dash.view.selected_row().cloned() else {
             return;
         };
