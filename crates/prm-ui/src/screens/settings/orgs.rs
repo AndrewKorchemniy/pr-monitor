@@ -560,7 +560,7 @@ fn people_dialog(
         people_picker(ui, cx, picker, id.as_ref(), list);
     });
     if outcome != ModalOutcome::Open {
-        picker.close();
+        picker.reset();
     }
     outcome
 }

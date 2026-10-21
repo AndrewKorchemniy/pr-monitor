@@ -15,7 +15,7 @@ use crate::{
     screens::settings::{PAGES, Page},
     testing::{
         org_status, sample_rows,
-        screens::{Fixture, Shown, harness},
+        screens::{Fixture, Shown, WINDOW, harness},
         state_with,
     },
 };
@@ -180,6 +180,23 @@ fn the_test_notification_result_shows_beside_its_button() {
     h.get_by_label(copy::TEST_SENT);
 }
 
+/// "Send a test notification" from the palette opens this page scrolled to the button, so the
+/// result shows without scrolling.
+#[test]
+fn a_test_sent_from_the_palette_shows_its_button() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    fixture.settings.page = Page::Notifications;
+    fixture.settings.reveal_test = true;
+    let mut h = harness(fixture);
+    h.run();
+    h.run();
+
+    let button = h.get_by_label(copy::SEND_TEST).rect();
+    let window = egui::Rect::from_min_size(egui::Pos2::ZERO, WINDOW);
+    assert!(window.contains_rect(button), "{button:?} is off screen");
+    assert!(!h.state().settings.reveal_test, "it scrolls once");
+}
+
 /// A failed project list used to leave the picker saying it was loading, forever.
 #[test]
 fn a_failed_project_list_says_so_and_offers_a_reload() {
@@ -218,6 +235,17 @@ fn a_stopped_service_shows_a_banner_on_the_dashboard() {
         h.query_by_label(copy::CLOSE).is_none(),
         "it cannot be dismissed"
     );
+}
+
+/// Setup cannot finish without the service, so first run says so too.
+#[test]
+fn a_stopped_service_shows_a_banner_during_first_run() {
+    let mut fixture = Fixture::new(Shown::FirstRun, AppState::default());
+    fixture.dash.show_service_stopped();
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(copy::SERVICE_STOPPED);
+    h.get_by_label(copy::APP_NAME);
 }
 
 #[test]

@@ -10,7 +10,11 @@ use std::sync::{
 };
 
 use eframe::egui;
-use prm_domain::{OrgId, Person, ids::RequestId, person::PersonCandidate};
+use prm_domain::{
+    OrgId, Person,
+    ids::RequestId,
+    person::{PersonCandidate, merge_candidates},
+};
 use prm_service::{AppEvent, SearchPhase, UiError};
 
 use crate::{copy, frame::FrameCx, widgets};
@@ -38,6 +42,9 @@ enum Search {
     Searching(RequestId),
     /// Finished; the line to show when nothing is left to offer ("No people match …").
     Done(Arc<str>),
+    /// The directory was not searched (the org is signed out); the matches are known people
+    /// only, and this muted line says so.
+    LocalOnly(Arc<str>),
     /// The directory failed; the matches are known people only, and this line says so.
     Failed(Arc<str>),
 }
@@ -65,7 +72,8 @@ pub(crate) struct PeoplePicker {
     query: String,
     search: Search,
     results: Arc<[PersonCandidate]>,
-    resolving: Option<RequestId>,
+    /// Directory entries picked and not resolved yet; each is added when its result arrives.
+    resolving: Vec<RequestId>,
     /// Why the last pick could not be added.
     error: Option<Arc<str>>,
     /// The dropdown is open.
@@ -81,7 +89,7 @@ impl PeoplePicker {
             query: String::new(),
             search: Search::Idle,
             results: Arc::from([]),
-            resolving: None,
+            resolving: Vec::new(),
             error: None,
             open: false,
             highlight: 0,
@@ -110,7 +118,8 @@ impl PeoplePicker {
         self.on_resolved(*request, result)
     }
 
-    /// Local results arrive first, then the directory's; stale requests are ignored.
+    /// Local results arrive first, then the directory's; stale requests are ignored. Until the
+    /// directory answers, the earlier matches that still fit stay after the local ones.
     fn on_results(
         &mut self,
         request: RequestId,
@@ -121,28 +130,33 @@ impl PeoplePicker {
         if self.search != Search::Searching(request) {
             return;
         }
-        self.results = candidates.clone();
-        self.search = match phase {
-            SearchPhase::Local => Search::Searching(request),
+        let finished = match phase {
+            SearchPhase::Local => {
+                let kept = self.results.to_vec();
+                let limit = candidates.len() + kept.len();
+                self.results = merge_candidates(candidates.to_vec(), kept, limit).into();
+                return;
+            }
             SearchPhase::Final => Search::Done(Arc::from(copy::no_people(query))),
+            SearchPhase::LocalOnly => Search::LocalOnly(Arc::from(copy::SIGN_IN_TO_SEARCH)),
             SearchPhase::Failed(error) => Search::Failed(error.title.clone()),
         };
+        self.search = finished;
+        self.results = candidates.clone();
     }
 
-    /// The person picked earlier is resolved (or could not be): the dropdown stops saying
-    /// "Adding…" and closes unless the user is typing the next name or it failed.
+    /// A person picked earlier is resolved (or could not be). Once nothing is left to show
+    /// (no other pick pending, nothing typed) the dropdown closes; a failure opens it to say why.
     fn on_resolved(
         &mut self,
         request: RequestId,
         result: &Result<Person, UiError>,
     ) -> Option<Person> {
-        if self.resolving != Some(request) {
-            return None;
-        }
-        self.resolving = None;
+        let pending = self.resolving.iter().position(|r| *r == request)?;
+        self.resolving.remove(pending);
         match result {
             Ok(person) => {
-                self.open = !self.query.trim().is_empty();
+                self.open &= self.has_rows();
                 Some(person.clone())
             }
             Err(error) => {
@@ -158,13 +172,21 @@ impl PeoplePicker {
     fn typed(&mut self) -> Option<RequestId> {
         self.error = None;
         self.highlight = 0;
-        self.results = Arc::from([]);
-        let query = self.query.trim();
-        self.open = !query.is_empty() || self.resolving.is_some();
+        let query = self.query.trim().to_lowercase();
+        self.open = !query.is_empty() || !self.resolving.is_empty();
         if query.chars().count() < MIN_QUERY {
             self.search = Search::Idle;
+            self.results = Arc::from([]);
             return None;
         }
+        // why: the matches that still fit stay until the new results arrive, so the dropdown
+        // does not shrink to "Searching…" and grow back with every letter.
+        self.results = self
+            .results
+            .iter()
+            .filter(|candidate| mentions(candidate, &query))
+            .cloned()
+            .collect();
         let request = next_request();
         self.search = Search::Searching(request);
         Some(request)
@@ -178,19 +200,26 @@ impl PeoplePicker {
     /// Chooses `candidate`: clears the field for the next name and closes the dropdown, or
     /// keeps it open on "Adding…" while a directory entry resolves.
     fn pick(&mut self, candidate: &PersonCandidate) -> Pick {
+        self.reset();
+        if let Some(person) = candidate.to_person() {
+            self.open = !self.resolving.is_empty();
+            return Pick::Add(person);
+        }
+        let request = next_request();
+        self.resolving.push(request);
+        self.open = true;
+        Pick::Resolve(request, candidate.clone())
+    }
+
+    /// Empties the field, forgets its search and closes the dropdown (a dialog closing). Picks
+    /// still being resolved are kept, so those people are still added.
+    pub(crate) fn reset(&mut self) {
         self.query.clear();
         self.search = Search::Idle;
         self.results = Arc::from([]);
         self.error = None;
         self.highlight = 0;
-        if let Some(person) = candidate.to_person() {
-            self.open = self.resolving.is_some();
-            return Pick::Add(person);
-        }
-        let request = next_request();
-        self.resolving = Some(request);
-        self.open = true;
-        Pick::Resolve(request, candidate.clone())
+        self.open = false;
     }
 
     /// Closes the dropdown and keeps what was typed.
@@ -207,7 +236,7 @@ impl PeoplePicker {
 
     /// Something to show: progress on a pick, its failure, or a typed query.
     fn has_rows(&self) -> bool {
-        self.resolving.is_some() || self.error.is_some() || !self.query.trim().is_empty()
+        !self.resolving.is_empty() || self.error.is_some() || !self.query.trim().is_empty()
     }
 }
 
@@ -242,6 +271,12 @@ const fn stepped(highlight: usize, step: Step, count: usize) -> usize {
         Step::Down => (current + 1) % count,
         Step::Up => (current + count - 1) % count,
     }
+}
+
+/// `candidate`'s name or sign-in name contains `query` (already lowercase).
+fn mentions(candidate: &PersonCandidate, query: &str) -> bool {
+    let contains = |text: &str| text.to_lowercase().contains(query);
+    contains(&candidate.name) || candidate.unique_name.as_deref().is_some_and(contains)
 }
 
 /// The matches worth offering: not chosen already, and at most `MAX_ROWS`.

@@ -11,7 +11,7 @@ use crate::{
     frame::FrameCx,
     theme::{Tone, UiTheme},
     widgets::{
-        controls,
+        controls::{self, MenuMark},
         fields::{self, Field},
     },
 };
@@ -151,12 +151,15 @@ fn dropdown(
     if !picker.has_rows() {
         picker.close();
     }
-    let width = anchor.width();
+    let frame = controls::menu_frame(theme);
+    // why: the frame's border sits outside the content, so the content is narrower than the
+    // field by it and the dropdown's outer edges line up with the field's.
+    let width = anchor.width() - frame.total_margin().sum().x;
     let shown = egui::Popup::new(id, ui.ctx().clone(), anchor, field.layer_id)
         .open_memory(Some(egui::SetOpenCommand::Bool(picker.open)))
         .close_behavior(egui::PopupCloseBehavior::IgnoreClicks)
         .gap(controls::MENU_GAP)
-        .frame(controls::menu_frame(theme))
+        .frame(frame)
         .width(width)
         .anchor_widget(field.id)
         .show(|ui| {
@@ -179,7 +182,7 @@ fn rows(
     picker: &mut PeoplePicker,
     people: &[Person],
 ) -> Option<PersonCandidate> {
-    if picker.resolving.is_some() {
+    if !picker.resolving.is_empty() {
         note(ui, theme, copy::ADDING, false);
     }
     if let Some(error) = &picker.error {
@@ -198,14 +201,15 @@ fn rows(
     match &picker.search {
         Search::Searching(_) => note(ui, theme, copy::SEARCHING, false),
         Search::Done(empty) if none_left => note(ui, theme, empty, false),
+        Search::LocalOnly(line) => note(ui, theme, line, false),
         Search::Failed(message) => note(ui, theme, message, true),
         Search::Idle | Search::Done(_) => {}
     }
     clicked
 }
 
-/// The offered matches with the highlighted one filled; moving the pointer over a row
-/// highlights it, so the keys and the mouse agree.
+/// The offered matches with only the highlighted one filled; moving the pointer over a row
+/// highlights it, so the keys and the mouse agree on the one row Enter adds.
 fn matches(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -222,7 +226,8 @@ fn matches(
             .as_deref()
             .or_else(|| candidate.group.then_some(copy::GROUP_TAG));
         let text = (candidate.name.as_ref(), detail);
-        let row = controls::menu_item_detail(ui, theme, text, index == lit);
+        let mark = MenuMark::Keys { lit: index == lit };
+        let row = controls::menu_item_detail(ui, theme, text, mark);
         if row.hovered() && moved {
             hovered = Some(index);
         }

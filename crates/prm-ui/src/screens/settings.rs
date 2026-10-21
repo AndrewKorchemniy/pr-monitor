@@ -124,6 +124,8 @@ pub(crate) struct SettingsState {
     pub save_error: Option<Arc<str>>,
     /// The last test notification, shown beside its button.
     pub test_result: notifications::TestResult,
+    /// Scroll the test button into view on the next frame (a test sent from the palette).
+    pub reveal_test: bool,
 }
 
 impl SettingsState {
@@ -143,6 +145,7 @@ impl SettingsState {
             confirm_pending: false,
             save_error: None,
             test_result: None,
+            reveal_test: false,
         }
     }
 

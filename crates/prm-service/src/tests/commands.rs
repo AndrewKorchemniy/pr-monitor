@@ -14,6 +14,7 @@ use super::support::{CONTOSO, list_calls, pr, refreshed, setup};
 use crate::{
     command::Command,
     event::{AppEvent, SearchPhase},
+    state::AuthStateView,
     testing::ServiceHarness,
     text,
 };
@@ -213,6 +214,37 @@ async fn people_search_failure_reported_with_local_results() {
     assert_eq!(*request, RequestId(1));
     assert_eq!(error.title.as_ref(), text::SEARCH_FAILED);
     assert!(names.iter().any(|n| n.as_ref() == "Ann"), "{names:?}");
+    h.stop().await;
+}
+
+/// Signed out, the directory is not searched; the picker must not read that as "nobody
+/// matches".
+#[tokio::test(start_paused = true)]
+async fn people_search_signed_out_is_local_only() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    h.send(Command::SignOut { org: org(CONTOSO) });
+    h.wait_for("signed out", |s| {
+        s.org(&org(CONTOSO))
+            .is_some_and(|o| o.auth.state == AuthStateView::SignedOut)
+    })
+    .await;
+
+    h.send(Command::SearchPeople {
+        org: org(CONTOSO),
+        query: "ann".into(),
+        request: RequestId(1),
+    });
+    h.advance(Duration::from_millis(300)).await;
+    h.settle().await;
+
+    let results = people_results(&h);
+    let [(request, SearchPhase::LocalOnly, names)] = results.as_slice() else {
+        panic!("expected one local-only phase: {results:?}");
+    };
+    assert_eq!(*request, RequestId(1));
+    assert!(names.iter().any(|n| n.as_ref() == "Ann"), "{names:?}");
+    assert_eq!(h.api(&org(CONTOSO)).calls(ApiCall::SearchSubjects), 0);
     h.stop().await;
 }
 

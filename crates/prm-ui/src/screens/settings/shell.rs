@@ -245,7 +245,10 @@ fn page_body(
     match st.page {
         Page::General => general::page(ui, cx, &mut st.draft),
         Page::Organizations => orgs::page(ui, cx, st),
-        Page::Notifications => notifications::page(ui, cx, &mut st.draft, &mut st.test_result),
+        Page::Notifications => {
+            let test = (&mut st.test_result, &mut st.reveal_test);
+            notifications::page(ui, cx, &mut st.draft, test);
+        }
         Page::Appearance => appearance::page(ui, cx, &mut st.draft, env),
     }
     ui.add_space(cx.theme.tokens.metrics.space.xxl);

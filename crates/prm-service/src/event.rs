@@ -50,12 +50,16 @@ pub enum AppEvent {
 
 /// People-picker results arrive instantly from the local cache and, when a directory search
 /// follows, again merged with the directory's (or, if it failed, as the local results with the
-/// error). Without a directory search the local results are already final.
+/// error). Without a directory search the local results are already final, or local only when
+/// the org is signed out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SearchPhase {
     /// More results follow for this request.
     Local,
     Final,
+    /// The directory was not searched because the org is signed out; the candidates are the
+    /// local results only.
+    LocalOnly,
     /// The directory search failed; the candidates are the local results only.
     Failed(UiError),
 }

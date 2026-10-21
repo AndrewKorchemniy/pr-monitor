@@ -228,3 +228,25 @@ fn clicking_a_match_adds_it_and_a_pill_removes_it() {
     h.run();
     assert_eq!(reviewers(&h), ["Sam Whitfield", "Priya Raman"]);
 }
+
+#[test]
+fn closing_the_dialog_clears_the_field_for_next_time() {
+    let mut h = reviewers_dialog();
+    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
+        .click();
+    h.run();
+    let request = type_query(&mut h, "pri");
+    deliver(&mut h, request, &[priya()]);
+
+    h.get_by_label(copy::DONE).click();
+    h.run();
+    assert_eq!(h.state().settings.editing, None);
+    h.state_mut().settings.editing = Some(Editor::Reviewers);
+    h.run();
+
+    assert_eq!(field_text(&h), "");
+    assert!(
+        h.query_by_role_and_label(Role::MenuItem, "Priya Raman")
+            .is_none()
+    );
+}

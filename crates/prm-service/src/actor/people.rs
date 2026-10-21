@@ -28,16 +28,20 @@ impl Service {
         let local = self.orgs[idx].data.people.search(&query, SEARCH_LIMIT);
         let signed_in = self.orgs[idx].live.auth_state.is_signed_in();
         let remote = signed_in && query.chars().count() >= PEOPLE_REMOTE_MIN_CHARS;
+        // why: with no directory search to follow, the local results are all there is; signed
+        // out, the picker says the directory was skipped rather than that nobody matches.
+        let phase = if remote {
+            SearchPhase::Local
+        } else if signed_in {
+            SearchPhase::Final
+        } else {
+            SearchPhase::LocalOnly
+        };
         self.deps.events.emit(AppEvent::PeopleResults {
             request,
             org: org.clone(),
             query: query.clone(),
-            // why: with no directory search to follow, the local results are all there is.
-            phase: if remote {
-                SearchPhase::Local
-            } else {
-                SearchPhase::Final
-            },
+            phase,
             candidates: local.into(),
         });
         self.orgs[idx].link.abort_search();

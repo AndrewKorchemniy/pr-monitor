@@ -117,7 +117,7 @@ impl PrMonitorApp {
             C::NotificationsResume => self
                 .link
                 .send(Command::SetNotificationsPaused { until: None }),
-            C::NotificationsTest => self.link.send(Command::TestNotification),
+            C::NotificationsTest => self.send_test_notification(),
             C::AuthMenu => {
                 self.window.show(ctx);
                 self.overlay = Overlay::Modal(ModalKind::AuthMenu);
@@ -130,6 +130,19 @@ impl PrMonitorApp {
             C::ZoomReset => self.zoom(None),
             C::ThemeCycle => self.cycle_theme(),
         }
+    }
+
+    /// Sends a test notification from Settings › Notifications, scrolled to the test button, so
+    /// its result (above all a failure) shows beside the button.
+    fn send_test_notification(&mut self) {
+        if self.first_run.is_none() {
+            self.open_settings(SettingsSection::Notifications);
+        }
+        if let Some(settings) = &mut self.settings {
+            settings.test_result = None;
+            settings.reveal_test = true;
+        }
+        self.link.send(Command::TestNotification);
     }
 
     fn run_pr(&mut self, ctx: &egui::Context, command: PrCommand) {

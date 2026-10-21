@@ -58,11 +58,13 @@ fn toggles(events: &mut EventToggles) -> [(&mut bool, &'static str); 12] {
 /// it (built once, when the result arrives).
 pub(crate) type TestResult = Option<Result<(), Arc<str>>>;
 
+/// The page; `reveal` scrolls the test button into view once (a test sent from the palette, so
+/// its result shows).
 pub(crate) fn page(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
     draft: &mut Config,
-    test: &mut TestResult,
+    (test, reveal): (&mut TestResult, &mut bool),
 ) {
     let theme = cx.theme.clone();
     let prefs = &mut draft.notifications;
@@ -74,6 +76,9 @@ pub(crate) fn page(
             events(ui, &theme, &mut prefs.events);
         });
     });
+    if std::mem::take(reveal) {
+        ui.scroll_to_cursor(Some(egui::Align::TOP));
+    }
     section(ui, &theme, copy::SECTION_TRY, None, |ui| {
         try_out(ui, cx, test);
     });

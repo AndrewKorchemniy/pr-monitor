@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, RichText};
 use prm_config::Config;
+use prm_service::state::Banner;
 
 use crate::{
     actions::UiAction,
@@ -13,7 +14,9 @@ use crate::{
     screens::settings::{SettingsState, orgs::new_profile},
     theme::{UiTheme, adapter, icons::Icon},
     widgets::{
-        self, card,
+        self,
+        banner::banners,
+        card,
         dialog::{self, DialogHead},
         fields::{self, Field},
         people_picker::people_picker,
@@ -43,8 +46,21 @@ impl FirstRun {
     }
 }
 
-pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
+/// The current step in a card; `stopped` (the background service stopped) shows above it, as
+/// on the dashboard, since setup cannot finish without the service.
+pub(crate) fn first_run(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    fr: &mut FirstRun,
+    stopped: Option<&Banner>,
+) {
     let theme = cx.theme.clone();
+    if let Some(stopped) = stopped {
+        let mut expanded = false;
+        egui::Panel::top("banners")
+            .frame(adapter::frame_canvas(&theme).inner_margin(egui::Margin::symmetric(8, 6)))
+            .show(ui, |ui| banners(ui, cx, &[stopped], &mut expanded));
+    }
     egui::CentralPanel::no_frame()
         .frame(adapter::frame_canvas(&theme))
         .show(ui, |ui| {

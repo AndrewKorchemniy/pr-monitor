@@ -173,6 +173,7 @@ pub(crate) const IGNORE_HELP: &str = "Bots and pipelines.";
 pub(crate) const ADD_PEOPLE: &str = "Add people";
 pub(crate) const SEARCH_MIN: &str = "Type 3 or more letters to search the directory.";
 pub(crate) const SEARCHING: &str = "Searching…";
+pub(crate) const SIGN_IN_TO_SEARCH: &str = "Sign in to search the directory.";
 pub(crate) const ADDING: &str = "Adding…";
 pub(crate) const SHOW_NOTIFICATIONS: &str = "Show Windows notifications";
 pub(crate) const WHILE_IN_FRONT: &str = "While PR Monitor is in front";
@@ -518,6 +519,7 @@ pub(crate) const ALL: &[&str] = &[
     ANY_NON_AUTHOR,
     SEARCH_MIN,
     SEARCHING,
+    SIGN_IN_TO_SEARCH,
     ADDING,
     GROUP_SUFFIX,
     PROJECTS_FAILED,

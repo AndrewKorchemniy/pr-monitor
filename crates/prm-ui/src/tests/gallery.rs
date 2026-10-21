@@ -6,13 +6,14 @@
 use std::{path::PathBuf, sync::Arc};
 
 use egui_kittest::Harness;
+use prm_config::Severity;
 use prm_domain::{
     Person,
-    auth::SettingsSection,
+    auth::{SettingsSection, UserAction},
     person::{CandidateSource, PersonCandidate},
-    testing::person,
+    testing::{org, person},
 };
-use prm_service::{AppState, SearchPhase, UiError};
+use prm_service::{AppState, SearchPhase, UiError, state::Banner};
 
 use crate::{
     copy,
@@ -92,7 +93,7 @@ fn people_search(f: &mut Fixture, phase: &SearchPhase, found: &[PersonCandidate]
     f.settings.pickers.tracked.show_matches("pri", phase, found);
 }
 
-fn people_scenes() -> [Named; 4] {
+fn people_scenes() -> [Named; 5] {
     [
         ("settings-organizations-people", |f| {
             f.settings.page = PAGES[1];
@@ -109,7 +110,46 @@ fn people_scenes() -> [Named; 4] {
             let failed = UiError::new("Couldn't search the directory; showing known people only");
             people_search(f, &SearchPhase::Failed(failed), &matches()[..1]);
         }),
+        ("settings-edit-people-signed-out", |f| {
+            people_search(f, &SearchPhase::LocalOnly, &[]);
+        }),
     ]
+}
+
+/// Banners of every shape: one line, a title with a detail and actions, and a dismissible one.
+fn banner_shapes(f: &mut Fixture) {
+    let plain = |id: &str, severity, title: &str| Banner {
+        id: Arc::from(id),
+        severity,
+        org: None,
+        title: Arc::from(title),
+        detail: None,
+        action: None,
+        secondary: None,
+        dismissible: false,
+    };
+    let sign_in = Banner {
+        org: Some(org("contoso")),
+        detail: Some(Arc::from("Your sign-in expired.")),
+        action: Some(UserAction::SignInWithMicrosoft),
+        secondary: Some(UserAction::ChooseSignIn),
+        ..plain("auth:contoso", Severity::Error, "Sign in to contoso")
+    };
+    let offline = Banner {
+        dismissible: true,
+        ..plain(
+            "offline",
+            Severity::Warning,
+            "Can't reach Azure DevOps. Showing the last data.",
+        )
+    };
+    let unsaved = plain(
+        "state-not-saved",
+        Severity::Warning,
+        "Couldn't save PR Monitor's data. Changes may be lost on exit.",
+    );
+    f.state.banners = Arc::from([sign_in, offline, unsaved]);
+    f.dash.banners_expanded = true;
 }
 
 /// What used to be a passing message, now shown where the user is looking.
@@ -126,6 +166,31 @@ fn failure_scenes() -> [Named; 2] {
             f.state.orgs = orgs.into();
             editing(f, Editor::Repositories);
         }),
+    ]
+}
+
+/// The stopped service (on the dashboard and during first run) and published banners.
+fn banner_scenes() -> [Scene; 3] {
+    let stopped = |f: &mut Fixture| f.dash.show_service_stopped();
+    [
+        scene(
+            "dashboard-service-stopped",
+            Shown::Dashboard,
+            demo_state,
+            stopped,
+        ),
+        scene(
+            "dashboard-banners",
+            Shown::Dashboard,
+            demo_state,
+            banner_shapes,
+        ),
+        scene(
+            "first-run-service-stopped",
+            Shown::FirstRun,
+            empty_state,
+            stopped,
+        ),
     ]
 }
 
@@ -150,19 +215,12 @@ fn scenes() -> Vec<Scene> {
             f.dash.view.set_text("token");
         }),
         scene("dashboard-empty", Shown::Dashboard, empty_state, nothing),
-        scene(
-            "dashboard-service-stopped",
-            Shown::Dashboard,
-            demo_state,
-            |f| {
-                f.dash.show_service_stopped();
-            },
-        ),
         scene("palette", Shown::Palette, demo_state, |f| {
             f.palette.query = "sign".to_owned();
         }),
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
+    all.extend(banner_scenes());
     let pages: [Named; 4] = [
         ("settings-general", |f| f.settings.page = PAGES[0]),
         ("settings-organizations", |f| f.settings.page = PAGES[1]),

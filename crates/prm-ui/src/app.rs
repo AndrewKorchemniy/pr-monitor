@@ -389,7 +389,8 @@ impl PrMonitorApp {
         self.applied_config = Some(config);
     }
 
-    /// The service cannot recover; a banner over the table says so until the app restarts.
+    /// The service cannot recover; a banner over the table (or over first run) says so until
+    /// the app restarts.
     fn on_service_stopped(&mut self) {
         if self.dash.service_stopped.is_none() {
             tracing::error!("background service stopped");

@@ -38,7 +38,8 @@ pub(crate) struct DashboardUi {
     pub peek: PeekLayout,
     pub banners_expanded: bool,
     pub dismissed: BTreeSet<Arc<str>>,
-    /// Shown first once the background service has stopped (it cannot recover).
+    /// Shown first once the background service has stopped (it cannot recover); first run
+    /// shows it too.
     pub service_stopped: Option<Banner>,
     pub ages: AgeCache,
     pub filter_focused: bool,

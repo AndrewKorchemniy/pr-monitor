@@ -29,7 +29,7 @@ impl PrMonitorApp {
         let focused = self.window.focused();
         if let Some(fr) = &mut self.first_run {
             let mut cx = frame_cx!(self, &ctx);
-            first_run(ui, &mut cx, fr);
+            first_run(ui, &mut cx, fr, self.dash.service_stopped.as_ref());
         } else {
             let mut cx = frame_cx!(self, &ctx);
             dashboard(ui, &mut cx, &mut self.dash, focused);
