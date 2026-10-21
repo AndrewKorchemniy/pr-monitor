@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use prm_auth::AuthAvailability;
 use prm_domain::{
     auth::{AuthError, SettingsSection},

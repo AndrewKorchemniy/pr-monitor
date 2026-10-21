@@ -40,7 +40,7 @@ pub(crate) enum AuthInput {
     SignInRequested(SignInMethod),
     SignInOk,
     SignInFailed(AuthError),
-    /// Restores the state from before the sign-in started.
+    /// Restores the state from before the sign-in started; ignored unless still signing in.
     SignInCancelled {
         restore: Box<AuthState>,
     },
@@ -48,14 +48,15 @@ pub(crate) enum AuthInput {
     SignOutRequested,
     Disabled,
     Enabled,
-    /// Auth settings changed: start over.
+    /// Auth settings changed: start over (a disabled org stays disabled).
     Reset,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AuthEffect {
     PauseRefresh,
-    ResumeRefresh { immediate: bool },
+    /// Unpause and refresh now.
+    ResumeRefresh,
     NotifyProblem,
     StartSignIn(SignInMethod),
     CancelSignIn,
@@ -93,6 +94,19 @@ impl AuthState {
     pub(crate) const fn is_signed_in(&self) -> bool {
         matches!(self, Self::SignedIn { .. })
     }
+
+    /// The error of a problem state (needs sign-in or blocked); `None` otherwise.
+    pub(crate) const fn problem(&self) -> Option<&AuthError> {
+        match self {
+            Self::NeedsSignIn { error } | Self::Blocked { error } => Some(error),
+            Self::Unknown
+            | Self::Checking
+            | Self::SignedIn { .. }
+            | Self::SigningIn { .. }
+            | Self::SignedOut
+            | Self::Disabled => None,
+        }
+    }
 }
 
 type Transition = (AuthState, Vec<AuthEffect>);
@@ -106,7 +120,7 @@ pub(crate) fn transition(state: &AuthState, input: AuthInput, now: Timestamp) ->
         AuthInput::SignInRequested(method) => sign_in_requested(state, method, now),
         AuthInput::SignInOk | AuthInput::PatStored => resume_checking(state),
         AuthInput::SignInFailed(error) => sign_in_failed(error),
-        AuthInput::SignInCancelled { restore } => (*restore, Vec::new()),
+        AuthInput::SignInCancelled { restore } => sign_in_cancelled(state, *restore),
         AuthInput::SignOutRequested => (
             AuthState::SignedOut,
             vec![AuthEffect::PauseRefresh, AuthEffect::CancelSignIn],
@@ -115,10 +129,8 @@ pub(crate) fn transition(state: &AuthState, input: AuthInput, now: Timestamp) ->
             AuthState::Disabled,
             vec![AuthEffect::PauseRefresh, AuthEffect::CancelSignIn],
         ),
-        AuthInput::Enabled | AuthInput::Reset => (
-            AuthState::Unknown,
-            vec![AuthEffect::ResumeRefresh { immediate: true }],
-        ),
+        AuthInput::Enabled => (AuthState::Unknown, vec![AuthEffect::ResumeRefresh]),
+        AuthInput::Reset => reset(state),
     }
 }
 
@@ -138,12 +150,8 @@ fn auth_ok(state: &AuthState, method: AuthMethod) -> Transition {
     if state.is_inert() {
         return unchanged(state);
     }
-    let was_paused = matches!(
-        state,
-        AuthState::NeedsSignIn { .. } | AuthState::Blocked { .. }
-    );
-    let effects = if was_paused {
-        vec![AuthEffect::ResumeRefresh { immediate: true }]
+    let effects = if state.problem().is_some() {
+        vec![AuthEffect::ResumeRefresh]
     } else {
         Vec::new()
     };
@@ -182,10 +190,24 @@ fn resume_checking(state: &AuthState) -> Transition {
     if matches!(state, AuthState::Disabled) {
         return unchanged(state);
     }
-    (
-        AuthState::Checking,
-        vec![AuthEffect::ResumeRefresh { immediate: true }],
-    )
+    (AuthState::Checking, vec![AuthEffect::ResumeRefresh])
+}
+
+/// Only a sign-in that is still running is undone; a sign-out, disable or reset since wins.
+fn sign_in_cancelled(state: &AuthState, restore: AuthState) -> Transition {
+    if matches!(state, AuthState::SigningIn { .. }) {
+        (restore, Vec::new())
+    } else {
+        unchanged(state)
+    }
+}
+
+/// A disabled org stays disabled (and unscheduled) until it is enabled again.
+fn reset(state: &AuthState) -> Transition {
+    if matches!(state, AuthState::Disabled) {
+        return unchanged(state);
+    }
+    (AuthState::Unknown, vec![AuthEffect::ResumeRefresh])
 }
 
 fn sign_in_failed(error: AuthError) -> Transition {

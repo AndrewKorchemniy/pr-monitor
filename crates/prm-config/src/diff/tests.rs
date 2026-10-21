@@ -108,3 +108,26 @@ fn diff_configs_label_only_needs_no_reaction() {
     new.orgs[0].muted = true;
     assert_eq!(diff_configs(&old, &new), ConfigChanges::default());
 }
+
+/// A duplicate entry used to stand in for the org (last one won), so the org was diffed
+/// against the disabled duplicate's profile.
+#[test]
+fn diff_configs_duplicate_uses_first_entry() {
+    let old = config(&[
+        "https://dev.azure.com/contoso",
+        "https://contoso.visualstudio.com",
+    ]);
+    let mut new = old.clone();
+    new.orgs[1].include_me = !new.orgs[1].include_me;
+    let changes = diff_configs(&old, &new);
+    assert!(changes.changed.is_empty(), "{changes:?}");
+
+    new.orgs[0].include_me = !new.orgs[0].include_me;
+    assert_eq!(
+        only_change(&old, &new),
+        OrgChanges {
+            authors: true,
+            ..OrgChanges::default()
+        }
+    );
+}

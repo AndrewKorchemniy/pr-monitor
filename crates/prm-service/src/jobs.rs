@@ -39,6 +39,8 @@ pub(crate) enum JobOutput {
     },
     SignIn {
         org: OrgId,
+        /// The org's `sign_in_seq` when the job started.
+        seq: u64,
         result: Result<AuthMethod, AuthError>,
     },
     SignedOut {

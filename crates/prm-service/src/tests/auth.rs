@@ -275,3 +275,122 @@ async fn set_pat_stores_and_refreshes() {
     assert_eq!(h.auth.auth(&org(CONTOSO)).stored_pats().len(), 1);
     h.stop().await;
 }
+
+fn az_login() -> SignInMethod {
+    SignInMethod::AzLogin {
+        broker: AzBroker::Default,
+    }
+}
+
+/// A signed-in org whose interactive sign-ins wait an hour (or until cancelled).
+async fn slow_sign_in_harness() -> ServiceHarness {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    let auth = h.auth.auth(&org(CONTOSO));
+    auth.set_sign_in_delay(Some(Duration::from_hours(1)));
+    h
+}
+
+fn signing_in(state: &AppState) -> bool {
+    matches!(auth_view(state), AuthStateView::SigningIn { .. })
+}
+
+/// Signing out during a sign-in used to have the cancelled sign-in restore "signed in" over
+/// the sign-out, while nothing refreshed.
+#[tokio::test(start_paused = true)]
+async fn sign_out_during_sign_in_stays_signed_out() {
+    let mut h = slow_sign_in_harness().await;
+    h.send(Command::SignIn {
+        org: org(CONTOSO),
+        method: az_login(),
+    });
+    h.wait_for("signing in", signing_in).await;
+
+    h.send(Command::SignOut { org: org(CONTOSO) });
+    h.advance(Duration::from_secs(1)).await;
+
+    assert_eq!(auth_view(&h.snapshot()), AuthStateView::SignedOut);
+    h.stop().await;
+}
+
+/// Disabling an org during a sign-in used to have the cancelled sign-in revive it.
+#[tokio::test(start_paused = true)]
+async fn disable_during_sign_in_stays_disabled() {
+    let mut h = slow_sign_in_harness().await;
+    h.send(Command::SignIn {
+        org: org(CONTOSO),
+        method: az_login(),
+    });
+    let state = h.wait_for("signing in", signing_in).await;
+
+    let mut config = (*state.config).clone();
+    config.orgs[0].enabled = false;
+    h.send(Command::ApplyConfig(Box::new(config)));
+    h.advance(Duration::from_secs(1)).await;
+
+    assert_eq!(auth_view(&h.snapshot()), AuthStateView::Disabled);
+    h.stop().await;
+}
+
+/// Starting a second sign-in used to let the first one's cancellation end it early, leaving
+/// the second running and impossible to cancel.
+#[tokio::test(start_paused = true)]
+async fn second_sign_in_replaces_first_and_can_be_cancelled() {
+    let mut h = slow_sign_in_harness().await;
+    h.send(Command::SignIn {
+        org: org(CONTOSO),
+        method: az_login(),
+    });
+    h.wait_for("signing in", signing_in).await;
+
+    h.send(Command::SignIn {
+        org: org(CONTOSO),
+        method: SignInMethod::Silent,
+    });
+    h.advance(Duration::from_secs(1)).await;
+    assert!(signing_in(&h.snapshot()), "{:?}", auth_view(&h.snapshot()));
+
+    h.send(Command::CancelSignIn { org: org(CONTOSO) });
+    h.advance(Duration::from_secs(1)).await;
+    assert_eq!(auth_view(&h.snapshot()), AuthStateView::SignedIn);
+    h.stop().await;
+}
+
+/// A refresh rejected while a sign-in ran used to leave the org "refreshing" with nothing
+/// scheduled once the sign-in was cancelled: it never refreshed again.
+#[tokio::test(start_paused = true)]
+async fn auth_failure_while_signing_in_reschedules() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    let api = h.api(&org(CONTOSO));
+    api.set_delay(Some(Duration::from_secs(10)));
+    api.fail(
+        ApiCall::ConnectionData,
+        AdoError::Auth(AuthError::Unauthorized { code: None }),
+    );
+    h.auth
+        .auth(&org(CONTOSO))
+        .set_sign_in_delay(Some(Duration::from_hours(1)));
+    h.settle().await;
+    h.send(Command::SignIn {
+        org: org(CONTOSO),
+        method: az_login(),
+    });
+    h.wait_for("signing in", signing_in).await;
+
+    h.advance(Duration::from_secs(11)).await;
+    h.send(Command::CancelSignIn { org: org(CONTOSO) });
+    h.settle().await;
+    let state = h.snapshot();
+    let status = state.org(&org(CONTOSO)).unwrap();
+    assert!(
+        matches!(status.health, OrgHealth::Failed { .. }),
+        "{:?}",
+        status.health
+    );
+    assert!(status.next_due.is_some());
+
+    api.clear_failures();
+    api.set_delay(None);
+    refreshed(&mut h, CONTOSO, 1).await;
+    h.stop().await;
+}

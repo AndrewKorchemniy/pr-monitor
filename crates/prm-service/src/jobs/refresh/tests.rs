@@ -55,7 +55,8 @@ async fn org_wide_probe_error_keeps_previous_result() {
         let api = api();
         api.fail(ApiCall::ProbeOrgWide, AdoError::Timeout);
         let probe = org_wide_probe(&ctx(api.clone(), previous), &catalog()).await;
-        assert_eq!(probe, previous, "previous {previous:?}");
+        assert_eq!(probe.cache, previous, "previous {previous:?}");
+        assert!(!probe.usable, "a failed probe never enables the org-wide query");
         assert_eq!(api.calls(ApiCall::ProbeOrgWide), 1);
     }
 }
@@ -65,10 +66,43 @@ async fn org_wide_probe_verdict_is_cached() {
     let api = api();
     let probe = org_wide_probe(&ctx(api, None), &catalog()).await;
     assert_eq!(
-        probe,
+        probe.cache,
         Some(ProbeCache {
             ok: true,
             at: ts(NOW),
         })
     );
+    assert!(probe.usable);
+}
+
+/// A transient probe failure (a 429, a timeout) used to be cached as "unsupported" for a day,
+/// so an opted-in org silently fell back to per-project queries.
+#[test]
+fn probe_answer_caches_only_definite_results() {
+    let cases: [(Result<OrgWideProbe, AdoError>, Option<bool>); 8] = [
+        (Ok(OrgWideProbe::Supported), Some(true)),
+        (Ok(OrgWideProbe::Unsupported), Some(false)),
+        (
+            Err(AdoError::Forbidden {
+                message: "no".into(),
+                code: None,
+            }),
+            Some(false),
+        ),
+        (Err(AdoError::NotFound { message: None }), Some(false)),
+        (Err(AdoError::RateLimited { retry_after: None }), None),
+        (Err(AdoError::Timeout), None),
+        (Err(AdoError::Network("reset".into())), None),
+        (
+            Err(AdoError::Server {
+                status: 503,
+                message: None,
+                activity: None,
+            }),
+            None,
+        ),
+    ];
+    for (probe, expected) in cases {
+        assert_eq!(probe_answer(&probe), expected, "{probe:?}");
+    }
 }

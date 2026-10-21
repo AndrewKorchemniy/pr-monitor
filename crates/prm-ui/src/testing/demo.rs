@@ -189,7 +189,6 @@ fn demo_catalog() -> Catalog {
             .map(|&(n, name)| Project {
                 id: project(n),
                 name: Arc::from(name),
-                state: Arc::from("wellFormed"),
             })
             .collect(),
         repos: repo_names
