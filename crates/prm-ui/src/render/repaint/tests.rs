@@ -5,14 +5,14 @@ use super::*;
 /// 30 s into a minute.
 const NOW: i64 = 1_792_411_530;
 
-fn inputs() -> RepaintInputs {
+fn inputs() -> RepaintInputs<'static> {
     RepaintInputs {
         visible: true,
         focused: true,
         low_power: false,
         now: Some(ts(NOW)),
         next_refresh: None,
-        deadlines: Vec::new(),
+        deadlines: &[],
     }
 }
 
@@ -51,13 +51,15 @@ fn the_last_minute_of_a_countdown_ticks_every_second_only_when_focused() {
 
 #[test]
 fn deadlines_pull_the_repaint_earlier_and_past_ones_mean_now() {
+    let soon = [None, Some(ts(NOW + 4)), None];
     let notice = RepaintInputs {
-        deadlines: vec![ts(NOW + 4)],
+        deadlines: &soon,
         ..inputs()
     };
     assert_eq!(next_repaint(&notice), Some(Duration::from_secs(4)));
+    let past = [Some(ts(NOW - 4))];
     let overdue = RepaintInputs {
-        deadlines: vec![ts(NOW - 4)],
+        deadlines: &past,
         ..inputs()
     };
     assert_eq!(next_repaint(&overdue), Some(Duration::ZERO));

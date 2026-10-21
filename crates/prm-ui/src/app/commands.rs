@@ -1,7 +1,5 @@
 //! Running a `CommandId` (from keys, the palette, buttons, the context menu or the tray).
 
-use std::time::Duration;
-
 use eframe::egui;
 use prm_domain::{
     auth::SettingsSection,
@@ -12,15 +10,13 @@ use prm_service::Command;
 use super::PrMonitorApp;
 use crate::{
     actions::UiAction,
-    commands::CommandId as C,
+    commands::{CommandId as C, PAUSE},
     copy,
     format::markdown_link,
     route::{ModalKind, Overlay},
     widgets::toolbar::{GROUPS, filter_id},
 };
 
-/// How long "Pause notifications" lasts.
-const PAUSE: Duration = Duration::from_hours(1);
 const ZOOM_STEP: f32 = 0.1;
 
 /// Commands on the selected PR.
@@ -182,18 +178,13 @@ impl PrMonitorApp {
     }
 
     fn cycle_theme(&self) {
-        let ids: Vec<String> = self
-            .theme
-            .registry()
-            .list()
-            .map(|(id, _)| id.as_str().to_owned())
-            .collect();
+        let choices = self.theme.choices();
         let mut config = (*self.state.config).clone();
-        let next = ids
+        let next = choices
             .iter()
-            .position(|id| *id == config.ui.theme)
-            .map_or(0, |i| (i + 1) % ids.len());
-        if let Some(id) = ids.get(next) {
+            .position(|(id, _)| *id == config.ui.theme)
+            .map_or(0, |i| (i + 1) % choices.len());
+        if let Some((id, _)) = choices.get(next) {
             config.ui.theme.clone_from(id);
             self.link.send(Command::ApplyConfig(Box::new(config)));
         }

@@ -245,7 +245,8 @@ impl DashboardView {
             .collect()
     }
 
-    /// Moves the selection by `delta` PR rows, clamped; with no selection, starts at an end.
+    /// Moves the selection by `delta` PR rows, clamped. A selection hidden in a collapsed group
+    /// moves from that group's header; with no selection, starts at an end.
     pub(crate) fn nav(&mut self, delta: isize) {
         let prs = self.pr_positions();
         let Some(last) = prs.len().checked_sub(1) else {
@@ -254,10 +255,16 @@ impl DashboardView {
         let current = self
             .selected_display()
             .and_then(|d| prs.iter().position(|p| *p == d));
-        let target = match current {
-            Some(at) => at.saturating_add_signed(delta).min(last),
-            None if delta > 0 => 0,
-            None => last,
+        let target = match (current, self.selected_header()) {
+            (Some(at), _) => at.saturating_add_signed(delta).min(last),
+            (None, Some(header)) => {
+                // why: the header sits between PR `below - 1` and PR `below`.
+                let below = prs.partition_point(|p| *p < header);
+                let step = if delta > 0 { delta - 1 } else { delta };
+                below.saturating_add_signed(step).min(last)
+            }
+            (None, None) if delta > 0 => 0,
+            (None, None) => last,
         };
         self.select_keyboard(prs.get(target).copied());
     }
@@ -277,21 +284,36 @@ impl DashboardView {
         self.select_keyboard(found);
     }
 
-    /// The first PR of the next (or previous) group.
+    /// The first PR of the next (or previous) group; collapsed groups have none and are
+    /// skipped. Backward from inside a group goes to that group's first PR first.
     pub(crate) fn nav_group(&mut self, forward: bool) {
-        let current = self.selected_display().unwrap_or(0);
+        let current = self
+            .selected_display()
+            .or_else(|| self.selected_header())
+            .unwrap_or(0);
         let headers: Vec<usize> = (0..self.display.rows.len())
             .filter(|i| matches!(self.display.rows[*i], DisplayRow::Group(_)))
             .collect();
         let target = if forward {
-            headers.into_iter().find(|h| *h > current)
+            headers
+                .iter()
+                .filter(|h| **h > current)
+                .find_map(|h| self.first_pr_under(*h))
         } else {
-            headers.into_iter().rev().find(|h| *h + 1 < current)
+            headers
+                .iter()
+                .rev()
+                .filter(|h| **h < current)
+                .filter_map(|h| self.first_pr_under(*h))
+                .find(|pr| *pr != current)
         };
-        if let Some(header) = target {
-            let pr = (header..self.display.rows.len()).find(|i| self.display.pr_at(*i).is_some());
-            self.select_keyboard(pr);
-        }
+        self.select_keyboard(target);
+    }
+
+    /// The first PR row right under a group header, before the next header.
+    fn first_pr_under(&self, header: usize) -> Option<usize> {
+        let next = header + 1;
+        self.display.pr_at(next).map(|_| next)
     }
 
     fn select_keyboard(&mut self, display: Option<usize>) {
@@ -302,13 +324,57 @@ impl DashboardView {
         }
     }
 
+    /// The group containing `key` (its span index), from the model, so it is found even when
+    /// the group is collapsed. `None` when not grouping or the key is filtered out.
+    fn group_of(&self, key: &PrKey) -> Option<u32> {
+        if self.group == GroupBy::None {
+            return None;
+        }
+        let row = self.rows.iter().position(|r| r.key == *key)?;
+        let at = self
+            .model
+            .indices
+            .iter()
+            .position(|r| usize::try_from(*r).ok() == Some(row))?;
+        let span = self.model.groups.iter().position(|g| {
+            let start = usize::try_from(g.start).unwrap_or(usize::MAX);
+            let len = usize::try_from(g.len).unwrap_or(0);
+            (start..start.saturating_add(len)).contains(&at)
+        })?;
+        u32::try_from(span).ok()
+    }
+
     /// The group containing the selection (its span index).
     fn selected_group(&self) -> Option<u32> {
-        let index = self.selected_display()?;
-        (0..=index).rev().find_map(|i| match self.display.rows[i] {
-            DisplayRow::Group(span) => Some(span),
-            DisplayRow::Pr(_) => None,
-        })
+        self.group_of(self.selected.as_ref()?)
+    }
+
+    /// The display position of the selected PR's group header.
+    fn selected_header(&self) -> Option<usize> {
+        let span = self.selected_group()?;
+        self.display
+            .rows
+            .iter()
+            .position(|r| *r == DisplayRow::Group(span))
+    }
+
+    /// Loaded, but the query (text, status, changed-only, drafts) hides it.
+    pub(crate) fn is_filtered_out(&self, key: &PrKey) -> bool {
+        let Some(row) = self.rows.iter().position(|r| r.key == *key) else {
+            return false;
+        };
+        !self
+            .model
+            .indices
+            .iter()
+            .any(|r| usize::try_from(*r).ok() == Some(row))
+    }
+
+    /// Expands the group holding `key`, if it is collapsed.
+    pub(crate) fn expand_group_of(&mut self, key: &PrKey) {
+        if let Some(span) = self.group_of(key) {
+            self.set_group_collapsed(span, false);
+        }
     }
 
     pub(crate) fn toggle_group(&mut self, span: u32) {
@@ -326,10 +392,15 @@ impl DashboardView {
         self.rebuild();
     }
 
+    /// Collapses or expands the selection's group. The selection is kept while hidden, so
+    /// expanding shows it again.
     pub(crate) fn set_selected_group_collapsed(&mut self, collapsed: bool) {
-        let Some(span) = self.selected_group() else {
-            return;
-        };
+        if let Some(span) = self.selected_group() {
+            self.set_group_collapsed(span, collapsed);
+        }
+    }
+
+    fn set_group_collapsed(&mut self, span: u32, collapsed: bool) {
         let Some(group) = self
             .model
             .groups
@@ -345,6 +416,7 @@ impl DashboardView {
         };
         if changed {
             self.rebuild();
+            self.scroll_to_selection();
         }
     }
 
@@ -364,6 +436,17 @@ impl DashboardView {
         ui.selected.clone_from(&self.selected);
         ui.columns.clone_from(&self.widths);
         ui.hidden_columns.clone_from(&self.hidden_columns);
+    }
+
+    /// Whether `write_ui_state` would change `ui`, compared in place (runs every frame).
+    pub(crate) fn differs_from(&self, ui: &UiState) -> bool {
+        ui.filter != self.query
+            || ui.sort != self.sort
+            || ui.group != self.group
+            || !ui.collapsed_groups.iter().eq(self.collapsed.iter())
+            || ui.selected != self.selected
+            || ui.columns != self.widths
+            || ui.hidden_columns != self.hidden_columns
     }
 }
 

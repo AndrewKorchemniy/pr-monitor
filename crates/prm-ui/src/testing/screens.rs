@@ -89,7 +89,6 @@ impl Fixture {
     pub(crate) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.theme.apply(&ctx);
-        self.theme.install_frame(&ctx);
         let mut cx = FrameCx {
             theme: self.theme.current(&ctx).clone(),
             state: &self.state,

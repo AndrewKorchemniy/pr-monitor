@@ -4,6 +4,12 @@
 pub(crate) mod keymap;
 pub(crate) mod palette;
 
+use std::time::Duration;
+
+/// How long "Pause notifications" lasts. The pause labels say "1 hour"; a test keeps them in
+/// step with this.
+pub(crate) const PAUSE: Duration = Duration::from_hours(1);
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum CommandId {
     PaletteOpen,

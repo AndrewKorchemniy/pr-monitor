@@ -56,7 +56,10 @@ async fn org_wide_probe_error_keeps_previous_result() {
         api.fail(ApiCall::ProbeOrgWide, AdoError::Timeout);
         let probe = org_wide_probe(&ctx(api.clone(), previous), &catalog()).await;
         assert_eq!(probe.cache, previous, "previous {previous:?}");
-        assert!(!probe.usable, "a failed probe never enables the org-wide query");
+        assert!(
+            !probe.usable,
+            "a failed probe never enables the org-wide query"
+        );
         assert_eq!(api.calls(ApiCall::ProbeOrgWide), 1);
     }
 }

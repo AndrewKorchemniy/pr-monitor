@@ -14,9 +14,10 @@ use std::sync::{
 
 use eframe::egui;
 use prm_config::{AppPaths, Config};
-use prm_domain::{Timestamp, ports::Clock, uri::AppUri};
+use prm_domain::{OrgId, Timestamp, ports::Clock, uri::AppUri};
 use prm_service::{AppState, Command};
 use time::UtcOffset;
+use zeroize::Zeroize as _;
 
 use crate::{
     actions::Actions,
@@ -33,14 +34,17 @@ use crate::{
         policy::{RenderFacts, RenderPolicy},
         repaint::{RepaintInputs, next_repaint},
     },
-    route::{Overlay, Screen},
+    route::{ModalKind, Overlay, Screen},
     screens::{dashboard::DashboardUi, first_run::FirstRun, settings::SettingsState},
-    theme::{ThemeRuntime, fonts, selection_from},
+    theme::{ThemeRuntime, UiTheme, fonts, selection_from},
     tray::{TrayController, TrayMsg},
-    ui_state::{PeekLayout, UiStateSync, collect},
+    ui_state::{Layout, PeekLayout, UiStateSync},
     view::{DashboardView, changes::ChangeLog},
-    window::WindowController,
+    window::{WindowController, WindowLaunch},
 };
+
+/// The "service stopped" notice stays until the app restarts (it cannot recover).
+const SERVICE_STOPPED_TTL: std::time::Duration = std::time::Duration::from_hours(24);
 
 /// A `FrameCx` over the app's fields (a macro so the other fields stay borrowable).
 macro_rules! frame_cx {
@@ -79,6 +83,8 @@ pub(crate) struct PrMonitorApp {
     palette: PaletteState,
     pat_input: String,
     pat_error: Option<Arc<str>>,
+    /// The org whose token dialog `pat_input` belongs to; the draft is wiped when it closes.
+    pat_org: Option<OrgId>,
     notices: NoticeStack,
     changes: ChangeLog,
     actions: Actions,
@@ -98,6 +104,7 @@ pub(crate) struct PrMonitorApp {
 /// Builds the app inside eframe's creator (the window exists; the first frame has not run).
 pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn eframe::App> {
     fonts::install(&cc.egui_ctx);
+    let launch = window_launch(&init);
     let mut link = ServiceLink::new(init.commands, init.state, init.events);
     let state = link.latest();
     let adapter = adapter_facts(cc);
@@ -113,8 +120,8 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
     );
     let theme = ThemeRuntime::new(&init.paths.themes, &state.config.ui, policy);
     let tray = create_tray(&cc.egui_ctx, &theme, &state);
-    let window = WindowController::new(init.start_hidden, &state.config.ui);
-    let row_pitch = theme.current(&cc.egui_ctx).tokens.metrics.row.row_height;
+    let window = WindowController::new(launch, &state.config.ui);
+    let row_pitch = row_pitch(theme.current(&cc.egui_ctx));
     let mut app = PrMonitorApp {
         link,
         host: init.host,
@@ -135,6 +142,7 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
         palette: PaletteState::default(),
         pat_input: String::new(),
         pat_error: None,
+        pat_org: None,
         notices: NoticeStack::default(),
         changes: ChangeLog::default(),
         actions: Actions::default(),
@@ -154,6 +162,21 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
     app.reload_keymap();
     cc.egui_ctx.set_zoom_factor(app.state.config.ui.font_scale);
     Box::new(app)
+}
+
+fn window_launch(init: &UiInit) -> WindowLaunch {
+    WindowLaunch {
+        start_hidden: init.start_hidden,
+        hide_offscreen: init.hide_offscreen,
+        restore_position: init.restore_position.map(egui::Pos2::from),
+    }
+}
+
+/// The table's row stride: `egui_extras` lays rows out at the row height plus the vertical item
+/// spacing (`space.sm`, set by the theme adapter). Scroll anchoring works in this unit.
+fn row_pitch(theme: &UiTheme) -> f32 {
+    let metrics = &theme.tokens.metrics;
+    metrics.row.row_height + metrics.space.sm
 }
 
 /// The dashboard as the user left it (filters, sort, selection, peek).
@@ -237,20 +260,12 @@ impl eframe::App for PrMonitorApp {
             self.reload_keymap();
         }
         self.theme.apply(ctx);
-        self.theme.install_frame(ctx);
         self.sync_tray(ctx);
         self.notices.prune(now);
-        self.hover_bands.publish(
-            self.dash.geometry,
-            self.theme.policy().low_power && self.window.visible(),
-        );
-        let current = collect(
-            &self.dash.view,
-            &self.window,
-            self.dash.peek,
-            &self.state.ui_state,
-        );
-        self.ui_sync.tick(now, current, &self.link);
+        self.publish_hover_bands();
+        let layout = layout_of(&self.dash, &self.window);
+        self.ui_sync
+            .tick(now, &layout, &self.state.ui_state, &self.link);
         self.schedule_repaint(ctx, now);
     }
 
@@ -262,8 +277,10 @@ impl eframe::App for PrMonitorApp {
             self.chrome = Some(chrome);
         }
         self.dispatch_keys(&ctx);
+        self.sync_pat_draft();
         self.draw(ui);
         self.run_actions(&ctx);
+        self.sync_pat_draft();
         if let Some(callback) = self.on_first_frame.take() {
             callback();
         }
@@ -275,18 +292,50 @@ impl eframe::App for PrMonitorApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        let current = collect(
-            &self.dash.view,
-            &self.window,
-            self.dash.peek,
-            &self.state.ui_state,
-        );
-        self.ui_sync.flush(current, &self.link);
+        let layout = layout_of(&self.dash, &self.window);
+        self.ui_sync
+            .flush(&layout, &self.state.ui_state, &self.link);
         self.link.send(Command::Shutdown);
     }
 }
 
+/// The live layout the UI state persists (borrows only these fields, so `ui_sync` stays free).
+const fn layout_of<'a>(dash: &'a DashboardUi, window: &'a WindowController) -> Layout<'a> {
+    Layout {
+        view: &dash.view,
+        window,
+        peek: dash.peek,
+    }
+}
+
 impl PrMonitorApp {
+    /// Low-power hover bands apply only while the table is on screen and nothing covers it.
+    fn publish_hover_bands(&self) {
+        let table_shown = self.first_run.is_none()
+            && self.screen == Screen::Dashboard
+            && self.overlay == Overlay::None;
+        self.hover_bands.publish(
+            self.dash.geometry.filter(|_| table_shown),
+            self.theme.policy().low_power && self.window.visible(),
+        );
+    }
+
+    /// Wipes the token draft and its error once the dialog they belong to is gone (cancel,
+    /// Esc, success) or shows another org, whichever path opened or closed it.
+    fn sync_pat_draft(&mut self) {
+        let open = match &self.overlay {
+            Overlay::Modal(ModalKind::Pat(org)) => Some(org),
+            Overlay::Modal(_) | Overlay::None | Overlay::Palette | Overlay::Shortcuts => None,
+        };
+        reset_pat_draft(
+            PatDraft {
+                input: &mut self.pat_input,
+                error: &mut self.pat_error,
+                org: &mut self.pat_org,
+            },
+            open,
+        );
+    }
     /// Re-reads `keymap.toml`; problems show as notices.
     fn reload_keymap(&mut self) {
         let (keymap, issues) = load_keymap(&self.paths);
@@ -338,11 +387,7 @@ impl PrMonitorApp {
         );
         self.theme.set_policy(policy);
         ctx.set_zoom_factor(prefs.font_scale);
-        self.dash.view.row_pitch = prm_theme::Density::metrics(match prefs.density {
-            prm_config::schema::Density::Comfortable => prm_theme::Density::Comfortable,
-            prm_config::schema::Density::Compact => prm_theme::Density::Compact,
-        })
-        .row_height;
+        self.dash.view.row_pitch = row_pitch(self.theme.current(ctx));
         if let Some(settings) = &mut self.settings {
             settings.on_applied(config.clone());
         }
@@ -358,7 +403,7 @@ impl PrMonitorApp {
                     text: Arc::from(crate::copy::SERVICE_STOPPED),
                     org: None,
                     action: None,
-                    ttl: std::time::Duration::from_hours(24),
+                    ttl: SERVICE_STOPPED_TTL,
                 },
                 self.clock.now(),
             );
@@ -381,7 +426,7 @@ impl PrMonitorApp {
     fn sync_tray(&mut self, ctx: &egui::Context) {
         if let Some((tray, _)) = &mut self.tray {
             let colors = self.theme.mark_colors(ctx, self.state.tray_badge());
-            tray.sync(&self.state, &colors, self.theme.generation);
+            tray.sync(&self.state, colors);
         }
     }
 
@@ -400,13 +445,9 @@ impl PrMonitorApp {
 
     fn hide(&mut self, ctx: &egui::Context) {
         self.window.hide(ctx);
-        let current = collect(
-            &self.dash.view,
-            &self.window,
-            self.dash.peek,
-            &self.state.ui_state,
-        );
-        self.ui_sync.flush(current, &self.link);
+        let layout = layout_of(&self.dash, &self.window);
+        self.ui_sync
+            .flush(&layout, &self.state.ui_state, &self.link);
     }
 
     fn quit(&mut self, ctx: &egui::Context) {
@@ -428,10 +469,30 @@ impl PrMonitorApp {
             low_power: self.theme.policy().low_power,
             now: Some(now),
             next_refresh: self.state.refresh.next_due,
-            deadlines: deadlines.into_iter().flatten().collect(),
+            deadlines: &deadlines,
         };
         if let Some(after) = next_repaint(&input) {
             ctx.request_repaint_after(after);
         }
     }
 }
+
+/// The token dialog's draft, borrowed from the app's fields.
+struct PatDraft<'a> {
+    input: &'a mut String,
+    error: &'a mut Option<Arc<str>>,
+    org: &'a mut Option<OrgId>,
+}
+
+/// Wipes (zeroizes) the draft when the dialog showing it is no longer `open`.
+fn reset_pat_draft(draft: PatDraft<'_>, open: Option<&OrgId>) {
+    if draft.org.as_ref() == open {
+        return;
+    }
+    draft.input.zeroize();
+    *draft.error = None;
+    *draft.org = open.cloned();
+}
+
+#[cfg(test)]
+mod tests;

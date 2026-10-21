@@ -1,12 +1,17 @@
 //! Transient notices (bottom right): at most three, each until its TTL runs out.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use prm_config::Severity;
 use prm_domain::{Timestamp, auth::UserAction};
 use prm_service::Notice;
 
 const MAX_VISIBLE: usize = 3;
+/// How long a confirmation ("Link copied") stays.
+const INFO_TTL: Duration = Duration::from_secs(4);
+/// How long a failure the UI reports stays: long enough to read and not mistake for a
+/// confirmation.
+const ERROR_TTL: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ShownNotice {
@@ -37,13 +42,22 @@ impl NoticeStack {
 
     /// A plain info notice from the UI itself ("Link copied").
     pub(crate) fn info(&mut self, text: &str, now: Timestamp) {
+        self.push_text(Severity::Info, text, INFO_TTL, now);
+    }
+
+    /// Something the user asked for failed ("Changes couldn't be saved").
+    pub(crate) fn error(&mut self, text: &str, now: Timestamp) {
+        self.push_text(Severity::Error, text, ERROR_TTL, now);
+    }
+
+    fn push_text(&mut self, severity: Severity, text: &str, ttl: Duration, now: Timestamp) {
         self.push(
             &Notice {
-                severity: Severity::Info,
+                severity,
                 text: Arc::from(text),
                 org: None,
                 action: None,
-                ttl: std::time::Duration::from_secs(4),
+                ttl,
             },
             now,
         );
@@ -67,3 +81,6 @@ impl NoticeStack {
         self.items.iter().map(|n| n.expires).min()
     }
 }
+
+#[cfg(test)]
+mod tests;
