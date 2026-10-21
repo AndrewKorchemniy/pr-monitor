@@ -15,6 +15,7 @@ use crate::{
     },
     deps::BuildInfo,
     frame::FrameCx,
+    render::MIN_SIZE,
     screens::{
         dashboard::{DashboardUi, dashboard},
         first_run::{FirstRun, first_run},
@@ -29,6 +30,8 @@ use crate::{
 
 /// The window size every screen is drawn at.
 pub(crate) const WINDOW: egui::Vec2 = egui::vec2(1280.0, 760.0);
+/// The smallest window the app allows.
+pub(crate) const NARROW: egui::Vec2 = egui::vec2(MIN_SIZE[0], MIN_SIZE[1]);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Shown {
@@ -153,8 +156,13 @@ pub(crate) fn env() -> SettingsEnv<'static> {
 
 /// A headless harness (accessibility checks on, missing glyphs fail).
 pub(crate) fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
+    harness_at(fixture, WINDOW)
+}
+
+/// A headless harness with the window at `size`.
+pub(crate) fn harness_at(fixture: Fixture, size: egui::Vec2) -> Harness<'static, Fixture> {
     Harness::builder()
-        .with_size(WINDOW)
+        .with_size(size)
         .with_context_setup(fonts::install)
         .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture)
 }

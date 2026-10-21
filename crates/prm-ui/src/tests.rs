@@ -21,6 +21,7 @@ use crate::{
 };
 
 mod gallery;
+mod status_bar;
 
 fn signed_out() -> AppState {
     let needs = AuthStateView::NeedsSignIn {

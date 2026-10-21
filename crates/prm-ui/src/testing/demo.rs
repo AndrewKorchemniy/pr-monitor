@@ -1,5 +1,6 @@
 //! A realistic, entirely fictional data set for screenshots: two orgs, a dozen pull requests
-//! in every state, a catalog of projects and repositories, and tracked people.
+//! in every state, a catalog of projects and repositories, and tracked people. Variants crowd
+//! the status bar with more orgs or a running refresh.
 
 use std::sync::Arc;
 
@@ -12,7 +13,10 @@ use prm_domain::{
     testing::{BASE_TIME_SECS, PrBuilder, ThreadBuilder, key, org, person, record, repo, rows, ts},
     view::summary::summarize,
 };
-use prm_service::{AppState, AuthStateView, state::RefreshStatus};
+use prm_service::{
+    AppState, AuthStateView, RefreshPhase,
+    state::{RefreshProgress, RefreshStatus},
+};
 
 use crate::testing::org_status;
 
@@ -270,6 +274,30 @@ pub(crate) fn demo_state() -> AppState {
         },
         ..AppState::default()
     }
+}
+
+/// The demo with four orgs, two with long names: a crowded status bar.
+pub(crate) fn crowded_state() -> AppState {
+    let mut state = demo_state();
+    let more = ["northwind-traders", "adventure-works"]
+        .map(|name| org_status(name, AuthStateView::SignedIn));
+    state.orgs = state.orgs.iter().cloned().chain(more).collect();
+    state
+}
+
+/// The demo partway through reading comments, slowed by throttling, with notifications paused.
+pub(crate) fn busy_state() -> AppState {
+    let mut state = demo_state();
+    state.refresh.in_progress = true;
+    state.refresh.progress = Arc::from([RefreshProgress {
+        org: org("contoso"),
+        phase: RefreshPhase::Threads,
+        done: 12,
+        total: 40,
+    }]);
+    state.refresh.slowed = true;
+    state.notifications.paused_until = Some(ts(BASE_TIME_SECS + 7_200));
+    state
 }
 
 /// The same data with no orgs configured: the first-run screen.

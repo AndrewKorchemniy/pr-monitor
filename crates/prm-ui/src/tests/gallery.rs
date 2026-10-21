@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use eframe::egui;
 use egui_kittest::Harness;
 use prm_domain::view::StatusFilter;
 use prm_service::AppState;
@@ -15,8 +16,8 @@ use crate::{
         settings::{Editor, PAGES},
     },
     testing::{
-        demo::{demo_state, empty_state, now},
-        screens::{Fixture, Shown, WINDOW},
+        demo::{busy_state, crowded_state, demo_state, empty_state, now},
+        screens::{Fixture, NARROW, Shown, WINDOW},
     },
     theme::fonts,
 };
@@ -27,6 +28,16 @@ struct Scene {
     shown: Shown,
     state: fn() -> AppState,
     setup: fn(&mut Fixture),
+    /// The window size, in points.
+    size: egui::Vec2,
+}
+
+impl Scene {
+    /// Draws the scene in a window of `size` points.
+    const fn at(mut self, size: egui::Vec2) -> Self {
+        self.size = size;
+        self
+    }
 }
 
 const fn scene(
@@ -40,6 +51,7 @@ const fn scene(
         shown,
         state,
         setup,
+        size: WINDOW,
     }
 }
 
@@ -56,6 +68,21 @@ fn first_run_step(f: &mut Fixture, step: Step) {
 fn editing(f: &mut Fixture, editor: Editor) {
     f.settings.page = PAGES[1];
     f.settings.editing = Some(editor);
+}
+
+/// The status bar when it is busy, and when it has to give way at the smallest window.
+fn status_bar_scenes() -> [Scene; 3] {
+    [
+        scene("dashboard-busy", Shown::Dashboard, busy_state, nothing),
+        scene("dashboard-narrow", Shown::Dashboard, crowded_state, |f| {
+            f.dash.view.set_status(StatusFilter::Reviewed);
+        })
+        .at(NARROW),
+        scene("dashboard-narrow-busy", Shown::Dashboard, busy_state, |f| {
+            f.dash.view.toggle_unread_only();
+        })
+        .at(NARROW),
+    ]
 }
 
 fn scenes() -> Vec<Scene> {
@@ -92,6 +119,7 @@ fn scenes() -> Vec<Scene> {
         }),
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
+    all.extend(status_bar_scenes());
     let pages: [Named; 4] = [
         ("settings-general", |f| f.settings.page = PAGES[0]),
         ("settings-organizations", |f| f.settings.page = PAGES[1]),
@@ -134,7 +162,7 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path) {
     fixture.now = now();
     (scene.setup)(&mut fixture);
     let mut harness = Harness::builder()
-        .with_size(WINDOW)
+        .with_size(scene.size)
         .with_pixels_per_point(1.25)
         .with_accessibility_check(false) // the kittest tests enforce accessibility; this only renders
         .with_context_setup(fonts::install)

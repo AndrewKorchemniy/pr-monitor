@@ -1,16 +1,19 @@
 //! The status bar: one quiet line of text segments split by hairlines. Org dots and names on the
 //! left, then counts that double as filter toggles; refresh timing and the repository count on
-//! the right.
+//! the right. In a narrow window segments give way by rank, and the counts never do.
 
-use std::sync::Arc;
+mod fit;
+mod segment;
 
-use eframe::egui::{self, Color32, Rect, Sense, Stroke, WidgetInfo, pos2, vec2};
+use std::{borrow::Cow, time::Duration};
+
+use eframe::egui::{self, Sense, Stroke, vec2};
 use prm_domain::{
     PrStatus, Timestamp,
     auth::SettingsSection,
     view::{StatusFilter, ViewQuery, age::age_label},
 };
-use prm_service::{AuthStateView, OrgHealth, OrgStatus, RefreshPhase};
+use prm_service::{AppState, AuthStateView, OrgHealth, OrgStatus, RefreshPhase};
 
 use crate::{
     actions::UiAction,
@@ -18,12 +21,12 @@ use crate::{
     copy,
     format::{Countdown, countdown},
     frame::FrameCx,
-    theme::{
-        Tone, UiTheme,
-        icons::{self, Icon},
-    },
+    theme::{Tone, UiTheme, icons::Icon},
     widgets::{
-        controls,
+        status_bar::{
+            fit::{Rank, Slot, fit},
+            segment::{Glyph, Kind, Segment},
+        },
         status_pill::{status_icon, status_tone},
     },
 };
@@ -40,8 +43,12 @@ const DOT: f32 = 8.0;
 const GLYPH: f32 = 10.0;
 /// The hairline between segments, in points.
 const SEPARATOR_HEIGHT: f32 = 14.0;
-/// The active filter's underline, in points.
-const UNDERLINE: f32 = 2.0;
+/// Progress counts the refresh text is sized for: three digits.
+const SIZING_COUNT: u32 = 100;
+/// Minutes the countdown is sized for: two digits.
+const SIZING_MINUTES: u64 = 10;
+/// The age the updated text is sized for: two-digit minutes.
+const SIZING_AGE: Duration = Duration::from_mins(10);
 
 /// The tone of an org's dot: ok, working, or needs attention.
 pub(crate) fn org_tone(org: &OrgStatus) -> Tone {
@@ -75,40 +82,61 @@ pub(crate) fn status_bar(
     // and hover fills reach the frame's inset.
     ui.spacing_mut().item_spacing.x = 0.0;
     let height = ui.available_height() - 2.0 * m.space.xs;
+    let state = cx.state;
     ui.horizontal_centered(|ui| {
-        let mut left = Line::new(&theme, height, 0.0);
-        orgs(ui, cx, &mut left);
-        counts(ui, cx, query, &mut left);
+        let mut left = org_slots(ui, &theme, state);
+        count_slots(ui, &theme, state, query, &mut left);
+        let mut right = timing_slots(ui, cx, focused);
+        // why: the gap keeps the two sides apart however narrow the window gets.
+        let room = ui.available_width() - m.space.xl;
+        fit(room, &theme, &mut left, &mut right);
+        show_line(ui, cx, &theme, height, left);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // why: in a narrow window the timing gives way to the filters, keeping a gap.
-            timing(ui, cx, focused, &mut Line::new(&theme, height, m.space.xl));
+            show_line(ui, cx, &theme, height, right);
         });
     });
 }
 
-fn orgs(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, line: &mut Line<'_>) {
-    for org in cx.state.orgs.iter().filter(|o| o.enabled) {
-        let segment = Segment {
-            glyph: Some(Glyph {
-                icon: Icon::Dot,
-                size: DOT,
-                color: line.theme.colors.tone(org_tone(org)).solid,
-            }),
-            text: &org.label,
-            kind: Kind::Link,
-        };
-        let Some(response) = line.add(ui, segment) else {
-            return;
-        };
-        let identity = copy::identity(&org.label, org.auth.method);
-        if response.on_hover_text(identity).clicked() {
-            cx.push(UiAction::OpenSettings(SettingsSection::Organizations));
-        }
-    }
+/// What a shown segment does with its response.
+#[derive(Copy, Clone)]
+pub(super) enum Hook<'a> {
+    /// Nothing beyond showing its text.
+    None,
+    /// Names the org and how it signs in; a click opens the org settings.
+    Org(&'a OrgStatus),
+    /// A click toggles that status filter.
+    Status(StatusFilter),
+    /// A click toggles changed-only.
+    Changed,
+    /// Explains the throttling.
+    Slowed,
 }
 
-fn counts(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, query: &ViewQuery, line: &mut Line<'_>) {
-    let summary = cx.state.summary;
+fn org_slots<'a>(ui: &egui::Ui, theme: &UiTheme, state: &'a AppState) -> Vec<Slot<'a>> {
+    let mut slots = Vec::new();
+    for org in state.orgs.iter().filter(|o| o.enabled) {
+        let glyph = Glyph {
+            icon: Icon::Dot,
+            size: DOT,
+            color: theme.colors.tone(org_tone(org)).solid,
+        };
+        let text = Cow::Borrowed(&*org.label);
+        // why: until every name fits, the dot stands in; the name stays in its tooltip and
+        // accessible name.
+        let segment = Segment::new(ui, theme, Some(glyph), text, Kind::Link).with_collapsed();
+        slots.push(Slot::new(theme, segment, Rank::OrgDots, Hook::Org(org)));
+    }
+    slots
+}
+
+fn count_slots(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    state: &AppState,
+    query: &ViewQuery,
+    slots: &mut Vec<Slot<'_>>,
+) {
+    let summary = state.summary;
     let total = summary.needs_review + summary.active_comments + summary.reviewed;
     // why: with nothing tracked, zero-count filters only compete with the empty state.
     if total == 0 && query.status == StatusFilter::default() && !query.unread_only {
@@ -120,66 +148,162 @@ fn counts(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, query: &ViewQuery, line: &mut
             PrStatus::ActiveComments => summary.active_comments,
             PrStatus::Reviewed => summary.reviewed,
         };
-        let text = copy::status_count(count, status);
         let look = (status_icon(status), status_tone(status));
-        let segment = Segment::toggle(line.theme, look, &text, query.status == filter);
-        if line.add(ui, segment).is_some_and(|r| r.clicked()) {
-            cx.push(UiAction::SetStatus(filter));
-        }
+        let text = copy::status_count(count, status);
+        let segment = toggle(ui, theme, look, (text, query.status == filter));
+        let hook = Hook::Status(filter);
+        slots.push(Slot::new(theme, segment, Rank::Counts, hook));
     }
     if summary.unread > 0 || query.unread_only {
         let text = copy::changed_count(summary.unread);
         let look = (Icon::Bar, Tone::Info);
-        let segment = Segment::toggle(line.theme, look, &text, query.unread_only);
-        let response = line.add(ui, segment);
-        if response.is_some_and(|r| r.on_hover_text(copy::CHANGED_TOOLTIP).clicked()) {
-            cx.run(CommandId::ChangedOnly);
+        let segment = toggle(ui, theme, look, (text, query.unread_only));
+        slots.push(Slot::new(theme, segment, Rank::Counts, Hook::Changed));
+    }
+}
+
+/// A count that toggles its filter: the glyph in the tone's solid colour, then the label.
+fn toggle<'a>(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    (icon, tone): (Icon, Tone),
+    (text, on): (String, bool),
+) -> Segment<'a> {
+    let glyph = Glyph {
+        icon,
+        size: GLYPH,
+        color: theme.colors.tone(tone).solid,
+    };
+    let kind = Kind::Toggle { tone, on };
+    Segment::new(ui, theme, Some(glyph), text.into(), kind)
+}
+
+/// The right side in display order, right to left: refresh, updated, slowed, paused, repos.
+fn timing_slots<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Vec<Slot<'a>> {
+    let theme = &cx.theme;
+    let refresh = &cx.state.refresh;
+    let mut slots = Vec::new();
+    slots.extend(refresh_slot(ui, cx, focused));
+    let updated = updated_text(refresh.last_completed, cx.now).into();
+    let updated = Slot::info(ui, theme, updated, Rank::Updated, Hook::None);
+    let sizing = updated_text(Some(cx.now.saturating_sub(SIZING_AGE)), cx.now);
+    slots.push(updated.with_room_for(ui, theme, &[copy::UPDATED_NOW, &sizing]));
+    if refresh.slowed {
+        let slowed = copy::SLOWED.into();
+        slots.push(Slot::info(ui, theme, slowed, Rank::Slowed, Hook::Slowed));
+    }
+    if let Some(until) = cx.state.notifications.paused_until {
+        let clock = crate::format::clock(until, cx.offset);
+        let paused = copy::paused_until(&clock).into();
+        slots.push(Slot::info(ui, theme, paused, Rank::Paused, Hook::None));
+    }
+    if let Some(repos) = repos_text(cx.state) {
+        slots.push(Slot::info(ui, theme, repos.into(), Rank::Repos, Hook::None));
+    }
+    slots
+}
+
+/// What a running refresh is doing, or when the next one runs. It fits as its widest text in
+/// that state, so its neighbours do not come and go as it ticks.
+fn refresh_slot<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Option<Slot<'a>> {
+    let theme = &cx.theme;
+    if let Some(text) = phase_text(cx.state) {
+        let total = cx.state.refresh.progress.first().map_or(0, |p| p.total);
+        let count = total.max(SIZING_COUNT);
+        let listing = copy::listing_progress(count, count);
+        let reading = copy::reading_progress(count, count);
+        let widest = [copy::SIGNING_IN, copy::LOADING_PROJECTS, &listing, &reading];
+        let slot = Slot::info(ui, theme, text.into(), Rank::Refresh, Hook::None);
+        return Some(slot.with_room_for(ui, theme, &widest));
+    }
+    let next = cx.state.refresh.next_due.filter(|n| *n > cx.now)?;
+    let text = match countdown(next.since(cx.now), focused) {
+        Countdown::Minutes(m) => copy::next_in_minutes(m),
+        Countdown::Seconds(s) => copy::next_in_seconds(s),
+    };
+    let minutes = copy::next_in_minutes(SIZING_MINUTES);
+    let seconds = copy::next_in_seconds(0);
+    let slot = Slot::info(ui, theme, text.into(), Rank::Refresh, Hook::None);
+    Some(slot.with_room_for(ui, theme, &[&minutes, &seconds]))
+}
+
+/// Paints one side's shown slots in order, with a hairline between neighbours; collapsed ones
+/// sit together as a cluster.
+fn show_line(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    theme: &UiTheme,
+    height: f32,
+    slots: Vec<Slot<'_>>,
+) {
+    // why: `None` before the first slot; then whether the slot before was collapsed.
+    let mut previous: Option<bool> = None;
+    for slot in slots.into_iter().filter(|s| s.shown) {
+        let collapsed = slot.segment.collapsed;
+        let joins = previous == Some(true) && collapsed;
+        if previous.is_some() && !joins {
+            separator(ui, theme);
+        }
+        previous = Some(collapsed);
+        let response = slot.segment.show(ui, theme, height);
+        respond(cx, slot.hook, response);
+    }
+}
+
+fn respond(cx: &mut FrameCx<'_>, hook: Hook<'_>, response: egui::Response) {
+    match hook {
+        Hook::None => {}
+        Hook::Org(org) => {
+            let identity = copy::identity(&org.label, org.auth.method);
+            if response.on_hover_text(identity).clicked() {
+                cx.push(UiAction::OpenSettings(SettingsSection::Organizations));
+            }
+        }
+        Hook::Status(filter) => {
+            if response.clicked() {
+                cx.push(UiAction::SetStatus(filter));
+            }
+        }
+        Hook::Changed => {
+            if response.on_hover_text(copy::CHANGED_TOOLTIP).clicked() {
+                cx.run(CommandId::ChangedOnly);
+            }
+        }
+        Hook::Slowed => {
+            response.on_hover_text(copy::THROTTLED);
         }
     }
 }
 
-/// Laid out right to left: the first segment added sits at the bar's right end.
-fn timing(ui: &mut egui::Ui, cx: &FrameCx<'_>, focused: bool, line: &mut Line<'_>) {
-    let refresh = &cx.state.refresh;
-    if let Some(text) = phase_text(cx) {
-        line.text(ui, &text);
-    } else if let Some(next) = refresh.next_due.filter(|n| *n > cx.now) {
-        let text = match countdown(next.since(cx.now), focused) {
-            Countdown::Minutes(m) => copy::next_in_minutes(m),
-            Countdown::Seconds(s) => copy::next_in_seconds(s),
-        };
-        line.text(ui, &text);
-    }
-    line.text(ui, &updated_text(refresh.last_completed, cx.now));
-    if refresh.slowed
-        && let Some(response) = line.text(ui, copy::SLOWED)
-    {
-        response.on_hover_text(copy::THROTTLED);
-    }
-    if let Some(until) = cx.state.notifications.paused_until {
-        let clock = crate::format::clock(until, cx.offset);
-        line.text(ui, &copy::paused_until(&clock));
-    }
-    if let Some(text) = repos_text(cx) {
-        line.text(ui, &text);
-    }
+pub(super) fn separator_width(theme: &UiTheme) -> f32 {
+    theme.tokens.metrics.space.sm
+}
+
+fn separator(ui: &mut egui::Ui, theme: &UiTheme) {
+    let size = vec2(separator_width(theme), SEPARATOR_HEIGHT);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let stroke = Stroke::new(
+        theme.tokens.metrics.stroke.hairline,
+        theme.colors.border_default,
+    );
+    let x = ui.painter().round_to_pixel_center(rect.center().x);
+    ui.painter().vline(x, rect.y_range(), stroke);
 }
 
 /// "12 repos", or how many failed; `None` before any repository is in scope.
-fn repos_text(cx: &FrameCx<'_>) -> Option<String> {
-    let (ok, total, failed) =
-        cx.state
-            .orgs
-            .iter()
-            .filter(|o| o.enabled)
-            .fold((0, 0, 0), |acc, o| {
-                let s = &o.scope;
-                (
-                    acc.0 + s.repos_in_scope - s.repos_failed.min(s.repos_in_scope),
-                    acc.1 + s.repos_in_scope,
-                    acc.2 + s.repos_failed,
-                )
-            });
+fn repos_text(state: &AppState) -> Option<String> {
+    let (ok, total, failed) = state
+        .orgs
+        .iter()
+        .filter(|o| o.enabled)
+        .fold((0, 0, 0), |acc, o| {
+            let s = &o.scope;
+            (
+                acc.0 + s.repos_in_scope - s.repos_failed.min(s.repos_in_scope),
+                acc.1 + s.repos_in_scope,
+                acc.2 + s.repos_failed,
+            )
+        });
     (total > 0).then(|| {
         if failed > 0 {
             copy::repos_failed(ok, total, failed)
@@ -190,11 +314,11 @@ fn repos_text(cx: &FrameCx<'_>) -> Option<String> {
 }
 
 /// What a running refresh is doing ("Reading comments 12/40"), when one is.
-fn phase_text(cx: &FrameCx<'_>) -> Option<String> {
-    if !cx.state.refresh.in_progress {
+fn phase_text(state: &AppState) -> Option<String> {
+    if !state.refresh.in_progress {
         return None;
     }
-    let progress = cx.state.refresh.progress.first()?;
+    let progress = state.refresh.progress.first()?;
     Some(match progress.phase {
         RefreshPhase::Authenticating => copy::SIGNING_IN.to_owned(),
         RefreshPhase::Catalog => copy::LOADING_PROJECTS.to_owned(),
@@ -211,198 +335,5 @@ pub(crate) fn updated_text(last: Option<Timestamp>, now: Timestamp) -> String {
         None => copy::NOT_UPDATED.to_owned(),
         Some(at) if now.since(at).as_secs() < 60 => copy::UPDATED_NOW.to_owned(),
         Some(at) => copy::updated_ago(&age_label(now, at).text),
-    }
-}
-
-/// One side of the bar: segments of equal height with a hairline between neighbours. Segments
-/// are added in priority order; the first that does not fit is dropped with all after it, so
-/// a narrow window never shows half a segment.
-struct Line<'t> {
-    theme: &'t UiTheme,
-    /// The height of each segment's hover fill.
-    height: f32,
-    /// Room to leave free beyond the last segment, in points.
-    reserve: f32,
-    started: bool,
-    full: bool,
-}
-
-impl<'t> Line<'t> {
-    const fn new(theme: &'t UiTheme, height: f32, reserve: f32) -> Self {
-        Self {
-            theme,
-            height,
-            reserve,
-            started: false,
-            full: false,
-        }
-    }
-
-    fn add(&mut self, ui: &mut egui::Ui, segment: Segment<'_>) -> Option<egui::Response> {
-        let galley = segment.galley(ui, self.theme);
-        let width = segment.width(self.theme, &galley);
-        let separator = if self.started {
-            self.separator_width()
-        } else {
-            0.0
-        };
-        self.full |= separator + width + self.reserve > ui.available_width();
-        if self.full {
-            return None;
-        }
-        if self.started {
-            self.separator(ui);
-        }
-        self.started = true;
-        Some(segment.show(ui, self.theme, galley, vec2(width, self.height)))
-    }
-
-    /// Plain information.
-    fn text(&mut self, ui: &mut egui::Ui, text: &str) -> Option<egui::Response> {
-        let segment = Segment {
-            glyph: None,
-            text,
-            kind: Kind::Info,
-        };
-        self.add(ui, segment)
-    }
-
-    fn separator_width(&self) -> f32 {
-        self.theme.tokens.metrics.space.sm
-    }
-
-    fn separator(&self, ui: &mut egui::Ui) {
-        let theme = self.theme;
-        let size = vec2(self.separator_width(), SEPARATOR_HEIGHT);
-        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-        let stroke = Stroke::new(
-            theme.tokens.metrics.stroke.hairline,
-            theme.colors.border_default,
-        );
-        let x = ui.painter().round_to_pixel_center(rect.center().x);
-        ui.painter().vline(x, rect.y_range(), stroke);
-    }
-}
-
-/// A painted glyph before a segment's text.
-#[derive(Copy, Clone)]
-struct Glyph {
-    icon: Icon,
-    size: f32,
-    color: Color32,
-}
-
-/// What a segment is to a screen reader and how it answers the pointer.
-#[derive(Copy, Clone)]
-enum Kind {
-    /// Plain information.
-    Info,
-    /// A button that opens something.
-    Link,
-    /// A filter toggle; while `on`, its label and underline take the tone's foreground.
-    Toggle { tone: Tone, on: bool },
-}
-
-/// One run of text in the bar, padded on both sides so hover fills have room.
-struct Segment<'a> {
-    glyph: Option<Glyph>,
-    text: &'a str,
-    kind: Kind,
-}
-
-impl<'a> Segment<'a> {
-    fn toggle(theme: &UiTheme, (icon, tone): (Icon, Tone), text: &'a str, on: bool) -> Self {
-        let glyph = Glyph {
-            icon,
-            size: GLYPH,
-            color: theme.colors.tone(tone).solid,
-        };
-        Self {
-            glyph: Some(glyph),
-            text,
-            kind: Kind::Toggle { tone, on },
-        }
-    }
-
-    /// The text in the bar's font; its colour is picked when painted, after hit testing.
-    fn galley(&self, ui: &egui::Ui, theme: &UiTheme) -> Arc<egui::Galley> {
-        ui.painter().layout_no_wrap(
-            self.text.to_owned(),
-            theme.fonts.small.clone(),
-            Color32::PLACEHOLDER,
-        )
-    }
-
-    /// The glyph and text with padding on both sides, in points.
-    fn width(&self, theme: &UiTheme, galley: &egui::Galley) -> f32 {
-        let pad = theme.tokens.metrics.space.sm;
-        let lead = self.glyph.map_or(0.0, |g| g.size + pad);
-        pad + lead + galley.size().x + pad
-    }
-
-    fn show(
-        self,
-        ui: &mut egui::Ui,
-        theme: &UiTheme,
-        galley: Arc<egui::Galley>,
-        size: egui::Vec2,
-    ) -> egui::Response {
-        let sense = match self.kind {
-            Kind::Info => Sense::hover(),
-            Kind::Link | Kind::Toggle { .. } => Sense::click(),
-        };
-        let (rect, response) = ui.allocate_exact_size(size, sense);
-        if ui.is_rect_visible(rect) {
-            self.paint(ui, theme, (rect, &response), galley);
-        }
-        let (kind, enabled, text) = (self.kind, ui.is_enabled(), self.text);
-        response.widget_info(|| match kind {
-            Kind::Info => WidgetInfo::labeled(egui::Role::Label, enabled, text),
-            Kind::Link => WidgetInfo::labeled(egui::Role::Button, enabled, text),
-            Kind::Toggle { on, .. } => WidgetInfo::selected(egui::Role::Button, enabled, on, text),
-        });
-        response
-    }
-
-    fn paint(
-        &self,
-        ui: &egui::Ui,
-        theme: &UiTheme,
-        (rect, response): (Rect, &egui::Response),
-        galley: Arc<egui::Galley>,
-    ) {
-        let pad = theme.tokens.metrics.space.sm;
-        if !matches!(self.kind, Kind::Info) {
-            controls::ghost_fill(ui, theme, rect, response);
-        }
-        let painter = ui.painter();
-        let mut x = rect.left() + pad;
-        if let Some(glyph) = self.glyph {
-            let center = pos2(x + glyph.size / 2.0, rect.center().y);
-            let square = Rect::from_center_size(center, vec2(glyph.size, glyph.size));
-            icons::paint(painter, square, glyph.icon, glyph.color);
-            x += glyph.size + pad;
-        }
-        let top = rect.center().y - galley.size().y / 2.0;
-        let text = Rect::from_min_size(pos2(x, top), galley.size());
-        painter.galley(text.min, galley, self.text_color(theme, response));
-        if let Kind::Toggle { tone, on: true } = self.kind {
-            let underline = Rect::from_min_max(
-                pos2(rect.left() + pad, text.bottom()),
-                pos2(text.right(), text.bottom() + UNDERLINE),
-            );
-            painter.rect_filled(underline, 0.0, theme.colors.tone(tone).fg);
-        }
-    }
-
-    fn text_color(&self, theme: &UiTheme, response: &egui::Response) -> Color32 {
-        let colors = &theme.colors;
-        match self.kind {
-            Kind::Toggle { tone, on: true } => colors.tone(tone).fg,
-            Kind::Link | Kind::Toggle { on: false, .. } if response.hovered() => {
-                colors.text_primary
-            }
-            Kind::Info | Kind::Link | Kind::Toggle { .. } => colors.text_secondary,
-        }
     }
 }
