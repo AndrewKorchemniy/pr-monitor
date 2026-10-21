@@ -56,6 +56,7 @@ impl PrMonitorApp {
                 build: self.build,
                 licenses: self.licenses,
                 renderer_line: &renderer_line,
+                columns: self.dash.view.column_choices(),
             };
             let mut cx = frame_cx!(self, &ctx);
             settings_modal(&ctx, &mut cx, settings, &env);
@@ -165,6 +166,7 @@ impl PrMonitorApp {
             UiAction::DiscardSettings => self.discard_settings(),
             UiAction::ReloadThemes => self.theme.reload(),
             UiAction::PreviewTheme(theme) => self.theme.set_preview(theme),
+            UiAction::ToggleColumn(column) => self.dash.view.toggle_column(column),
         }
     }
 

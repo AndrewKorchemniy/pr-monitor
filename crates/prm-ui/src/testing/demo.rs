@@ -40,7 +40,8 @@ fn people() -> [Person; 6] {
     clippy::too_many_lines,
     reason = "one record per demo pull request reads best as a list"
 )]
-/// Twelve PRs across four repositories: every status, drafts, conflicts, votes and threads.
+/// Twelve PRs across four repositories: every status, drafts, conflicts, auto-complete, votes
+/// and threads.
 fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
     let [maya, jonas, priya, leo, rita, sam] = people();
     let pr = |repo_n: u128, n: i32, title: &str, author: &Person, age_h: i64| {
@@ -93,12 +94,13 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
             vec![comment(3, &rita)],
         ),
         record(
-            named(
-                pr(2, 4699, "Group dashboard rows by author", &leo, 30)
+            named(prm_domain::model::PullRequest {
+                auto_complete: true,
+                ..pr(2, 4699, "Group dashboard rows by author", &leo, 30)
                     .reviewer(rita.clone(), 10)
                     .reviewer(sam.clone(), 5)
-                    .build(),
-            ),
+                    .build()
+            }),
             vec![],
         ),
         record(

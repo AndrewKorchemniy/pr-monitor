@@ -35,6 +35,10 @@ pub(crate) enum Icon {
     Contrast,
     /// Merge conflicts or warnings: a triangle with a bar.
     Warning,
+    /// A draft pull request: a pencil.
+    Pencil,
+    /// Auto-complete is set: a lightning bolt.
+    Bolt,
     Info,
     /// A filled dot (status-bar auth indicator).
     Dot,
@@ -145,6 +149,15 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.line_segment([at(0.0, -0.3), at(0.0, 0.25)], s);
             painter.circle_filled(at(0.0, 0.5), s.width * 0.6, color);
         }
+        Icon::Pencil => pencil(painter, &at, s),
+        Icon::Bolt => {
+            // why: the bolt is concave, so it is two convex halves that overlap at the waist.
+            let upper = vec![at(0.35, -0.95), at(0.15, 0.15), at(-0.6, 0.15)];
+            let lower = vec![at(-0.15, -0.15), at(0.6, -0.15), at(-0.35, 0.95)];
+            for half in [upper, lower] {
+                painter.add(Shape::convex_polygon(half, color, Stroke::NONE));
+            }
+        }
         Icon::Info => {
             painter.circle_stroke(c, r * 0.85, s);
             painter.line_segment([at(0.0, -0.1), at(0.0, 0.5)], s);
@@ -176,6 +189,19 @@ fn bell(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
     ];
     painter.add(Shape::closed_line(outline, s));
     painter.line_segment([at(-0.15, 0.68), at(0.15, 0.68)], s);
+}
+
+/// A pencil at 45°, tip at the bottom left, with the band below its end.
+fn pencil(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
+    let outline = vec![
+        at(-0.8, 0.8),
+        at(-0.27, 0.63),
+        at(0.88, -0.52),
+        at(0.52, -0.88),
+        at(-0.63, 0.27),
+    ];
+    painter.add(Shape::closed_line(outline, s));
+    painter.line_segment([at(0.17, -0.53), at(0.53, -0.17)], s);
 }
 
 fn check(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
@@ -226,6 +252,8 @@ pub(crate) fn paint_stroke(painter: &Painter, rect: Rect, icon: Icon, stroke: St
         | Icon::Building
         | Icon::Contrast
         | Icon::Warning
+        | Icon::Pencil
+        | Icon::Bolt
         | Icon::Info
         | Icon::Dot
         | Icon::Bar => paint(painter, rect, icon, stroke.color),

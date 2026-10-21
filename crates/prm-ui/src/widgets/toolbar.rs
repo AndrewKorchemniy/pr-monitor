@@ -1,5 +1,5 @@
-//! The toolbar: the filter field, grouping, refresh and settings, with the refresh progress
-//! line along its bottom edge.
+//! The toolbar: the filter field, then grouping, refresh and settings as ghost buttons (so the
+//! bar reads as text), with the refresh progress line along its bottom edge.
 
 use eframe::egui;
 use prm_domain::view::GroupBy;
@@ -73,7 +73,8 @@ pub(crate) fn toolbar(
 fn icon_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, icon: Icon, command: CommandId) {
     let theme = cx.theme.clone();
     let title = cx.titled(command);
-    let response = controls::icon_button(ui, &theme, icon, command.title()).on_hover_text(&title);
+    let response =
+        controls::ghost_icon_button(ui, &theme, icon, command.title()).on_hover_text(&title);
     if response.clicked() {
         cx.run(command);
     }

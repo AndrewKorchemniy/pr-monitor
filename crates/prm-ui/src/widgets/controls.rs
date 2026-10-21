@@ -1,8 +1,11 @@
-//! Controls that share the bordered button look: icon buttons, a labeled menu button with flush
-//! menu items, settings rows (switches, segmented options), check boxes and radio buttons.
+//! Shared controls: bordered and ghost (borderless) icon buttons, menus (`menu`), settings rows
+//! (switches, segmented options), check boxes and radio buttons.
+
+mod menu;
 
 use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
+pub(crate) use self::menu::{MENU_GAP, menu_button, menu_check, menu_frame, menu_item};
 use crate::theme::{
     UiTheme,
     icons::{self, Icon},
@@ -32,6 +35,15 @@ fn hover_color(theme: &UiTheme, response: &egui::Response) -> egui::Color32 {
     }
 }
 
+/// How a button draws its frame.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Chrome {
+    /// Fill and border for every state, like egui buttons (next to fields and in forms).
+    Bordered,
+    /// Nothing at rest; a fading fill on hover (toolbars, so they read as text).
+    Ghost,
+}
+
 /// A square bordered icon button named `name` for screen readers (callers add the tooltip).
 pub(crate) fn icon_button(
     ui: &mut egui::Ui,
@@ -39,9 +51,32 @@ pub(crate) fn icon_button(
     icon: Icon,
     name: &str,
 ) -> egui::Response {
+    square_icon_button(ui, theme, (icon, name), Chrome::Bordered)
+}
+
+/// A square borderless icon button for toolbars: no chrome at rest, the ghost hover fill, and
+/// a focus ring for the keyboard. Named `name` for screen readers (callers add the tooltip).
+pub(crate) fn ghost_icon_button(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    icon: Icon,
+    name: &str,
+) -> egui::Response {
+    square_icon_button(ui, theme, (icon, name), Chrome::Ghost)
+}
+
+fn square_icon_button(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (icon, name): (Icon, &str),
+    chrome: Chrome,
+) -> egui::Response {
     let side = theme.control_height();
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
-    paint_frame(ui, rect, &response);
+    match chrome {
+        Chrome::Bordered => paint_frame(ui, rect, &response),
+        Chrome::Ghost => ghost_chrome(ui, theme, rect, &response, false),
+    }
     let glyph = Rect::from_center_size(rect.center(), vec2(BUTTON_GLYPH, BUTTON_GLYPH));
     icons::paint(ui.painter(), glyph, icon, hover_color(theme, &response));
     let enabled = ui.is_enabled();
@@ -49,49 +84,27 @@ pub(crate) fn icon_button(
     response
 }
 
-/// A bordered button reading "Label  Value ⌄" that opens a menu (callers attach the popup).
-pub(crate) fn menu_button(
-    ui: &mut egui::Ui,
+/// A ghost button's chrome: the hover fill (held while its menu is `open`) and a focus ring
+/// when it has keyboard focus.
+pub(crate) fn ghost_chrome(
+    ui: &egui::Ui,
     theme: &UiTheme,
-    label: &str,
-    value: &str,
-) -> egui::Response {
+    rect: Rect,
+    response: &egui::Response,
+    open: bool,
+) {
     let m = &theme.tokens.metrics;
-    let font = theme.fonts.body.clone();
-    let painter = ui.painter().clone();
-    let label_g = painter.layout_no_wrap(label.to_owned(), font.clone(), theme.colors.text_muted);
-    let value_g = painter.layout_no_wrap(value.to_owned(), font, theme.colors.text_primary);
-    let (pad, gap, chevron) = (m.space.lg, m.space.sm, 10.0);
-    let width = pad + label_g.size().x + gap + value_g.size().x + gap + 2.0 + chevron + pad;
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
-    paint_frame(ui, rect, &response);
-    let y = rect.center().y;
-    let mut x = rect.left() + pad;
-    let label_w = label_g.size().x;
-    painter.galley(
-        pos2(x, y - label_g.size().y / 2.0),
-        label_g,
-        theme.colors.text_muted,
-    );
-    x += label_w + gap;
-    let value_w = value_g.size().x;
-    painter.galley(
-        pos2(x, y - value_g.size().y / 2.0),
-        value_g,
-        theme.colors.text_primary,
-    );
-    x += value_w + gap + 2.0;
-    let glyph = Rect::from_center_size(pos2(x + chevron / 2.0, y), vec2(chevron, chevron));
-    icons::paint(
-        &painter,
-        glyph,
-        Icon::ChevronDown,
-        hover_color(theme, &response),
-    );
-    let name = format!("{label}: {value}");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &name));
-    response
+    if open {
+        ui.painter()
+            .rect_filled(rect, m.radius.md, theme.colors.control_hover);
+    } else {
+        ghost_fill(ui, theme, rect, response);
+    }
+    if response.has_focus() {
+        let ring = Stroke::new(m.stroke.focus, theme.colors.border_focus);
+        ui.painter()
+            .rect_stroke(rect, m.radius.md, ring, StrokeKind::Inside);
+    }
 }
 
 /// A label and an optional muted description on the left, `add`'s control on the right; both
@@ -318,58 +331,6 @@ fn paint_segment_borders(ui: &egui::Ui, theme: &UiTheme, outer: Rect, widths: &[
         stroke,
         StrokeKind::Inside,
     );
-}
-
-/// One row of a dropdown menu, filled edge to edge when hovered or selected. Use it in a
-/// popup with no horizontal margin (`menu_frame`).
-pub(crate) fn menu_item(
-    ui: &mut egui::Ui,
-    theme: &UiTheme,
-    text: &str,
-    selected: bool,
-) -> egui::Response {
-    let m = &theme.tokens.metrics;
-    let size = vec2(ui.available_width(), theme.control_height() - m.space.xs);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    if selected || response.hovered() {
-        ui.painter()
-            .rect_filled(rect, 0.0, theme.colors.row_selected);
-    }
-    if selected {
-        let bar = Rect::from_min_size(rect.min, vec2(2.0, rect.height()));
-        ui.painter().rect_filled(bar, 0.0, theme.colors.accent_base);
-    }
-    let font = if selected {
-        theme.fonts.body_strong.clone()
-    } else {
-        theme.fonts.body.clone()
-    };
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text.to_owned(), font, theme.colors.text_primary);
-    let at = pos2(
-        rect.left() + m.space.lg,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter().galley(at, galley, theme.colors.text_primary);
-    let enabled = ui.is_enabled();
-    response
-        .widget_info(|| egui::WidgetInfo::selected(egui::Role::MenuItem, enabled, selected, text));
-    response
-}
-
-/// The space between a button and the menu it opens.
-pub(crate) const MENU_GAP: f32 = 6.0;
-
-/// The popup frame for `menu_item` rows: no horizontal margin so highlights reach the edges.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "spacing tokens are small whole points"
-)]
-pub(crate) fn menu_frame(theme: &UiTheme) -> egui::Frame {
-    let m = &theme.tokens.metrics;
-    crate::theme::adapter::frame_popup(theme, theme.policy)
-        .inner_margin(egui::Margin::symmetric(0, m.space.xs as i8))
 }
 
 /// The hairline between settings rows.

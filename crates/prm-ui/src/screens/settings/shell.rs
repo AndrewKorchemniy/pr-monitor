@@ -243,7 +243,7 @@ fn page_body(
 ) {
     ui.set_width(ui.available_width());
     match st.page {
-        Page::General => general::page(ui, cx, &mut st.draft),
+        Page::General => general::page(ui, cx, &mut st.draft, env.columns),
         Page::Organizations => orgs::page(ui, cx, st),
         Page::Notifications => notifications::page(ui, cx, &mut st.draft),
         Page::Appearance => appearance::page(ui, cx, &mut st.draft, env),
