@@ -3,7 +3,7 @@
 //! request, and what the list records about where it scrolled.
 
 use eframe::egui::{self, Rect, Response, Stroke, StrokeKind};
-use egui_extras::{TableBuilder, TableRow};
+use egui_extras::{TableBody, TableBuilder, TableRow};
 use prm_domain::view::{GroupBy, PrRow, group::GroupSpan};
 
 use super::TableInputs;
@@ -111,6 +111,16 @@ fn group_label(
     );
 }
 
+/// Where a list's rows lie: the body's rect as far as a row's cells and the half gap after the
+/// last one reach, short of the scroll bar's lane when the columns leave it.
+pub(crate) fn rows_rect(body: &mut TableBody<'_>) -> Rect {
+    let full = body.max_rect();
+    let gap = body.ui_mut().spacing().item_spacing.x;
+    let widths = body.widths();
+    let reach = widths.iter().sum::<f32>() + gap * (widths.len() as f32 - 0.5);
+    full.with_max_x((full.left() + reach).min(full.right()))
+}
+
 /// Whether `pr` is the selected row; marks the table row so it fills like the others.
 pub(crate) fn mark_selected(row: &mut TableRow<'_, '_>, rcx: &RowCx<'_, '_>, pr: &PrRow) -> bool {
     let selected = rcx.view.selected.as_ref() == Some(&pr.key);
@@ -120,24 +130,16 @@ pub(crate) fn mark_selected(row: &mut TableRow<'_, '_>, rcx: &RowCx<'_, '_>, pr:
 
 /// What a pull request row does with its response: the keyboard focus ring while selected, a
 /// click selects, a double-click opens, and a right-click selects and offers the context menu.
+/// `list` is where the list's rows lie (`rows_rect`).
 pub(crate) fn answer_row(
     response: &Response,
     rcx: &RowCx<'_, '_>,
     (pr, selected): (&PrRow, bool),
+    list: Rect,
     pending: &mut Vec<UiAction>,
 ) {
     if selected && rcx.view.keyboard_nav && rcx.input.focused {
-        let rect = response.rect.shrink(1.0);
-        let stroke = Stroke::new(
-            rcx.theme.tokens.metrics.stroke.focus,
-            rcx.theme.colors.border_focus,
-        );
-        response.ctx.layer_painter(response.layer_id).rect_stroke(
-            rect,
-            2.0,
-            stroke,
-            StrokeKind::Inside,
-        );
+        focus_ring(response, rcx.theme, list);
     }
     if response.clicked() || response.secondary_clicked() {
         pending.push(UiAction::Select(pr.key.clone()));
@@ -146,6 +148,20 @@ pub(crate) fn answer_row(
         pending.push(UiAction::Open(pr.key.clone()));
     }
     response.context_menu(|ui| context_menu(ui, pr, pending));
+}
+
+/// The ring round the selected row, cut to the list's width and clipped to the list.
+fn focus_ring(response: &Response, theme: &UiTheme, list: Rect) {
+    // why: a row's response takes in what its cells' contents allocate, which can reach past
+    // the list's right edge; there the ring ran off the window and had no right side.
+    let x = response.rect.x_range().intersection(list.x_range());
+    let ring = Rect::from_x_y_ranges(x, response.rect.y_range()).shrink(1.0);
+    let stroke = Stroke::new(theme.tokens.metrics.stroke.focus, theme.colors.border_focus);
+    response
+        .ctx
+        .layer_painter(response.layer_id)
+        .with_clip_rect(list)
+        .rect_stroke(ring, 2.0, stroke, StrokeKind::Inside);
 }
 
 fn context_menu(ui: &mut egui::Ui, pr: &PrRow, pending: &mut Vec<UiAction>) {
@@ -185,7 +201,8 @@ pub(crate) fn scroll_request<'a>(
 }
 
 /// Where a list drawn at `pitch` scrolled to: the view keeps the offset, the top row and the
-/// pitch for anchoring; the hover bands get the list's rows, when they are evenly spaced.
+/// pitch for anchoring, and how far a page moves; the hover bands get the list's rows, when
+/// they are evenly spaced.
 pub(crate) fn record_scroll(
     ui: &egui::Ui,
     view: &mut DashboardView,
@@ -195,6 +212,8 @@ pub(crate) fn record_scroll(
     view.offset_y = offset;
     view.pitch = pitch;
     view.top_visible = Some(pitch.index_at(&view.display.rows, offset));
+    let whole = pitch.whole_prs(&view.display.rows, (offset, inner.height()));
+    view.page_rows = whole.saturating_sub(1).max(1);
     // why: the hover bands assume one pitch; cards between shorter group headers have two, and
     // a wrong band would hold a stale hover until the next band.
     let even = pitch.is_uniform() || view.group == GroupBy::None;

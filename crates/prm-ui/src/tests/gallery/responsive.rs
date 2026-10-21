@@ -8,32 +8,23 @@ use prm_domain::view::GroupBy;
 use super::{Pointer, Scene, nothing, scene};
 use crate::{
     copy,
+    screens::dashboard::table_breakpoint,
     testing::{
         demo::demo_state,
-        screens::{Fixture, Shown},
+        screens::{Fixture, HARNESS_MARGIN, Shown},
     },
     theme::{self, adapter},
-    view::columns::fits_table,
-    widgets::pr_table::table_room,
 };
-
-/// `egui_kittest` draws the ui inside an outer margin of this many points on each side.
-const HARNESS_MARGIN: f32 = 8.0;
 /// A phone-sized window's height, so the cards fill a screen (points).
 const TALL: f32 = 760.0;
 /// The card the menu scenes select and open a menu on.
 const CARD: &str = "Retry 429 responses with Retry-After";
 
-/// The narrowest window that still shows the table.
+/// The narrowest window, in whole points, that still shows the table.
 fn breakpoint() -> f32 {
     let theme = theme::fallback();
     let style = adapter::style(&theme, theme.policy);
-    let frame = adapter::frame_table(&theme).total_margin().sum().x;
-    let dashboard = (300..2000)
-        .map(|w| w as f32)
-        .find(|w| fits_table(table_room(&style.spacing, &theme, w - frame)))
-        .unwrap_or(1280.0);
-    dashboard + 2.0 * HARNESS_MARGIN
+    table_breakpoint(&style.spacing, &theme).ceil() + 2.0 * HARNESS_MARGIN
 }
 
 fn ungrouped(f: &mut Fixture) {
@@ -52,12 +43,19 @@ fn peek_card(f: &mut Fixture) {
     f.dash.peek.open = true;
 }
 
+/// The second row chosen from the keyboard, so it shows the focus ring.
+fn keyboard_row(f: &mut Fixture) {
+    f.dash.view.nav_edge(false);
+    f.dash.view.nav(1);
+}
+
 /// The table filling a wide window, the table just above the breakpoint and the cards just
-/// below it, then the cards in phone-sized windows, grouped and not, and the peek over them.
+/// below it, then the cards in phone-sized windows, grouped and not, the peek over them, and a
+/// row chosen from the keyboard in the cards and the table.
 pub(super) fn scenes() -> Vec<Scene> {
     let at = breakpoint();
     let size = |width: f32| egui::vec2(width, TALL);
-    vec![
+    let mut all = vec![
         scene("dashboard-1920", Shown::Dashboard, demo_state, nothing)
             .at(egui::vec2(1920.0, 1000.0)),
         scene(
@@ -104,6 +102,28 @@ pub(super) fn scenes() -> Vec<Scene> {
             super::banner_shapes,
         )
         .at(size(360.0)),
+    ];
+    all.extend(keyboard_scenes());
+    all
+}
+
+/// A row chosen from the keyboard, with its focus ring, in the cards and in the table.
+fn keyboard_scenes() -> [Scene; 2] {
+    [
+        scene(
+            "dashboard-cards-keyboard",
+            Shown::Dashboard,
+            demo_state,
+            keyboard_row,
+        )
+        .at(egui::vec2(480.0, TALL)),
+        scene(
+            "dashboard-table-keyboard",
+            Shown::Dashboard,
+            demo_state,
+            keyboard_row,
+        )
+        .at(egui::vec2(1280.0, TALL)),
     ]
 }
 

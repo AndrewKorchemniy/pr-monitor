@@ -92,13 +92,7 @@ pub(crate) fn toolbar(
         }
         focused = response.has_focus();
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
-            icon_button(ui, cx, Icon::Gear, CommandId::SettingsOpen);
-            icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
-            if let Some(sort) = inputs.sort {
-                sort_menu(ui, cx, (sort, inputs.show_org), fit.menus);
-            }
-            group_menu(ui, cx, inputs.group, fit.menus);
+            buttons(ui, cx, inputs, &fit);
         });
     });
     if let Some(fraction) = cx.state.refresh_fraction() {
@@ -116,10 +110,12 @@ enum MenuLook {
     Icon,
 }
 
-/// How the toolbar fits its width: the widest the filter field may get, and how the menus show.
+/// How the toolbar fits its width: the widest the filter field may get, how the menus show,
+/// and how wide the buttons at the right are, gaps included.
 struct Fit {
     search: f32,
     menus: MenuLook,
+    buttons: f32,
 }
 
 impl Fit {
@@ -142,8 +138,26 @@ impl Fit {
         Self {
             search: (room - fixed - menus_width).max(0.0),
             menus: look,
+            buttons: fixed - ui.spacing().item_spacing.x + menus_width,
         }
     }
+}
+
+/// Group (and Sort), refresh and settings at the right end of the toolbar, added in the order
+/// they read, since Tab follows the order controls are added.
+fn buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, inputs: ToolbarInputs, fit: &Fit) {
+    let theme = cx.theme.clone();
+    let size = egui::vec2(fit.buttons, ui.available_height());
+    let row = egui::Layout::left_to_right(egui::Align::Center);
+    ui.allocate_ui_with_layout(size, row, |ui| {
+        ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
+        group_menu(ui, cx, inputs.group, fit.menus);
+        if let Some(sort) = inputs.sort {
+            sort_menu(ui, cx, (sort, inputs.show_org), fit.menus);
+        }
+        icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
+        icon_button(ui, cx, Icon::Gear, CommandId::SettingsOpen);
+    });
 }
 
 fn icon_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, icon: Icon, command: CommandId) {

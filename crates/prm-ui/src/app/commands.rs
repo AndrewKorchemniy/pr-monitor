@@ -18,11 +18,16 @@ use crate::{
 
 const ZOOM_STEP: f32 = 0.1;
 
+/// Whether the peek is open after Space or its close button: it always closes, since closing
+/// needs no row and the selection may have gone since it opened; it opens only on a selection.
+pub(super) const fn toggled_peek(open: bool, selected: bool) -> bool {
+    !open && selected
+}
+
 /// Commands on the selected PR.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum PrCommand {
     Open,
-    Peek,
     CopyLink,
     CopyMarkdown,
     CopyTitle,
@@ -87,7 +92,7 @@ impl PrMonitorApp {
             C::ColumnsReset => view.reset_columns(),
             C::FilterFocus => ctx.memory_mut(|m| m.request_focus(filter_id())),
             C::PrOpen => self.run_pr(ctx, PrCommand::Open),
-            C::PrPeek => self.run_pr(ctx, PrCommand::Peek),
+            C::PrPeek => self.toggle_peek(),
             C::PrCopyLink => self.run_pr(ctx, PrCommand::CopyLink),
             C::PrCopyMarkdown => self.run_pr(ctx, PrCommand::CopyMarkdown),
             C::PrCopyTitle => self.run_pr(ctx, PrCommand::CopyTitle),
@@ -145,12 +150,12 @@ impl PrMonitorApp {
         self.link.send(Command::TestNotification);
     }
 
+    fn toggle_peek(&mut self) {
+        let selected = self.dash.view.selected_row().is_some();
+        self.dash.peek.open = toggled_peek(self.dash.peek.open, selected);
+    }
+
     fn run_pr(&mut self, ctx: &egui::Context, command: PrCommand) {
-        if command == PrCommand::Peek && self.dash.peek.open {
-            // why: closing needs no row, and the selection may have gone since it opened.
-            self.dash.peek.open = false;
-            return;
-        }
         let Some(row) = self.dash.view.selected_row().cloned() else {
             return;
         };
@@ -167,7 +172,6 @@ impl PrMonitorApp {
             }
             PrCommand::CopyTitle => copy_text(row.title.to_string(), "title"),
             PrCommand::Open => self.open_pr(row.key.clone()),
-            PrCommand::Peek => self.dash.peek.open = !self.dash.peek.open,
             PrCommand::FilterAuthor => {
                 self.set_filter_text(format!("@{}", first_word(&row.author_key)));
             }

@@ -17,7 +17,7 @@ use crate::{
     view::{
         DashboardView, ScrollIntent,
         anchor::{AnchorResult, capture, restore},
-        columns::fits_table,
+        columns::table_minimum,
         empty::{EmptyInputs, empty_kind},
     },
     widgets::{
@@ -25,7 +25,7 @@ use crate::{
         empty_state::empty_state,
         peek::peek,
         pr_cards::{card_pitch, pr_cards},
-        pr_table::{TableInputs, pr_table, table_pitch, table_room},
+        pr_table::{TableInputs, header_pitch, pr_table, table_pitch, table_room},
         status_bar::status_bar,
         toolbar::{ToolbarInputs, toolbar},
     },
@@ -33,14 +33,19 @@ use crate::{
 
 const PEEK_DEFAULT: f32 = 360.0;
 const PEEK_RANGE: std::ops::RangeInclusive<f32> = 280.0..=640.0;
+/// The docked peek's panel.
+const PEEK_PANEL: &str = "peek";
 /// A docked peek never leaves the list narrower than the smallest window (points).
 const LIST_MIN: f32 = MIN_SIZE[0];
+/// The banners take at most this share of the height under the toolbar; more of them scroll,
+/// so the list always keeps room.
+const BANNERS_SHARE: f32 = 0.4;
 
 /// How the dashboard lists pull requests.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ListMode {
     Table,
-    /// The window is too narrow for a table worth showing (`columns::fits_table`).
+    /// The window is too narrow for a table worth showing (`table_breakpoint`).
     Cards,
 }
 
@@ -126,10 +131,19 @@ impl DashboardUi {
     }
 }
 
+/// The narrowest list that shows the table rather than cards (points): the room a table worth
+/// showing needs (`columns::table_minimum`), the scroll bar's lane and the list's frame.
+pub(crate) fn table_breakpoint(spacing: &egui::Spacing, theme: &UiTheme) -> f32 {
+    let frame = adapter::frame_table(theme).total_margin().sum().x;
+    // why: `table_room` takes the scroll bar's lane out of the width it is given, so the room
+    // in a list 0 pt wide is minus the lane.
+    let room = table_room(spacing, theme, 0.0);
+    table_minimum(room) - room.width + frame
+}
+
 /// The table, or cards when a list `width` points wide has no room for a table worth showing.
 fn list_mode(ui: &egui::Ui, theme: &UiTheme, width: f32) -> ListMode {
-    let frame = adapter::frame_table(theme).total_margin().sum().x;
-    if fits_table(table_room(ui.spacing(), theme, width - frame)) {
+    if width >= table_breakpoint(ui.spacing(), theme) {
         ListMode::Table
     } else {
         ListMode::Cards
@@ -181,7 +195,8 @@ pub(crate) fn dashboard(
         .show(ui, |ui| body(ui, cx, d, (mode, window_focused)));
 }
 
-/// The banners nobody dismissed, the stopped service first.
+/// The banners nobody dismissed, the stopped service first, scrolling when they would take more
+/// than their share of the height (`BANNERS_SHARE`).
 fn banner_panel(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, d: &mut DashboardUi) {
     let published = cx.state.banners.iter();
     let visible: Vec<_> = d
@@ -189,14 +204,37 @@ fn banner_panel(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, d: &mut DashboardUi) {
         .iter()
         .chain(published.filter(|b| !d.dismissed.contains(&b.id)))
         .collect();
-    if !visible.is_empty() {
-        egui::Panel::top("banners")
-            .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 6)))
-            .show(ui, |ui| banners(ui, cx, &visible, &mut d.banners_expanded));
+    if visible.is_empty() {
+        return;
     }
+    let most = ui.available_height() * BANNERS_SHARE;
+    egui::Panel::top("banners")
+        .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 6)))
+        .show(ui, |ui| {
+            scrolled_banners(ui, cx, (&visible, &mut d.banners_expanded), most);
+        });
 }
 
-/// The peek at the right, resizable up to `max` points, remembering the width it was left at.
+/// `visible` banners in a scroll area as tall as they are, up to `most` points.
+fn scrolled_banners(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    (visible, expanded): (&[&Banner], &mut bool),
+    most: f32,
+) {
+    // why: a panel lays its content out in the height it took last frame, so a scroll area
+    // sized from the panel would never grow; it gets room of its own.
+    let room = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), most));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt("banners")
+            .auto_shrink([false, true])
+            .show(ui, |ui| banners(ui, cx, visible, expanded));
+    });
+}
+
+/// The peek at the right, `width` points wide (the saved width, at most `max`), resizable up to
+/// `max`. Only a drag saves a new width, so a narrow window never overwrites the saved one.
 fn docked_peek(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -204,15 +242,20 @@ fn docked_peek(
     (width, max): (f32, f32),
 ) {
     let theme = cx.theme.clone();
-    let panel = egui::Panel::right("peek")
+    // why: egui keeps the width the panel last had, cut to fit while the window was narrower,
+    // and prefers it to `default_size`; forgetting it lets the peek grow back with the window.
+    let id = ui.scope_id().with_salt(egui::IdSalt::new(PEEK_PANEL));
+    ui.ctx()
+        .data_mut(|data| data.remove::<egui::PanelState>(id));
+    let panel = egui::Panel::right(PEEK_PANEL)
         .default_size(width)
         .size_range(*PEEK_RANGE.start()..=max)
         .resizable(true)
         .frame(adapter::frame_raised(&theme))
         .show(ui, |ui| peek(ui, cx, d.view.selected_row()));
-    let shown = panel.response.rect.width().round();
-    if d.peek.width != Some(shown) {
-        d.peek.width = Some(shown);
+    let shown = panel.response.rect.width();
+    if (shown - width).abs() > 1.0 {
+        d.peek.width = Some(shown.round());
     }
 }
 
@@ -259,7 +302,7 @@ fn body(
 }
 
 /// Switching between the table and the cards keeps the selection (or the top row) where it was
-/// on screen, though the rows change height.
+/// on screen, though the rows change height, and a selection in view stays wholly in view.
 fn keep_place(ui: &egui::Ui, theme: &UiTheme, d: &mut DashboardUi, mode: ListMode) {
     let switched = d.mode.replace(mode).is_some_and(|last| last != mode);
     if !switched || d.view.scroll != ScrollIntent::None {
@@ -270,13 +313,31 @@ fn keep_place(ui: &egui::Ui, theme: &UiTheme, d: &mut DashboardUi, mode: ListMod
     let Some(anchor) = capture(&view.display, view.selected.as_ref(), place, view.pitch) else {
         return;
     };
-    let pitch = match mode {
-        ListMode::Table => table_pitch(ui.spacing(), theme),
-        ListMode::Cards => card_pitch(ui, theme),
+    // why: the table's rows start under its header, the cards' at the top of the list.
+    let header = header_pitch(ui.spacing(), theme);
+    let (pitch, shift, room) = match mode {
+        ListMode::Table => (
+            table_pitch(ui.spacing(), theme),
+            header,
+            ui.available_height() - header,
+        ),
+        ListMode::Cards => (card_pitch(ui, theme), -header, ui.available_height()),
     };
-    if let AnchorResult::Offset(offset) = restore(&anchor, &view.display, pitch) {
-        d.view.scroll = ScrollIntent::Offset(offset);
+    let AnchorResult::Offset(offset) = restore(&anchor, &view.display, pitch) else {
+        return;
+    };
+    let mut offset = offset + shift;
+    let (rows, spacing) = (&view.display.rows, ui.spacing().item_spacing.y);
+    let was_shown = (0.0..room).contains(&(anchor.top - anchor.offset_y));
+    if view.selected.as_ref() == Some(&anchor.key) && was_shown {
+        // why: a card is taller than the row it replaces, so a selection near the bottom
+        // would run out of the list; it moves up just enough to stay wholly in view.
+        let top = pitch.top_of(rows, anchor.display_index);
+        offset = offset.max(top + pitch.pr - spacing - room).min(top);
     }
+    // why: an offset past the end is not cut short but springs back over several frames.
+    let end = (pitch.top_of(rows, rows.len()) - spacing - room).max(0.0);
+    d.view.scroll = ScrollIntent::Offset(offset.clamp(0.0, end));
 }
 
 /// "contoso" or "3 organizations", for empty-state copy.

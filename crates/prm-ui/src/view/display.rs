@@ -67,6 +67,24 @@ impl Pitch {
         rows.iter().take(index).map(|row| self.of(*row)).sum()
     }
 
+    /// How many pull request rows lie wholly within `height` points from `y` down, both from the
+    /// top of the list.
+    pub(crate) fn whole_prs(self, rows: &[DisplayRow], (y, height): (f32, f32)) -> usize {
+        let mut top = 0.0;
+        let mut count = 0;
+        for row in rows {
+            let bottom = top + self.of(*row);
+            if bottom > y + height + 0.5 {
+                break;
+            }
+            if top >= y - 0.5 && matches!(row, DisplayRow::Pr(_)) {
+                count += 1;
+            }
+            top = bottom;
+        }
+        count
+    }
+
     /// The display row under `y` points from the top of the list (the last row below the end).
     pub(crate) fn index_at(self, rows: &[DisplayRow], y: f32) -> usize {
         let mut bottom = 0.0;

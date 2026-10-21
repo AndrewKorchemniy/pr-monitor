@@ -385,6 +385,13 @@ pub(crate) fn chosen(column: &ColumnSpec, hidden: &[String]) -> bool {
 /// left its columns shrink to their minimums. So hiding a column leaves room for others, and
 /// the table never runs past its right edge while its core fits.
 pub(crate) fn visible_columns(room: Room, layout: &ColumnLayout<'_>) -> Vec<ColumnSpec> {
+    let (mut columns, give) = pick_columns(room, layout);
+    layout.fit_widths(&mut columns, room, give);
+    columns
+}
+
+/// The columns `visible_columns` keeps, at their default widths, and how far they give.
+fn pick_columns(room: Room, layout: &ColumnLayout<'_>) -> (Vec<ColumnSpec>, Give) {
     let mut columns: Vec<ColumnSpec> = COLUMNS.into_iter().filter(|c| layout.wants(c)).collect();
     if layout.group == GroupBy::Status {
         compact_status(&mut columns);
@@ -402,15 +409,46 @@ pub(crate) fn visible_columns(room: Room, layout: &ColumnLayout<'_>) -> Vec<Colu
     } else {
         Give::ToMinimum
     };
-    layout.fit_widths(&mut columns, room, give);
-    columns
+    (columns, give)
 }
 
-/// Whether a table is worth showing in `room`: its columns that never drop and the last one
-/// that does (Comments), at their default widths, ungrouped, with Title at its minimum.
-/// Narrower, the dashboard lists cards instead, since a table of only its core columns would
-/// hide the repository, author, reviews and comments that a card still shows.
-pub(crate) fn fits_table(room: Room) -> bool {
+/// The resizable columns `visible_columns` shows narrower than the user's width for them (or
+/// their default), by key, at the width shown.
+fn squeezed_widths(room: Room, layout: &ColumnLayout<'_>) -> Vec<(&'static str, f32)> {
+    let (picked, give) = pick_columns(room, layout);
+    let mut shown = picked.clone();
+    layout.fit_widths(&mut shown, room, give);
+    picked
+        .iter()
+        .zip(&shown)
+        .filter_map(|(column, fitted)| match fitted.width {
+            Width::Initial(width) if width < layout.span(column, room, give).preferred - 0.5 => {
+                Some((column.key, width))
+            }
+            Width::Initial(_) | Width::Exact | Width::Fixed(_) | Width::Remainder => None,
+        })
+        .collect()
+}
+
+/// The widths to save when the header drags `key` to `width` points. In a table squeezed to
+/// fit, the other columns keep the widths they show first; else the drag's width would be
+/// squeezed again, so the divider would land short of the pointer and the other columns grow.
+pub(crate) fn dragged_widths(
+    room: Room,
+    layout: &ColumnLayout<'_>,
+    (key, width): (&'static str, f32),
+) -> Vec<(&'static str, f32)> {
+    let mut saved = squeezed_widths(room, layout);
+    saved.retain(|(shown, _)| *shown != key);
+    saved.push((key, width));
+    saved
+}
+
+/// The room a table worth showing needs (`room.width` aside): its columns that never drop and
+/// the last one that does (Comments), at their default widths, ungrouped, with Title at its
+/// minimum. Narrower, the dashboard lists cards instead, since a table of only its core
+/// columns would hide the repository, author, reviews and comments that a card still shows.
+pub(crate) fn table_minimum(room: Room) -> f32 {
     let defaults = BTreeMap::new();
     let layout = ColumnLayout {
         group: GroupBy::None,
@@ -422,7 +460,7 @@ pub(crate) fn fits_table(room: Room) -> bool {
     let minimal = COLUMNS
         .iter()
         .filter(|c| !SQUEEZE_ORDER.contains(&c.id) || Some(c.id) == last);
-    layout.needed(minimal, room, Give::ToDefault).floor <= room.width
+    layout.needed(minimal, room, Give::ToDefault).floor
 }
 
 /// Grouped by status, the group header already names it: the status cell shows only its glyph.

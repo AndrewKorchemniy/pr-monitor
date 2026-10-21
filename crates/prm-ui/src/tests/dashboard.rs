@@ -15,13 +15,12 @@ use crate::{
     commands::CommandId,
     copy,
     render::hover_bands::TableGeometry,
+    screens::dashboard::table_breakpoint,
     testing::{
         demo::{demo_state, now},
-        screens::{Fixture, NARROW, Shown, WINDOW, harness_at},
+        screens::{Fixture, HARNESS_MARGIN, NARROW, Shown, WINDOW, harness_at},
     },
     theme::{self, adapter},
-    view::columns::fits_table,
-    widgets::pr_table::table_room,
 };
 
 /// The demo dashboard at the demo's "now", grouped by `group`, in a window of `size` points.
@@ -49,10 +48,11 @@ fn dashboard_right(h: &Harness<'_, Fixture>) -> f32 {
     settings.right() + adapter::frame_chrome(&theme).total_margin().right
 }
 
-/// The harness's margin around the dashboard, on each side.
-fn harness_margin() -> f32 {
+#[test]
+fn the_harness_margin_is_the_one_the_tests_allow_for() {
     let h = demo(GroupBy::Status, WINDOW);
-    WINDOW.x - dashboard_right(&h)
+    let margin = WINDOW.x - dashboard_right(&h);
+    assert!((margin - HARNESS_MARGIN).abs() < 0.5, "{margin}");
 }
 
 /// Where the list's rows end: inside the body's right margin and the scroll bar's lane.
@@ -73,11 +73,7 @@ fn half_gap() -> f32 {
 fn breakpoint() -> f32 {
     let theme = theme::fallback();
     let style = adapter::style(&theme, theme.policy);
-    let margin = adapter::frame_table(&theme).total_margin().sum().x;
-    (300..2000)
-        .map(|w| w as f32)
-        .find(|w| fits_table(table_room(&style.spacing, &theme, w - margin)))
-        .unwrap_or(f32::INFINITY)
+    table_breakpoint(&style.spacing, &theme)
 }
 
 /// Every label and button lies inside a window `width` points wide.
@@ -155,7 +151,7 @@ fn below_the_breakpoint_the_dashboard_lists_cards_with_a_sort_menu() {
         (640.0..=700.0).contains(&at),
         "the breakpoint moved to {at} pt"
     );
-    let window = at + 2.0 * harness_margin();
+    let window = at.ceil() + 2.0 * HARNESS_MARGIN;
     let sort = copy::menu_value(copy::SORT, copy::COLUMN_STATUS);
     let h = demo(GroupBy::Status, egui::vec2(window, WINDOW.y));
     assert!(
@@ -312,4 +308,144 @@ fn the_hover_bands_follow_the_rows_as_drawn() {
         None,
         "cards and the shorter headers between them have no single pitch"
     );
+}
+
+/// Tab went from the filter to Settings, then Refresh, Sort and Group: the buttons were added
+/// right to left, the reverse of how the toolbar reads.
+#[test]
+fn tab_moves_through_the_toolbar_in_reading_order() {
+    let mut h = demo(GroupBy::Status, egui::vec2(480.0, WINDOW.y));
+    h.get_by_role(Role::TextInput).focus();
+    h.run();
+    let names = [
+        copy::menu_value(copy::GROUP, "Status"),
+        copy::menu_value(copy::SORT, copy::COLUMN_STATUS),
+        CommandId::RefreshNow.title().to_owned(),
+        CommandId::SettingsOpen.title().to_owned(),
+    ];
+    for name in names {
+        h.key_press(egui::Key::Tab);
+        h.run();
+        assert!(h.get_by_label(&name).is_focused(), "Tab reaches {name}");
+    }
+}
+
+/// Where the peek's content starts: its "Open in browser" button sits at its left edge.
+fn peek_left(h: &Harness<'_, Fixture>) -> f32 {
+    h.get_by_label(copy::OPEN_IN_BROWSER).rect().left()
+}
+
+/// A narrow window cut the docked peek to fit and saved the cut width, so it stayed narrow once
+/// the window was wide again.
+#[test]
+fn the_peek_keeps_its_saved_width_through_a_narrow_window() {
+    let mut fixture = Fixture::new(Shown::Dashboard, demo_state());
+    fixture.now = now();
+    fixture.dash.peek.open = true;
+    fixture.dash.peek.width = Some(600.0);
+    if let Some(key) = fixture.state.rows.first().map(|r| r.key.clone()) {
+        fixture.dash.view.select_key(&key);
+    }
+    let wide = egui::vec2(1600.0, WINDOW.y);
+    let mut h = harness_at(fixture, wide);
+    h.run();
+    let left = peek_left(&h);
+    resize(&mut h, egui::vec2(800.0, WINDOW.y));
+    let cut = 800.0 - peek_left(&h);
+    assert!(cut < 1600.0 - left - 100.0, "the peek fits the window");
+    resize(&mut h, wide);
+    assert!(
+        (peek_left(&h) - left).abs() < 0.5,
+        "the peek is as wide again"
+    );
+    assert_eq!(h.state().dash.peek.width, Some(600.0));
+}
+
+/// The first pull request's title and number, and the list's first group header.
+fn first_card(h: &Harness<'_, Fixture>) -> (egui::Rect, egui::Rect, egui::Rect) {
+    let view = &h.state().dash.view;
+    let first = (0..view.display.rows.len()).find_map(|i| view.row_at(i));
+    let (title, number) = first.map_or_else(Default::default, |r| {
+        (r.title.to_string(), r.number_text.to_string())
+    });
+    let header = h.get_by_role_and_label(Role::Button, "Needs review").rect();
+    (
+        h.get_by_label(&title).rect(),
+        h.get_by_label(&number).rect(),
+        header,
+    )
+}
+
+/// Banners wrap tall in a narrow window; expanded, they left the list a strip too short for a
+/// card, and more of them would have pushed into the status bar.
+#[test]
+fn expanded_banners_leave_the_list_room_for_a_card() {
+    for (size, last) in [(NARROW, "Sign in with Microsoft"), (WINDOW, copy::CLOSE)] {
+        let mut fixture = Fixture::new(Shown::Dashboard, demo_state());
+        super::gallery::banner_shapes(&mut fixture);
+        fixture.dash.banners_expanded = true;
+        let mut h = harness_at(fixture, size);
+        h.run();
+        let theme = theme::fallback();
+        let summary = h.state().state.summary;
+        let count = copy::status_count(summary.needs_review, prm_domain::PrStatus::NeedsReview);
+        let status = h.get_by_label(&count).rect().center().y;
+        let list_bottom = status - theme.tokens.metrics.row.statusbar_height / 2.0;
+        let (title, number, header) = first_card(&h);
+        assert!(
+            title.top() >= header.bottom() && number.bottom() <= list_bottom,
+            "at {size:?} the first card ({title:?}, {number:?}) is in the list ({header:?} to \
+             {list_bottom})"
+        );
+        let button = h.get_by_label(last).rect();
+        assert!(
+            button.bottom() <= header.top(),
+            "at {size:?} the banners show {last} ({button:?}) above the list ({header:?})"
+        );
+    }
+}
+
+/// The keyboard focus rings painted this frame, each with its clip.
+fn focus_rings(h: &Harness<'_, Fixture>) -> Vec<(egui::Rect, egui::Rect)> {
+    let theme = h.state().theme.current(&h.ctx).clone();
+    let focus = theme.tokens.metrics.stroke.focus;
+    h.output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| {
+            let egui::Shape::Rect(ring) = &clipped.shape else {
+                return None;
+            };
+            let stroke = ring.stroke;
+            let focused =
+                stroke.color == theme.colors.border_focus && (stroke.width - focus).abs() < 0.01;
+            focused.then_some((ring.rect, clipped.clip_rect))
+        })
+        .collect()
+}
+
+/// The ring round the row chosen from the keyboard took the row's response, which reaches
+/// past the list, so it ran off the window with no right side.
+#[test]
+fn the_focus_ring_stays_inside_the_list() {
+    for width in [480.0, WINDOW.x] {
+        let mut h = demo(GroupBy::None, egui::vec2(width, WINDOW.y));
+        h.state_mut().dash.view.nav_edge(false);
+        h.run();
+        let rings = focus_rings(&h);
+        let end = list_end(&h);
+        assert_eq!(rings.len(), 1, "at {width} pt: {rings:?}");
+        for (ring, clip) in rings {
+            let case = format!("at {width} pt the ring {ring:?} (clip {clip:?})");
+            assert!(
+                ring.left() >= clip.left() && ring.right() <= clip.right(),
+                "{case}"
+            );
+            assert!(ring.right() >= end - 1.5, "{case} stops short of {end}");
+            assert!(
+                ring.right() <= dashboard_right(&h),
+                "{case} passes the window"
+            );
+        }
+    }
 }

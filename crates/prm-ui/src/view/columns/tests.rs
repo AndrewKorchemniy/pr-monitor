@@ -159,6 +159,56 @@ fn dragged_widths_shrink_by_the_same_share_before_a_column_drops() {
     );
 }
 
+/// A drag in a squeezed table saved the width the pointer reached, which the table then
+/// squeezed again: the divider landed short of the pointer and the other columns grew.
+#[test]
+fn a_drag_in_a_squeezed_table_moves_only_the_dragged_column() {
+    let mut saved = BTreeMap::from([("repo".to_owned(), 360.0), ("author".to_owned(), 250.0)]);
+    let room = room(1200.0);
+    let before = visible_columns(room, &layout(GroupBy::None, &[], &saved));
+    let width_of = |columns: &[ColumnSpec], id| {
+        columns
+            .iter()
+            .find(|c| c.id == id)
+            .map_or(0.0, |c| width_in(c, room))
+    };
+    let target = width_of(&before, ColumnId::Repo) - 20.0;
+    assert!(target < 340.0, "the table is squeezed: {before:?}");
+    let drag = ("repo", target);
+    for (key, width) in dragged_widths(room, &layout(GroupBy::None, &[], &saved), drag) {
+        saved.insert(key.to_owned(), width);
+    }
+    let after = visible_columns(room, &layout(GroupBy::None, &[], &saved));
+    assert_eq!(ids(&after), ids(&before));
+    assert!((width_of(&after, ColumnId::Repo) - target).abs() < 0.01);
+    for column in before
+        .iter()
+        .filter(|c| c.is_resizable() && c.id != ColumnId::Repo)
+    {
+        assert_eq!(
+            width_of(&after, column.id),
+            width_in(column, room),
+            "{column:?}"
+        );
+    }
+    assert!(
+        taken(&after, room) <= 1200.0 - 19.0,
+        "Title takes the room the drag gave up"
+    );
+}
+
+/// Outside a squeeze, a drag saves only the dragged column.
+#[test]
+fn a_drag_in_a_roomy_table_saves_one_width() {
+    let none = BTreeMap::new();
+    let saved = dragged_widths(
+        room(1600.0),
+        &layout(GroupBy::None, &[], &none),
+        ("repo", 200.0),
+    );
+    assert_eq!(saved, [("repo", 200.0)]);
+}
+
 #[test]
 fn narrow_tables_drop_columns_in_squeeze_order() {
     let mut dropped = Vec::new();
@@ -216,8 +266,7 @@ fn dragged_widths_give_way_before_a_column_drops() {
 fn a_table_needs_room_for_its_core_and_comments() {
     // Margin, Status, PR, Flags, Title (minimum), Comments, Age and six gaps.
     let minimum = 8.0 + 140.0 + 64.0 + FLAGS_WIDTH + 200.0 + 76.0 + 56.0 + 6.0 * 8.0;
-    assert!(fits_table(room(minimum)));
-    assert!(!fits_table(room(minimum - 1.0)));
+    assert!((table_minimum(room(0.0)) - minimum).abs() < 0.01);
 }
 
 #[test]

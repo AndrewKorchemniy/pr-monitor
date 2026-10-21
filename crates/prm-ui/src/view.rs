@@ -25,7 +25,7 @@ use crate::view::{
     display::{DisplayList, DisplayRow, Pitch, build_display, group_id},
 };
 
-/// Rows a page-up/down moves.
+/// Rows a page-up/down moves before the list has been drawn.
 const PAGE: usize = 15;
 
 /// The sort one click on `key`'s header gives: the sorted column reverses, any other column
@@ -71,6 +71,9 @@ pub(crate) struct DashboardView {
     pub table_salt: Option<(u64, u32)>,
     /// Chosen columns the table had no room for last frame (not persisted).
     pub squeezed: Vec<ColumnId>,
+    /// Pull request rows a page-up/down moves: one fewer than the list showed whole last frame,
+    /// so a page keeps one row in view.
+    pub page_rows: usize,
 }
 
 impl DashboardView {
@@ -100,6 +103,7 @@ impl DashboardView {
             table_epoch: 0,
             table_salt: None,
             squeezed: Vec::new(),
+            page_rows: PAGE,
         };
         view.rebuild();
         if let Some(index) = view.selected_display() {
@@ -318,7 +322,7 @@ impl DashboardView {
     }
 
     pub(crate) fn nav_page(&mut self, down: bool) {
-        let rows = isize::try_from(PAGE).unwrap_or(1);
+        let rows = isize::try_from(self.page_rows.max(1)).unwrap_or(1);
         self.nav(if down { rows } else { -rows });
     }
 

@@ -25,7 +25,7 @@ use crate::{
 const TITLE_LINES: usize = 2;
 /// The status glyph's lane before the title (points).
 const STATUS_LANE: f32 = 9.0;
-/// A part of the detail line cut narrower than this is left out (points).
+/// A part of the detail line that has to be cut narrower than this is left out (points).
 const MIN_PART: f32 = 24.0;
 
 /// A card's height: two title lines, the detail line, and padding above and below (points).
@@ -129,13 +129,12 @@ fn facts_line(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, (pr, index): (&PrRow, usiz
     let present = parts.iter().filter(|p| !p.is_empty()).count();
     let separator = small(copy::DETAIL_SEPARATOR);
     let room = ui.available_width() - fixed - separator * (present + 1) as f32;
-    let widths = share(
-        parts.map(|p| if p.is_empty() { 0.0 } else { small(p) }),
-        room,
-    );
+    let whole = parts.map(|p| if p.is_empty() { 0.0 } else { small(p) });
+    let widths = share(whole, room);
     ui.label(cells::mono(theme, &pr.number_text));
-    for (text, width) in parts.into_iter().zip(widths) {
-        if width >= MIN_PART {
+    for ((text, width), whole) in parts.into_iter().zip(widths).zip(whole) {
+        // why: a short name ("api") is narrower than `MIN_PART` even whole.
+        if !text.is_empty() && (width >= whole - 0.5 || width >= MIN_PART) {
             dot(ui, theme, separator);
             ui.add(egui::Label::new(cut(ui, theme, text, width)));
         }

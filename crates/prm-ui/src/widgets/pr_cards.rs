@@ -13,12 +13,14 @@ use crate::{
     frame::FrameCx,
     theme::UiTheme,
     view::{
-        DashboardView,
+        DashboardView, columns,
         display::{DisplayRow, Pitch},
     },
     widgets::pr_table::{
         TableInputs, TableOut, cells,
-        rows::{RowCx, answer_row, group_row, mark_selected, record_scroll, scroll_request},
+        rows::{
+            RowCx, answer_row, group_row, mark_selected, record_scroll, rows_rect, scroll_request,
+        },
     },
 };
 
@@ -41,6 +43,10 @@ pub(crate) fn pr_cards(
     input: &TableInputs<'_>,
 ) -> TableOut {
     let theme = cx.theme.clone();
+    // why: no table is shown, so the column checklist reads every chosen column as left out.
+    view.squeezed.clear();
+    view.squeezed
+        .extend(columns::squeezed(&[], &view.hidden_columns));
     let pitch = card_pitch(ui, &theme);
     let spacing = ui.spacing().item_spacing.y;
     let heights = (pitch.pr - spacing, pitch.group - spacing);
@@ -82,6 +88,7 @@ fn cards_body(
 ) {
     let full = body.max_rect();
     let clip = body.ui_mut().clip_rect();
+    let list = rows_rect(&mut body);
     let rows = &rcx.view.display.rows;
     let heights = rows.iter().map(|row| match row {
         DisplayRow::Group(_) => header,
@@ -91,12 +98,18 @@ fn cards_body(
         Some(DisplayRow::Group(span)) => {
             group_row(&mut row, rcx, (*span, CELLS), (full, clip), pending);
         }
-        Some(DisplayRow::Pr(_)) => card_row(&mut row, rcx, pending),
+        Some(DisplayRow::Pr(_)) => card_row(&mut row, rcx, list, pending),
         None => {}
     });
 }
 
-fn card_row(row: &mut TableRow<'_, '_>, rcx: &RowCx<'_, '_>, pending: &mut Vec<UiAction>) {
+/// A pull request's card; the cards lie in `list`.
+fn card_row(
+    row: &mut TableRow<'_, '_>,
+    rcx: &RowCx<'_, '_>,
+    list: egui::Rect,
+    pending: &mut Vec<UiAction>,
+) {
     let index = row.index();
     let Some(pr) = rcx.view.row_at(index) else {
         return;
@@ -104,7 +117,7 @@ fn card_row(row: &mut TableRow<'_, '_>, rcx: &RowCx<'_, '_>, pending: &mut Vec<U
     let selected = mark_selected(row, rcx, pr);
     row.col(|ui| cells::change_bar(ui, rcx, pr));
     row.col(|ui| card::card(ui, rcx, pr, index));
-    answer_row(&row.response(), rcx, (pr, selected), pending);
+    answer_row(&row.response(), rcx, (pr, selected), list, pending);
 }
 
 #[cfg(test)]

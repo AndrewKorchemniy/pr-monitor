@@ -67,3 +67,22 @@ fn row_pitch_includes_the_vertical_item_spacing() {
         metrics.row.row_height + style.spacing.item_spacing.y
     );
 }
+
+/// The peek's close button did nothing once the selection had gone: Space and the button ran
+/// the selected row's commands, which stop without a row.
+#[test]
+fn the_peek_closes_without_a_selection_and_opens_only_on_one() {
+    let cases = [
+        ((true, false), false),
+        ((true, true), false),
+        ((false, true), true),
+        ((false, false), false),
+    ];
+    for ((open, selected), after) in cases {
+        assert_eq!(
+            commands::toggled_peek(open, selected),
+            after,
+            "open {open}, selected {selected}"
+        );
+    }
+}
