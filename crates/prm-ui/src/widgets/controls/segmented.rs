@@ -150,13 +150,6 @@ fn segment(
         c.control_bg
     };
     ui.painter().rect_filled(rect, corners, fill);
-    if selected {
-        // why: the selected fill alone is close to the others in some themes; an accent edge
-        // marks the choice in every one.
-        let edge = Stroke::new(theme.tokens.metrics.stroke.hairline, c.accent_base);
-        ui.painter()
-            .rect_stroke(rect.shrink(0.5), corners, edge, StrokeKind::Inside);
-    }
     let (font, color) = if selected {
         (theme.fonts.body_strong.clone(), c.text_primary)
     } else {
