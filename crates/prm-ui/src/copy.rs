@@ -228,6 +228,7 @@ pub(crate) const PALETTE_FOOTER: &str = "Enter to run · Esc to close";
 pub(crate) const SHORTCUTS_TITLE: &str = "Keyboard shortcuts";
 pub(crate) const TRAY_OPEN: &str = "Open PR Monitor";
 pub(crate) const TRAY_REFRESH: &str = "Refresh now";
+pub(crate) const REFRESHING: &str = "Refreshing…";
 pub(crate) const TRAY_PAUSE: &str = "Pause notifications for 1 hour";
 pub(crate) const TRAY_RESUME: &str = "Resume notifications";
 pub(crate) const TRAY_SIGN_IN: &str = "Sign in…";
@@ -563,6 +564,7 @@ pub(crate) const ALL: &[&str] = &[
     PAT_HELP,
     ENTRA_HELP,
     REFRESH_HELP,
+    REFRESHING,
     REMOVE_ORG_BODY,
     REVIEWERS_HELP,
     TRACK_FROM_HELP,

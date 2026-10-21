@@ -12,12 +12,13 @@ use egui_kittest::{
 use prm_domain::view::GroupBy;
 
 use crate::{
+    actions::UiAction,
     commands::CommandId,
     copy,
     render::hover_bands::TableGeometry,
     screens::dashboard::table_breakpoint,
     testing::{
-        demo::{demo_state, now},
+        demo::{busy_state, demo_state, now},
         screens::{Fixture, HARNESS_MARGIN, NARROW, Shown, WINDOW, harness_at},
     },
     theme::{self, adapter},
@@ -257,7 +258,7 @@ fn closing_the_peek_works_without_a_selection() {
     assert!(
         actions
             .iter()
-            .any(|a| matches!(a, crate::actions::UiAction::Run(CommandId::PrPeek))),
+            .any(|a| matches!(a, UiAction::Run(CommandId::PrPeek))),
         "{actions:?}"
     );
 }
@@ -447,5 +448,27 @@ fn the_focus_ring_stays_inside_the_list() {
                 "{case} passes the window"
             );
         }
+    }
+}
+
+/// Refresh could be clicked again and again while a refresh ran, with nothing showing it was
+/// busy.
+#[test]
+fn the_refresh_button_turns_off_while_a_refresh_runs() {
+    for (state, busy) in [(demo_state(), false), (busy_state(), true)] {
+        let mut fixture = Fixture::new(Shown::Dashboard, state);
+        fixture.now = now();
+        let mut h = harness_at(fixture, WINDOW);
+        h.run();
+        let button = h.get_by_role_and_label(Role::Button, CommandId::RefreshNow.title());
+        assert_eq!(button.accesskit_node().is_disabled(), busy);
+        button.click();
+        h.run();
+        let ran = h
+            .state_mut()
+            .take_actions()
+            .iter()
+            .any(|a| matches!(a, UiAction::Run(CommandId::RefreshNow)));
+        assert_eq!(ran, !busy, "busy: {busy}");
     }
 }

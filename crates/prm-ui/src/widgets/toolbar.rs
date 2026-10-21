@@ -155,9 +155,20 @@ fn buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, inputs: ToolbarInputs, fit: 
         if let Some(sort) = inputs.sort {
             sort_menu(ui, cx, (sort, inputs.show_org), fit.menus);
         }
-        icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
+        refresh_button(ui, cx);
         icon_button(ui, cx, Icon::Gear, CommandId::SettingsOpen);
     });
+}
+
+/// Refresh, or while a refresh runs, the same button turned off with its arrow spinning.
+fn refresh_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
+    if !cx.state.refresh.in_progress {
+        icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
+        return;
+    }
+    let theme = cx.theme.clone();
+    controls::refreshing_button(ui, &theme, CommandId::RefreshNow.title())
+        .on_hover_text(copy::REFRESHING);
 }
 
 fn icon_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, icon: Icon, command: CommandId) {

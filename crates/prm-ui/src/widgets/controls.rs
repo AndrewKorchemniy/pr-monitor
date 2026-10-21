@@ -96,6 +96,39 @@ fn square_icon_button(
     response
 }
 
+/// The ghost refresh button while a refresh runs: turned off (no hover fill, no clicks, no Tab
+/// stop) with its arrow spinning, or holding still when animations are off. Named `name` for
+/// screen readers (callers add the tooltip).
+pub(crate) fn refreshing_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> egui::Response {
+    let side = theme.control_height();
+    let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+    let turn = if theme.policy.animations {
+        ui.ctx().request_repaint_after(SPIN_FRAME);
+        spin_angle(ui.input(|i| i.time))
+    } else {
+        0.0
+    };
+    let glyph = Rect::from_center_size(rect.center(), vec2(BUTTON_GLYPH, BUTTON_GLYPH));
+    icons::paint_refresh_turned(ui.painter(), glyph, theme.colors.text_secondary, turn);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, false, name));
+    response
+}
+
+/// How far a spinner has turned `seconds` in: once around every `SPIN_PERIOD`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "an angle within one turn needs no more than f32"
+)]
+fn spin_angle(seconds: f64) -> f32 {
+    let turns = (seconds / SPIN_PERIOD).fract();
+    (turns * std::f64::consts::TAU) as f32
+}
+
+/// One full turn of a spinner, in seconds.
+const SPIN_PERIOD: f64 = 1.2;
+/// How often a spinner redraws: smooth at its size without a repaint every frame.
+const SPIN_FRAME: std::time::Duration = std::time::Duration::from_millis(25);
+
 /// A ghost button's chrome: the hover fill (held while its menu is `open`) and a focus ring
 /// when it has keyboard focus.
 pub(crate) fn ghost_chrome(
@@ -338,3 +371,6 @@ fn paint_radio(
             .circle(center, r - 0.5, fill, Stroke::new(1.0, c.border_control));
     }
 }
+
+#[cfg(test)]
+mod tests;

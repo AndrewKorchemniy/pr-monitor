@@ -92,7 +92,7 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.circle_stroke(at(-0.2, -0.2), r * 0.55, s);
             painter.line_segment([at(0.2, 0.2), at(0.8, 0.8)], s);
         }
-        Icon::Refresh => arc_with_head(painter, c, r * 0.62, s),
+        Icon::Refresh => arc_with_head(painter, (c, r * 0.62), s, 0.0),
         Icon::Gear => {
             painter.circle_stroke(c, r * 0.45, s);
             for i in 0..8 {
@@ -226,10 +226,21 @@ fn check(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
 }
 
 /// A clockwise arc open at the top right, ending at the top in a solid arrowhead.
-fn arc_with_head(painter: &Painter, center: Pos2, radius: f32, s: Stroke) {
+/// The refresh arrow turned clockwise by `turn` radians, for a refresh in progress.
+pub(crate) fn paint_refresh_turned(painter: &Painter, rect: Rect, color: Color32, turn: f32) {
+    let r = rect.width().min(rect.height()) / 2.0;
+    arc_with_head(
+        painter,
+        (rect.center(), r * 0.62),
+        stroke(color, rect),
+        turn,
+    );
+}
+
+fn arc_with_head(painter: &Painter, (center, radius): (Pos2, f32), s: Stroke, turn: f32) {
     const STEPS: u8 = 24;
     // Screen angles grow clockwise (y points down): start just above the right, end at the top.
-    let (start, sweep) = (-TAU / 12.0, TAU * 5.0 / 6.0 - TAU / 12.0);
+    let (start, sweep) = (turn - TAU / 12.0, TAU * 5.0 / 6.0 - TAU / 12.0);
     let point = |angle: f32| center + vec2(angle.cos(), angle.sin()) * radius;
     let points: Vec<Pos2> = (0..=STEPS)
         .map(|i| point(start + sweep * f32::from(i) / f32::from(STEPS)))
