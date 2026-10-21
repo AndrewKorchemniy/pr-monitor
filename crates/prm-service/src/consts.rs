@@ -8,6 +8,11 @@ pub const REFRESH_DEADLINE: Duration = Duration::from_secs(120);
 pub const LIST_CONCURRENCY: usize = 4;
 /// Concurrent thread fetches per org.
 pub const THREAD_CONCURRENCY: usize = 6;
+/// Thread reads per org per refresh. Tracking everyone in a busy project can mean hundreds of
+/// active PRs; beyond this they are read in turns (see `plan_thread_reads`). That is 25 rounds
+/// at `THREAD_CONCURRENCY`, so even 2 s requests leave most of `REFRESH_DEADLINE` for listing
+/// and lookups.
+pub const THREAD_READ_BUDGET: usize = 150;
 /// Vanished PRs looked up by id per refresh; the rest are carried over as stale.
 pub const VANISHED_RESOLVE_CAP: usize = 25;
 /// Projects and repositories are refetched after this long.

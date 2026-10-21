@@ -62,9 +62,6 @@ pub(crate) const EMPTY_SIGNED_OUT: &str = "You're signed out.";
 pub(crate) const EMPTY_SIGNED_OUT_BODY: &str =
     "Sign in to an organization to see its pull requests.";
 pub(crate) const EMPTY_SIGN_IN: &str = "Sign in";
-pub(crate) const EMPTY_NOBODY: &str = "You're not tracking anyone yet.";
-pub(crate) const EMPTY_NOBODY_BODY: &str = "Pick the people whose pull requests you want to watch.";
-pub(crate) const EMPTY_CHOOSE_PEOPLE: &str = "Choose people";
 pub(crate) const EMPTY_NO_PRS: &str = "No active pull requests.";
 pub(crate) const EMPTY_EDIT_PEOPLE: &str = "Edit tracked people";
 pub(crate) const CLEAR_FILTER: &str = "Clear filter";
@@ -87,10 +84,13 @@ pub(crate) const CHOOSE: &str = "Choose";
 pub(crate) const EDIT: &str = "Edit";
 pub(crate) const NOBODY_YET: &str = "Nobody yet";
 pub(crate) const TRACK_FROM: &str = "Track pull requests from";
+pub(crate) const TRACK_FROM_HELP: &str =
+    "Leave this empty to track everyone in the repositories you chose.";
+pub(crate) const EVERYONE: &str = "Everyone";
+pub(crate) const EVERYONE_BUT_ME: &str = "Everyone except you";
 pub(crate) const COUNT_REVIEWS_FROM: &str = "Count reviews from";
 pub(crate) const REVIEWERS_EMPTY_HELP: &str =
     "Leave this empty to count any vote except the author's.";
-pub(crate) const SKIP_FOR_NOW: &str = "Skip for now";
 pub(crate) const START_MONITORING: &str = "Start monitoring";
 
 pub(crate) const SIGN_IN_MICROSOFT: &str = "Sign in with Microsoft";
@@ -522,7 +522,6 @@ pub(crate) const ALL: &[&str] = &[
     SERVICE_STOPPED,
     EMPTY_LOADING,
     EMPTY_SIGNED_OUT,
-    EMPTY_NOBODY,
     EMPTY_NO_PRS,
     NOTHING_CHANGED,
     NO_ORGS,
@@ -533,6 +532,8 @@ pub(crate) const ALL: &[&str] = &[
     REFRESH_HELP,
     REMOVE_ORG_BODY,
     REVIEWERS_HELP,
+    TRACK_FROM_HELP,
+    EVERYONE_BUT_ME,
     ANY_NON_AUTHOR,
     SEARCH_MIN,
     SEARCHING,

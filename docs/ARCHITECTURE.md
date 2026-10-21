@@ -48,8 +48,13 @@ UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread
 
 1. **Plan.** Each org's scope becomes the fewest queries: one per project, or one per repo
    when only a few repos of a project are chosen.
-2. **List.** Fetch the active PRs, keep tracked authors, and harvest the people seen.
-3. **Threads.** Fetch the threads of each tracked PR.
+2. **List.** Fetch the active PRs, keep tracked authors, and harvest the people seen. An
+   empty people list tracks every author in scope; "include my own pull requests" decides
+   whether the signed-in user's PRs are among them (`OrgProfile::track_spec`).
+3. **Threads.** Fetch the threads of each tracked PR, at most `THREAD_READ_BUDGET` per
+   refresh. Beyond that the user's PRs (as author or reviewer) go first, then new ones, then
+   the least recently read; the rest keep their earlier threads, and new PRs that did not fit
+   wait for the next refresh (`plan_thread_reads`).
 4. **Classify.** Active comments beat Reviewed, which beats Needs review (`classify.rs`).
 5. **Diff** against the last snapshot: new PRs, votes, comments, pushes, closes.
 6. **Notify.** Plan toasts (budget per refresh, grouping, focus rules) and show them on the

@@ -14,7 +14,7 @@ pub(crate) enum EmptyKind {
         org: Arc<str>,
     },
     SignedOut,
-    NobodyTracked,
+    /// No open pull requests by anyone tracked (everyone, when no people are listed).
     NoActivePrs,
     NoMatch {
         query: String,
@@ -84,14 +84,7 @@ fn no_rows(state: &AppState) -> EmptyKind {
     }
     let signed_out = !enabled.is_empty() && enabled.iter().all(|o| o.needs_sign_in());
     if signed_out {
-        return EmptyKind::SignedOut;
-    }
-    let nobody = state
-        .config
-        .enabled_orgs()
-        .all(|profile| profile.people.tracked_authors.is_empty() && !profile.include_me);
-    if nobody {
-        EmptyKind::NobodyTracked
+        EmptyKind::SignedOut
     } else {
         EmptyKind::NoActivePrs
     }

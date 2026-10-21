@@ -43,6 +43,7 @@ fn fetched(numbers: &[i32]) -> Fetched {
         scope_issues: Vec::new(),
         records,
         stale: BTreeSet::new(),
+        deferred: 0,
         closed: Vec::new(),
         harvested: vec![person(2, "Ann")],
         failed_queries: Vec::new(),
@@ -82,6 +83,62 @@ fn org_absorb_rebaseline_suppresses_new_pr() {
     let absorbed = data.absorb(fetched(&[1, 2]), ts(20));
     assert_eq!(kinds(&absorbed), Vec::new());
     assert!(!data.rebaseline_pending);
+}
+
+/// With more new PRs than the thread read budget, the first load takes several refreshes;
+/// the PRs that arrive in the later ones must not toast as new.
+#[test]
+fn org_absorb_stays_silent_while_the_first_load_catches_up() {
+    let mut data = data();
+    let partial = Fetched {
+        deferred: 1,
+        ..fetched(&[1])
+    };
+    assert!(data.absorb(partial, ts(10)).first_baseline);
+    assert!(!data.baseline, "PR 2 is still to come");
+    let absorbed = data.absorb(fetched(&[1, 2]), ts(20));
+    assert!(absorbed.first_baseline, "everything loaded counts as seen");
+    assert_eq!(kinds(&absorbed), Vec::new());
+    assert!(data.baseline);
+    let absorbed = data.absorb(fetched(&[1, 2, 3]), ts(30));
+    assert_eq!(kinds(&absorbed), vec![ChangeKind::NewPr]);
+}
+
+/// After switching to a wider set of authors, PRs read on the following refreshes are part of
+/// the rebaseline, not news.
+#[test]
+fn org_absorb_rebaseline_stays_pending_while_catching_up() {
+    let mut data = data();
+    data.absorb(fetched(&[1]), ts(10));
+    data.rebaseline_pending = true;
+    let partial = Fetched {
+        deferred: 1,
+        ..fetched(&[1, 2])
+    };
+    assert_eq!(kinds(&data.absorb(partial, ts(20))), Vec::new());
+    assert!(data.rebaseline_pending);
+    assert_eq!(kinds(&data.absorb(fetched(&[1, 2, 3]), ts(30))), Vec::new());
+    assert!(!data.rebaseline_pending);
+}
+
+/// Outside a (re)baseline, PRs the budget held back are news when they arrive.
+#[test]
+fn org_absorb_deferred_prs_after_baseline_are_new() {
+    let mut data = data();
+    data.absorb(fetched(&[1]), ts(10));
+    let partial = Fetched {
+        deferred: 1,
+        ..fetched(&[1, 2])
+    };
+    assert_eq!(
+        kinds(&data.absorb(partial, ts(20))),
+        vec![ChangeKind::NewPr]
+    );
+    assert!(!data.rebaseline_pending);
+    assert_eq!(
+        kinds(&data.absorb(fetched(&[1, 2, 3]), ts(30))),
+        vec![ChangeKind::NewPr]
+    );
 }
 
 #[test]

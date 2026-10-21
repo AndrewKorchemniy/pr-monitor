@@ -25,7 +25,9 @@ use crate::{
         settings::{Editor, PAGES},
     },
     testing::{
-        demo::{busy_state, crowded_state, demo_state, empty_state, now},
+        demo::{
+            busy_state, crowded_state, demo_state, empty_state, everyone_state, now, quiet_state,
+        },
         screens::{Fixture, NARROW, Shown, WINDOW},
     },
     theme::fonts,
@@ -237,12 +239,14 @@ fn people_search(f: &mut Fixture, phase: &SearchPhase, found: &[PersonCandidate]
     f.settings.pickers.tracked.show_matches("pri", phase, found);
 }
 
+fn show_people(f: &mut Fixture) {
+    f.settings.page = PAGES[1];
+    f.settings.scroll_to = Some(SettingsSection::People);
+}
+
 fn people_scenes() -> [Named; 5] {
     [
-        ("settings-organizations-people", |f| {
-            f.settings.page = PAGES[1];
-            f.settings.scroll_to = Some(SettingsSection::People);
-        }),
+        ("settings-organizations-people", show_people),
         ("settings-edit-people-matches", |f| {
             people_search(f, &SearchPhase::Final, &matches());
             f.settings.pickers.tracked.step(Highlight::Down, 3);
@@ -347,6 +351,15 @@ fn scenes() -> Vec<Scene> {
         scene("first-run-people", Shown::FirstRun, demo_state, |f| {
             first_run_step(f, Step::People);
         }),
+        scene(
+            "first-run-people-everyone",
+            Shown::FirstRun,
+            everyone_state,
+            |f| {
+                first_run_step(f, Step::People);
+                f.first_run.settings.draft.orgs[0].people.reviewers.clear();
+            },
+        ),
         scene("dashboard", Shown::Dashboard, demo_state, nothing),
         scene("dashboard-peek", Shown::Dashboard, demo_state, |f| {
             f.dash.peek.open = true;
@@ -366,7 +379,7 @@ fn scenes() -> Vec<Scene> {
                 f.dash.view.set_status(StatusFilter::ActiveComments);
             },
         ),
-        scene("dashboard-empty", Shown::Dashboard, empty_state, nothing),
+        scene("dashboard-empty", Shown::Dashboard, quiet_state, nothing),
         scene("palette", Shown::Palette, demo_state, |f| {
             f.palette.query = "sign".to_owned();
         }),
@@ -393,13 +406,20 @@ fn settings_scenes() -> Vec<Scene> {
         }),
         ("settings-edit-people", |f| editing(f, Editor::Tracked)),
     ];
-    pages
+    let mut all: Vec<Scene> = pages
         .into_iter()
         .chain(dialogs)
         .chain(people_scenes())
         .chain(failure_scenes())
         .map(|(name, setup)| scene(name, Shown::Settings, demo_state, setup))
-        .collect()
+        .collect();
+    all.push(scene(
+        "settings-organizations-people-everyone",
+        Shown::Settings,
+        everyone_state,
+        show_people,
+    ));
+    all
 }
 
 fn out_dir() -> PathBuf {

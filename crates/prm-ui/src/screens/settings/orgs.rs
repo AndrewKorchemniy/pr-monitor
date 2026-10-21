@@ -334,7 +334,11 @@ fn request_catalog(ui: &egui::Ui, cx: &mut FrameCx<'_>, org: &OrgId, force: bool
 
 /// The people lists the People section shows, with their titles and help.
 const PEOPLE_LISTS: [(Editor, &str, Option<&str>); 3] = [
-    (Editor::Tracked, copy::TRACK_FROM, None),
+    (
+        Editor::Tracked,
+        copy::TRACK_FROM,
+        Some(copy::TRACK_FROM_HELP),
+    ),
     (
         Editor::Reviewers,
         copy::REVIEWERS_COUNT,
@@ -352,9 +356,10 @@ fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
         if row_with_button(ui, theme, (title, help), copy::EDIT) {
             st.editing = Some(editor);
         }
+        let when_empty = empty_list_meaning(editor, org.include_me);
         let list = people_list(org, editor);
         if list.is_empty() {
-            widgets::muted(ui, theme, copy::NOBODY_YET);
+            widgets::muted(ui, theme, when_empty);
         } else {
             people_picker::chips(ui, theme, list);
         }
@@ -371,6 +376,19 @@ fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
             | Editor::Licenses
             | Editor::Repositories => {}
         }
+    }
+}
+
+/// What an empty list shows: an empty tracked list tracks everyone in scope.
+const fn empty_list_meaning(editor: Editor, include_me: bool) -> &'static str {
+    match editor {
+        Editor::Tracked if include_me => copy::EVERYONE,
+        Editor::Tracked => copy::EVERYONE_BUT_ME,
+        Editor::Reviewers
+        | Editor::Ignored
+        | Editor::AddOrg
+        | Editor::Licenses
+        | Editor::Repositories => copy::NOBODY_YET,
     }
 }
 

@@ -48,9 +48,11 @@ pub(crate) struct OrgData {
     pub stale: BTreeSet<PrKey>,
     pub snapshot: OrgSnapshot,
     pub tombstones: Tombstones,
-    /// A snapshot exists to diff against; the first refresh without one is silent.
+    /// A snapshot exists to diff against; the first refresh without one is silent, and so are
+    /// the ones that finish loading PRs the thread read budget held back.
     pub baseline: bool,
-    /// Scope or authors changed: the next refresh reports no `NewPr` events.
+    /// Scope or authors changed: the next refresh reports no `NewPr` events (nor the ones that
+    /// finish loading held-back PRs).
     pub rebaseline_pending: bool,
     pub people: PeopleCache,
     pub org_wide: Option<ProbeCache>,
@@ -71,6 +73,8 @@ pub(crate) struct Fetched {
     pub scope_issues: Vec<ScopeIssue>,
     pub records: BTreeMap<PrKey, PrRecord>,
     pub stale: BTreeSet<PrKey>,
+    /// New PRs the thread read budget left for a later refresh.
+    pub deferred: usize,
     pub closed: Vec<(PrKey, CloseOutcome)>,
     pub harvested: Vec<Person>,
     pub failed_queries: Vec<PrQuery>,
@@ -186,8 +190,11 @@ impl OrgData {
         let next = self.classify_all();
         let events = self.diff_against(&next, &fetched.closed, now);
         let first_baseline = !self.baseline;
-        self.baseline = true;
-        self.rebaseline_pending = false;
+        // why: PRs left for a later refresh belong to this silent (re)baseline; they are not
+        // news when they show up.
+        let catching_up = fetched.deferred > 0;
+        self.baseline = self.baseline || !catching_up;
+        self.rebaseline_pending = self.rebaseline_pending && catching_up;
         apply_tombstones(&mut self.tombstones, &events, now);
         self.snapshot = next;
         Absorbed {

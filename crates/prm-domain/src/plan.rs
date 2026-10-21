@@ -1,12 +1,13 @@
-//! The query planner: as few PR-list calls as possible for the resolved scope.
+//! The refresh planner: as few PR-list calls as possible for the resolved scope, which listed
+//! PRs are tracked, and whose threads to read within a per-refresh budget.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ids::{ProjectId, RepoId, Vsid},
-    model::{PrState, PullRequest},
+    ids::{PrKey, ProjectId, RepoId, Vsid},
+    model::{PrRecord, PrState, PullRequest},
     scope::ResolvedScope,
 };
 
@@ -52,10 +53,31 @@ pub enum DraftPolicy {
     Show,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+/// Whose pull requests an org tracks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Authors {
+    /// Every author in scope except `except`: the signed-in user, when their own pull requests
+    /// are left out.
+    Everyone { except: Option<Vsid> },
+    /// Only these authors: the listed people, plus the signed-in user when included.
+    Only(HashSet<Vsid>),
+}
+
+impl Authors {
+    /// Whether pull requests by `author` are tracked: the one answer to that question.
+    pub fn tracks(&self, author: Vsid) -> bool {
+        match self {
+            Self::Everyone { except } => *except != Some(author),
+            Self::Only(authors) => authors.contains(&author),
+        }
+    }
+}
+
+/// Which active pull requests in scope an org tracks. Built from config by
+/// `OrgProfile::track_spec`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrackSpec {
-    /// Tracked authors, including the signed-in user when `include_me`.
-    pub authors: HashSet<Vsid>,
+    pub authors: Authors,
     pub drafts: DraftPolicy,
 }
 
@@ -95,11 +117,58 @@ pub fn select_tracked(
     prs.into_iter()
         .filter(|pr| {
             pr.state == PrState::Active
-                && track.authors.contains(&pr.author.id)
+                && track.authors.tracks(pr.author.id)
                 && scope.contains_repo(pr.project, pr.key.repo)
                 && !(track.drafts == DraftPolicy::Hide && pr.draft)
         })
         .collect()
+}
+
+/// Which tracked PRs have their threads read this refresh.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct ThreadReads {
+    /// Read now, at most the budget.
+    pub read: Vec<PullRequest>,
+    /// Known PRs over the budget: they keep the threads read before.
+    pub reuse: Vec<PullRequest>,
+    /// New PRs over the budget, left out until a later refresh reads them (a PR never shows
+    /// without its threads, or its first comments would read as new later).
+    pub deferred: usize,
+}
+
+/// Spreads thread reads over refreshes when more PRs are tracked than `budget`, so tracking
+/// everyone in a busy project costs a bounded number of requests per refresh. The signed-in
+/// user's PRs (as author or reviewer) go first, then new PRs, then the least recently read.
+pub fn plan_thread_reads(
+    mut prs: Vec<PullRequest>,
+    prev: &BTreeMap<PrKey, PrRecord>,
+    me: Vsid,
+    budget: usize,
+) -> ThreadReads {
+    if prs.len() <= budget {
+        return ThreadReads {
+            read: prs,
+            ..ThreadReads::default()
+        };
+    }
+    // why: `None` (never read) sorts before any time, so new PRs lead their tier.
+    prs.sort_by_cached_key(|pr| {
+        let last_read = prev.get(&pr.key).map(|record| record.fetched_at);
+        (!involves(pr, me), last_read, pr.key.clone())
+    });
+    let over = prs.split_off(budget);
+    let (reuse, deferred): (Vec<_>, Vec<_>) =
+        over.into_iter().partition(|pr| prev.contains_key(&pr.key));
+    ThreadReads {
+        read: prs,
+        reuse,
+        deferred: deferred.len(),
+    }
+}
+
+/// `me` wrote the PR or is asked to review it.
+fn involves(pr: &PullRequest, me: Vsid) -> bool {
+    pr.author.id == me || pr.reviewers.iter().any(|r| r.who.id == me)
 }
 
 #[cfg(test)]

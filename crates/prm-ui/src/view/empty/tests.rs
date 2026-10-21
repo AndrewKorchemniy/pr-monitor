@@ -63,24 +63,24 @@ fn no_rows_with_every_org_signed_out_asks_to_sign_in() {
     );
 }
 
+/// An empty people list without "include me" used to read as "You're not tracking anyone
+/// yet", though it tracks everyone in the chosen repositories.
 #[test]
-fn no_rows_and_nobody_tracked_asks_for_people() {
-    let state = empty_state(
-        vec![org_status("contoso", AuthStateView::SignedIn)],
-        Config::default(),
-    );
-    assert_eq!(
-        kind(&state, 0, "", StatusFilter::All, false),
-        Some(EmptyKind::NobodyTracked)
-    );
-    let tracking = empty_state(
-        vec![org_status("contoso", AuthStateView::SignedIn)],
-        watching_me(),
-    );
-    assert_eq!(
-        kind(&tracking, 0, "", StatusFilter::All, false),
-        Some(EmptyKind::NoActivePrs)
-    );
+fn no_rows_when_signed_in_is_no_active_prs_whoever_is_listed() {
+    let mut everyone_but_me = watching_me();
+    everyone_but_me.orgs[0].include_me = false;
+    for config in [watching_me(), everyone_but_me, Config::default()] {
+        let state = empty_state(
+            vec![org_status("contoso", AuthStateView::SignedIn)],
+            config.clone(),
+        );
+        assert_eq!(
+            kind(&state, 0, "", StatusFilter::All, false),
+            Some(EmptyKind::NoActivePrs),
+            "{:?}",
+            config.orgs
+        );
+    }
 }
 
 #[test]

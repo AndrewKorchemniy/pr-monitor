@@ -171,7 +171,7 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     };
     let id = org.org_id().cloned();
     dialog::body(ui, &theme, |ui| {
-        group_label(ui, &theme, copy::TRACK_FROM, None);
+        group_label(ui, &theme, copy::TRACK_FROM, Some(copy::TRACK_FROM_HELP));
         let list = &mut org.people.tracked_authors;
         people_picker(ui, cx, &mut st.pickers.tracked, id.as_ref(), list);
         ui.add_space(theme.tokens.metrics.space.xl);
@@ -180,27 +180,20 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         let list = &mut org.people.reviewers;
         people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
     });
-    // why: once people are chosen, skipping would read as throwing the choice away.
-    let nobody = org.people.tracked_authors.is_empty() && org.people.reviewers.is_empty();
-    let mut finish = None;
+    // why: no "skip": empty lists are a complete choice (everyone, any vote but the
+    // author's), so skipping would start the same monitoring.
+    let mut start = false;
     let back = footer(ui, &theme, |ui| {
-        if widgets::primary_button(ui, &theme, copy::START_MONITORING).clicked() {
-            finish = Some(true);
-        }
-        if nobody && ui.button(copy::SKIP_FOR_NOW).clicked() {
-            finish = Some(false);
-        }
+        start = widgets::primary_button(ui, &theme, copy::START_MONITORING).clicked();
     });
     if back {
         fr.step = Step::Repositories;
     }
-    if let Some(refresh) = finish {
+    if start {
         cx.push(UiAction::Send(prm_service::Command::ApplyConfig(Box::new(
             st.draft.clone(),
         ))));
-        if refresh {
-            cx.push(UiAction::Send(prm_service::Command::RefreshNow));
-        }
+        cx.push(UiAction::Send(prm_service::Command::RefreshNow));
         cx.push(UiAction::FinishFirstRun);
     }
 }

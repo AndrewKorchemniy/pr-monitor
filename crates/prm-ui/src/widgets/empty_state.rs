@@ -41,14 +41,6 @@ fn content(kind: &EmptyKind, scope: &str) -> Content {
             action: Some((copy::EMPTY_SIGN_IN, UiAction::Modal(ModalKind::AuthMenu))),
             ..plain(copy::EMPTY_SIGNED_OUT)
         },
-        EmptyKind::NobodyTracked => Content {
-            body: Some(copy::EMPTY_NOBODY_BODY.to_owned()),
-            action: Some((
-                copy::EMPTY_CHOOSE_PEOPLE,
-                UiAction::OpenSettings(SettingsSection::People),
-            )),
-            ..plain(copy::EMPTY_NOBODY)
-        },
         EmptyKind::NoActivePrs => Content {
             body: Some(copy::no_prs_body(scope)),
             action: Some((

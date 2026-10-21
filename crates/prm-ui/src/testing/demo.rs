@@ -1,6 +1,6 @@
 //! A realistic, entirely fictional data set for screenshots: two orgs, a dozen pull requests
 //! in every state, a catalog of projects and repositories, and tracked people. Variants crowd
-//! the status bar with more orgs or a running refresh.
+//! the status bar with more orgs or a running refresh, or have nothing open.
 
 use std::sync::Arc;
 
@@ -299,6 +299,26 @@ pub(crate) fn busy_state() -> AppState {
     }]);
     state.refresh.slowed = true;
     state.notifications.paused_until = Some(ts(BASE_TIME_SECS + 7_200));
+    state
+}
+
+/// The demo orgs on a quiet day: signed in, with no open pull requests.
+pub(crate) fn quiet_state() -> AppState {
+    let mut state = demo_state();
+    state.rows = Arc::from([]);
+    state.summary = summarize([]);
+    state.rows_generation += 1;
+    state
+}
+
+/// The demo with contoso's people list emptied and the signed-in user's own pull requests
+/// left out: it tracks everyone else in its repositories.
+pub(crate) fn everyone_state() -> AppState {
+    let mut state = demo_state();
+    let mut config = (*state.config).clone();
+    config.orgs[0].people.tracked_authors.clear();
+    config.orgs[0].include_me = false;
+    state.config = Arc::new(config);
     state
 }
 
