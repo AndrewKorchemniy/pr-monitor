@@ -79,13 +79,17 @@ impl Kind {
 /// A segment with its text laid out in the bar's font.
 pub(super) struct Segment<'a> {
     glyph: Option<Glyph>,
-    /// The accessible name, and the visible text unless collapsed.
+    /// The accessible name, and the visible text unless collapsed or compact.
     text: Cow<'a, str>,
     kind: Kind,
     /// Coloured when painted, after hit testing.
     galley: Arc<egui::Galley>,
+    /// The short text (a count's number) shown instead while `compact`.
+    short: Option<Arc<egui::Galley>>,
     /// Only the glyph shows; the text stays the accessible name.
     pub collapsed: bool,
+    /// The glyph and the short text show; the text stays the accessible name and the tooltip.
+    pub compact: bool,
 }
 
 impl<'a> Segment<'a> {
@@ -96,17 +100,14 @@ impl<'a> Segment<'a> {
         text: Cow<'a, str>,
         kind: Kind,
     ) -> Self {
-        let galley = ui.painter().layout_no_wrap(
-            text.clone().into_owned(),
-            theme.fonts.small.clone(),
-            Color32::PLACEHOLDER,
-        );
         Self {
+            galley: layout(ui, theme, text.clone().into_owned()),
             glyph,
             text,
             kind,
-            galley,
+            short: None,
             collapsed: false,
+            compact: false,
         }
     }
 
@@ -116,23 +117,38 @@ impl<'a> Segment<'a> {
         self
     }
 
+    /// What it shows while `compact`.
+    pub(super) fn with_short(mut self, ui: &egui::Ui, theme: &UiTheme, short: String) -> Self {
+        self.short = Some(layout(ui, theme, short));
+        self
+    }
+
     pub(super) fn text(&self) -> &str {
         &self.text
     }
 
-    /// Padding, the glyph, and the text unless collapsed, in points.
+    pub(super) const fn has_short(&self) -> bool {
+        self.short.is_some()
+    }
+
+    /// The text that shows, if any.
+    fn shown(&self) -> Option<&Arc<egui::Galley>> {
+        match (self.collapsed, self.compact) {
+            (true, _) => None,
+            (false, true) => self.short.as_ref().or(Some(&self.galley)),
+            (false, false) => Some(&self.galley),
+        }
+    }
+
+    /// Padding, the glyph, and the text that shows, in points.
     pub(super) fn width(&self, theme: &UiTheme) -> f32 {
         let pad = theme.tokens.metrics.space.sm;
         let glyph = self.glyph.map_or(0.0, |g| g.size + pad);
-        let text = if self.collapsed {
-            0.0
-        } else {
-            self.text_width(theme)
-        };
+        let text = self.shown().map_or(0.0, |galley| galley.size().x + pad);
         pad + glyph + text
     }
 
-    /// The points the text and its padding add to the glyph.
+    /// The points the full text and its padding add to the glyph.
     pub(super) fn text_width(&self, theme: &UiTheme) -> f32 {
         self.galley.size().x + theme.tokens.metrics.space.sm
     }
@@ -149,7 +165,11 @@ impl<'a> Segment<'a> {
             Some(on) => WidgetInfo::selected(profile.role, enabled, on, &text),
             None => WidgetInfo::labeled(profile.role, enabled, &text),
         });
-        response
+        if self.compact {
+            response.on_hover_text(text.as_ref())
+        } else {
+            response
+        }
     }
 
     fn paint(
@@ -171,13 +191,13 @@ impl<'a> Segment<'a> {
             icons::paint(painter, square, glyph.icon, glyph.color);
             x += glyph.size + pad;
         }
-        if self.collapsed {
+        let Some(galley) = self.shown() else {
             return;
-        }
-        let top = rect.center().y - self.galley.size().y / 2.0;
-        let text = Rect::from_min_size(pos2(x, top), self.galley.size());
+        };
+        let top = rect.center().y - galley.size().y / 2.0;
+        let text = Rect::from_min_size(pos2(x, top), galley.size());
         let color = text_color(theme, response, profile);
-        painter.galley(text.min, self.galley.clone(), color);
+        painter.galley(text.min, galley.clone(), color);
         if let Some(tone) = profile.accent {
             let underline = Rect::from_min_max(
                 pos2(rect.left() + pad, text.bottom()),
@@ -186,6 +206,12 @@ impl<'a> Segment<'a> {
             painter.rect_filled(underline, 0.0, theme.colors.tone(tone).fg);
         }
     }
+}
+
+/// `text` in the bar's font, coloured when painted.
+fn layout(ui: &egui::Ui, theme: &UiTheme, text: String) -> Arc<egui::Galley> {
+    ui.painter()
+        .layout_no_wrap(text, theme.fonts.small.clone(), Color32::PLACEHOLDER)
 }
 
 fn text_color(theme: &UiTheme, response: &egui::Response, profile: Profile) -> Color32 {

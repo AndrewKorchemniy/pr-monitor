@@ -32,6 +32,8 @@ use crate::{
 pub(crate) const WINDOW: egui::Vec2 = egui::vec2(1280.0, 760.0);
 /// The smallest window the app allows.
 pub(crate) const NARROW: egui::Vec2 = egui::vec2(MIN_SIZE[0], MIN_SIZE[1]);
+/// `egui_kittest` draws the ui inside an outer margin this wide on every side (points).
+pub(crate) const HARNESS_MARGIN: f32 = 8.0;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Shown {

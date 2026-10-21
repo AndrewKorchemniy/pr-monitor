@@ -22,10 +22,10 @@ use prm_domain::{
 use crate::view::{
     anchor::{AnchorResult, capture, restore},
     columns::{Choices, ColumnId, Visibility},
-    display::{DisplayList, DisplayRow, build_display, group_id},
+    display::{DisplayList, DisplayRow, Pitch, build_display, group_id},
 };
 
-/// Rows a page-up/down moves.
+/// Rows a page-up/down moves before the list has been drawn.
 const PAGE: usize = 15;
 
 /// The sort one click on `key`'s header gives: the sorted column reverses, any other column
@@ -62,7 +62,8 @@ pub(crate) struct DashboardView {
     pub hidden_columns: Vec<String>,
     pub offset_y: f32,
     pub top_visible: Option<usize>,
-    pub row_pitch: f32,
+    /// How far apart the list drew its rows last frame (table rows, or cards and headers).
+    pub pitch: Pitch,
     /// Bumped by "reset columns" so the table forgets its stored widths.
     pub table_epoch: u32,
     /// The table's id salt last frame (column set, epoch); when it changes the table keeps its
@@ -70,6 +71,9 @@ pub(crate) struct DashboardView {
     pub table_salt: Option<(u64, u32)>,
     /// Chosen columns the table had no room for last frame (not persisted).
     pub squeezed: Vec<ColumnId>,
+    /// Pull request rows a page-up/down moves: one fewer than the list showed whole last frame,
+    /// so a page keeps one row in view.
+    pub page_rows: usize,
 }
 
 impl DashboardView {
@@ -95,10 +99,11 @@ impl DashboardView {
             hidden_columns: ui.hidden_columns.clone(),
             offset_y: 0.0,
             top_visible: None,
-            row_pitch,
+            pitch: Pitch::uniform(row_pitch),
             table_epoch: 0,
             table_salt: None,
             squeezed: Vec::new(),
+            page_rows: PAGE,
         };
         view.rebuild();
         if let Some(index) = view.selected_display() {
@@ -120,8 +125,8 @@ impl DashboardView {
         let snapshot = capture(
             &self.display,
             self.selected.as_ref(),
-            self.top_visible,
-            self.offset_y,
+            (self.top_visible, self.offset_y),
+            self.pitch,
         );
         self.rows = rows;
         self.rows_generation = generation;
@@ -129,7 +134,7 @@ impl DashboardView {
         let Some(snapshot) = snapshot else {
             return;
         };
-        match restore(&snapshot, &self.display, self.row_pitch) {
+        match restore(&snapshot, &self.display, self.pitch) {
             AnchorResult::Offset(offset) => self.scroll = ScrollIntent::Offset(offset),
             AnchorResult::SelectNeighbor { index } => {
                 if self.selected.is_some() {
@@ -317,7 +322,7 @@ impl DashboardView {
     }
 
     pub(crate) fn nav_page(&mut self, down: bool) {
-        let rows = isize::try_from(PAGE).unwrap_or(1);
+        let rows = isize::try_from(self.page_rows.max(1)).unwrap_or(1);
         self.nav(if down { rows } else { -rows });
     }
 

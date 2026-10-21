@@ -1,5 +1,6 @@
 //! The peek drawer (Space): the selected PR's branches, reviewers, open threads and actions,
-//! without leaving the list.
+//! without leaving the list. Docked beside the list, or over it in a narrow window; its close
+//! button and Space put the list back.
 
 use eframe::egui::{self, RichText};
 use prm_domain::view::PrRow;
@@ -20,7 +21,12 @@ use crate::{
 pub(crate) fn peek(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, pr: Option<&PrRow>) {
     let theme = cx.theme.clone();
     let Some(pr) = pr else {
-        widgets::muted(ui, &theme, copy::NO_OPEN_THREADS);
+        ui.horizontal(|ui| {
+            widgets::muted(ui, &theme, copy::NO_OPEN_THREADS);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                close(ui, cx, &theme);
+            });
+        });
         return;
     };
     egui::ScrollArea::vertical()
@@ -42,9 +48,7 @@ fn header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme, pr: &PrRow) 
                 .color(theme.colors.text_secondary),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if controls::close_button(ui, theme, copy::CLOSE).clicked() {
-                cx.run(CommandId::PrPeek);
-            }
+            close(ui, cx, theme);
         });
     });
     ui.add(
@@ -73,7 +77,7 @@ fn header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme, pr: &PrRow) 
         ui.label(RichText::new(note.text.as_ref()).color(theme.colors.signature_revision));
     }
     ui.add_space(theme.tokens.metrics.space.md);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if widgets::primary_button(ui, theme, copy::OPEN_IN_BROWSER).clicked() {
             cx.push(UiAction::Open(pr.key.clone()));
         }
@@ -84,6 +88,12 @@ fn header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme, pr: &PrRow) 
             cx.run(CommandId::PrMarkSeen);
         }
     });
+}
+
+fn close(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme) {
+    if controls::close_button(ui, theme, copy::CLOSE).clicked() {
+        cx.run(CommandId::PrPeek);
+    }
 }
 
 fn reviewers(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {

@@ -44,6 +44,10 @@ pub(crate) enum Icon {
     Dot,
     /// Changed since last looked: a short rounded bar, like a changed row's edge.
     Bar,
+    /// Grouping: a heading line over two indented rows.
+    Group,
+    /// Sorting: an arrow up beside an arrow down.
+    Sort,
 }
 
 fn stroke(color: Color32, rect: Rect) -> Stroke {
@@ -168,6 +172,20 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let size = vec2(r * 0.6, r * 1.6);
             painter.rect_filled(Rect::from_center_size(c, size), size.x / 2.0, color);
         }
+        Icon::Group => {
+            painter.line_segment([at(-0.75, -0.6), at(0.75, -0.6)], s);
+            for y in [0.0, 0.6] {
+                painter.line_segment([at(-0.3, y), at(0.75, y)], s);
+            }
+        }
+        Icon::Sort => {
+            for (x, dir) in [(-0.4, -1.0), (0.4, 1.0)] {
+                let tip = at(x, 0.75 * dir);
+                painter.line_segment([at(x, -0.75 * dir), tip], s);
+                painter.line_segment([tip, at(x - 0.3, 0.4 * dir)], s);
+                painter.line_segment([tip, at(x + 0.3, 0.4 * dir)], s);
+            }
+        }
     }
 }
 
@@ -254,7 +272,9 @@ pub(crate) fn paint_stroke(painter: &Painter, rect: Rect, icon: Icon, stroke: St
         | Icon::Bolt
         | Icon::Info
         | Icon::Dot
-        | Icon::Bar => paint(painter, rect, icon, stroke.color),
+        | Icon::Bar
+        | Icon::Group
+        | Icon::Sort => paint(painter, rect, icon, stroke.color),
     }
 }
 

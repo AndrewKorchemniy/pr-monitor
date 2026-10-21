@@ -45,24 +45,168 @@ fn wide_tables_show_every_column_and_org_only_when_asked() {
     assert!(!ids(&visible_columns(room(1400.0), &no_org)).contains(&ColumnId::Org));
 }
 
+/// The width a column takes in the table this frame, Title at its minimum (points).
+fn width_in(column: &ColumnSpec, room: Room) -> f32 {
+    match column.width {
+        Width::Exact => room.margin,
+        Width::Fixed(width) | Width::Initial(width) => width,
+        Width::Remainder => column.min,
+    }
+}
+
+/// The room `columns` take side by side, Title at its minimum (points).
+fn taken(columns: &[ColumnSpec], room: Room) -> f32 {
+    let gaps = room.gap * (columns.len() - 1) as f32;
+    columns.iter().map(|c| width_in(c, room)).sum::<f32>() + gaps
+}
+
+/// The least room the core takes, each column at its minimum (points).
+fn core_minimum(group: GroupBy, room: Room) -> f32 {
+    let none = BTreeMap::new();
+    let wide = visible_columns(
+        Room {
+            width: 4000.0,
+            ..room
+        },
+        &layout(group, &[], &none),
+    );
+    let core: Vec<ColumnSpec> = wide
+        .into_iter()
+        .filter(|c| !SQUEEZE_ORDER.contains(&c.id))
+        .map(|c| match c.width {
+            Width::Initial(_) => ColumnSpec {
+                width: Width::Initial(c.min),
+                ..c
+            },
+            Width::Exact | Width::Fixed(_) | Width::Remainder => c,
+        })
+        .collect();
+    taken(&core, room)
+}
+
 /// Adding the Flags column made the narrowest layout 50 pt wider while fixed width breakpoints
 /// stayed put, so between them the table ran past its right edge and Age was cut off.
 #[test]
-fn visible_columns_always_fit_until_only_the_core_is_left() {
+fn visible_columns_always_fit_while_the_core_does() {
     let none = BTreeMap::new();
     for group in [GroupBy::Status, GroupBy::None] {
         for step in 0..=120 {
             let width = 400.0 + 10.0 * step as f32;
-            let wants = layout(group, &[], &none);
-            let columns = visible_columns(room(width), &wants);
-            let needed = wants.needed(&columns, room(width));
-            let core = SQUEEZE_ORDER.iter().all(|id| !ids(&columns).contains(id));
+            let columns = visible_columns(room(width), &layout(group, &[], &none));
+            let taken = taken(&columns, room(width));
+            let core = core_minimum(group, room(width));
             assert!(
-                needed <= width || core,
-                "{group:?} at {width} pt needs {needed} pt"
+                taken <= width || core > width,
+                "{group:?} at {width} pt takes {taken} pt"
             );
         }
     }
+}
+
+/// A width saved from a wide window made the table wider than a narrower one: saved widths
+/// never shrank, so the rows ran past the window's right edge.
+#[test]
+fn large_saved_widths_never_make_the_table_wider_than_the_room() {
+    let huge: BTreeMap<String, f32> = COLUMNS
+        .iter()
+        .filter(|c| c.is_resizable())
+        .map(|c| (c.key.to_owned(), 900.0))
+        .chain([("number_left".to_owned(), 900.0)])
+        .collect();
+    let before = huge.clone();
+    for group in [GroupBy::Status, GroupBy::None] {
+        for step in 0..=160 {
+            let width = 400.0 + 10.0 * step as f32;
+            let columns = visible_columns(room(width), &layout(group, &[], &huge));
+            let taken = taken(&columns, room(width));
+            let core = core_minimum(group, room(width));
+            assert!(
+                taken <= width || core > width,
+                "{group:?} at {width} pt takes {taken} pt: {columns:?}"
+            );
+        }
+    }
+    assert_eq!(huge, before, "the saved widths stay the user's");
+}
+
+/// Columns give back the same share of their dragged room, and only what the window lacks.
+#[test]
+fn dragged_widths_shrink_by_the_same_share_before_a_column_drops() {
+    let dragged = BTreeMap::from([("repo".to_owned(), 360.0), ("author".to_owned(), 250.0)]);
+    let at = |width: f32| visible_columns(room(width), &layout(GroupBy::Status, &[], &dragged));
+    let width_of = |columns: &[ColumnSpec], id| {
+        columns
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| width_in(c, room(0.0)))
+    };
+    let roomy = at(1600.0);
+    assert_eq!(width_of(&roomy, ColumnId::Repo), Some(360.0));
+    let squeezed = at(1200.0);
+    assert_eq!(ids(&squeezed), ids(&roomy), "nothing drops yet");
+    let repo = width_of(&squeezed, ColumnId::Repo).unwrap_or_default();
+    let author = width_of(&squeezed, ColumnId::Author).unwrap_or_default();
+    assert!(repo < 360.0 && author < 250.0, "{repo} {author}");
+    let (repo_share, author_share) = ((360.0 - repo) / 200.0, (250.0 - author) / 100.0);
+    assert!(
+        (repo_share - author_share).abs() < 0.02,
+        "{repo_share} {author_share}"
+    );
+    assert!(taken(&squeezed, room(1200.0)) <= 1200.0);
+    assert!(
+        taken(&squeezed, room(1200.0)) > 1190.0,
+        "uses the room it has"
+    );
+}
+
+/// A drag in a squeezed table saved the width the pointer reached, which the table then
+/// squeezed again: the divider landed short of the pointer and the other columns grew.
+#[test]
+fn a_drag_in_a_squeezed_table_moves_only_the_dragged_column() {
+    let mut saved = BTreeMap::from([("repo".to_owned(), 360.0), ("author".to_owned(), 250.0)]);
+    let room = room(1200.0);
+    let before = visible_columns(room, &layout(GroupBy::None, &[], &saved));
+    let width_of = |columns: &[ColumnSpec], id| {
+        columns
+            .iter()
+            .find(|c| c.id == id)
+            .map_or(0.0, |c| width_in(c, room))
+    };
+    let target = width_of(&before, ColumnId::Repo) - 20.0;
+    assert!(target < 340.0, "the table is squeezed: {before:?}");
+    let drag = ("repo", target);
+    for (key, width) in dragged_widths(room, &layout(GroupBy::None, &[], &saved), drag) {
+        saved.insert(key.to_owned(), width);
+    }
+    let after = visible_columns(room, &layout(GroupBy::None, &[], &saved));
+    assert_eq!(ids(&after), ids(&before));
+    assert!((width_of(&after, ColumnId::Repo) - target).abs() < 0.01);
+    for column in before
+        .iter()
+        .filter(|c| c.is_resizable() && c.id != ColumnId::Repo)
+    {
+        assert_eq!(
+            width_of(&after, column.id),
+            width_in(column, room),
+            "{column:?}"
+        );
+    }
+    assert!(
+        taken(&after, room) <= 1200.0 - 19.0,
+        "Title takes the room the drag gave up"
+    );
+}
+
+/// Outside a squeeze, a drag saves only the dragged column.
+#[test]
+fn a_drag_in_a_roomy_table_saves_one_width() {
+    let none = BTreeMap::new();
+    let saved = dragged_widths(
+        room(1600.0),
+        &layout(GroupBy::None, &[], &none),
+        ("repo", 200.0),
+    );
+    assert_eq!(saved, [("repo", 200.0)]);
 }
 
 #[test]
@@ -101,14 +245,28 @@ fn hiding_a_column_leaves_room_for_others() {
 }
 
 #[test]
-fn dragged_widths_count_toward_the_room_needed() {
+fn dragged_widths_give_way_before_a_column_drops() {
     let hidden: [String; 0] = [];
     let default = BTreeMap::new();
     let wide_repo = BTreeMap::from([("repo".to_owned(), 300.0)]);
     let fits = visible_columns(room(930.0), &layout(GroupBy::Status, &hidden, &default));
     assert!(ids(&fits).contains(&ColumnId::Reviews));
     let tighter = visible_columns(room(930.0), &layout(GroupBy::Status, &hidden, &wide_repo));
-    assert!(!ids(&tighter).contains(&ColumnId::Reviews));
+    assert_eq!(ids(&tighter), ids(&fits));
+    let repo = tighter.iter().find(|c| c.id == ColumnId::Repo);
+    assert!(
+        repo.is_some_and(|c| matches!(c.width, Width::Initial(w) if (160.0..300.0).contains(&w))),
+        "{repo:?}"
+    );
+}
+
+/// Below the core and Comments at their defaults, a table would show only the title and its
+/// status, so the dashboard lists cards.
+#[test]
+fn a_table_needs_room_for_its_core_and_comments() {
+    // Margin, Status, PR, Flags, Title (minimum), Comments, Age and six gaps.
+    let minimum = 8.0 + 140.0 + 64.0 + FLAGS_WIDTH + 200.0 + 76.0 + 56.0 + 6.0 * 8.0;
+    assert!((table_minimum(room(0.0)) - minimum).abs() < 0.01);
 }
 
 #[test]

@@ -150,24 +150,25 @@ fn count_slots(
         };
         let look = (status_icon(status), status_tone(status));
         let text = copy::status_count(count, status);
-        let segment = toggle(ui, theme, look, (text, query.status == filter));
+        let segment = toggle(ui, theme, look, (text, count, query.status == filter));
         let hook = Hook::Status(filter);
         slots.push(Slot::new(theme, segment, Rank::Counts, hook));
     }
     if summary.unread > 0 || query.unread_only {
         let text = copy::changed_count(summary.unread);
         let look = (Icon::Bar, Tone::Info);
-        let segment = toggle(ui, theme, look, (text, query.unread_only));
+        let segment = toggle(ui, theme, look, (text, summary.unread, query.unread_only));
         slots.push(Slot::new(theme, segment, Rank::Counts, Hook::Changed));
     }
 }
 
-/// A count that toggles its filter: the glyph in the tone's solid colour, then the label.
+/// A count that toggles its filter: the glyph in the tone's solid colour, then the label, or
+/// only the number when the bar is short of room.
 fn toggle<'a>(
     ui: &egui::Ui,
     theme: &UiTheme,
     (icon, tone): (Icon, Tone),
-    (text, on): (String, bool),
+    (text, count, on): (String, u32, bool),
 ) -> Segment<'a> {
     let glyph = Glyph {
         icon,
@@ -175,7 +176,7 @@ fn toggle<'a>(
         color: theme.colors.tone(tone).solid,
     };
     let kind = Kind::Toggle { tone, on };
-    Segment::new(ui, theme, Some(glyph), text.into(), kind)
+    Segment::new(ui, theme, Some(glyph), text.into(), kind).with_short(ui, theme, count.to_string())
 }
 
 /// The right side in display order, right to left: refresh, updated, slowed, paused, repos.
@@ -204,17 +205,29 @@ fn timing_slots<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Vec<Slot<
 }
 
 /// What a running refresh is doing, or when the next one runs. It fits as its widest text in
-/// that state, so its neighbours do not come and go as it ticks.
+/// that state, so its neighbours do not come and go as it ticks; so does its short form.
 fn refresh_slot<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Option<Slot<'a>> {
     let theme = &cx.theme;
-    if let Some(text) = phase_text(cx.state) {
+    if let Some((text, short)) = phase_text(cx.state) {
         let total = cx.state.refresh.progress.first().map_or(0, |p| p.total);
         let count = total.max(SIZING_COUNT);
         let listing = copy::listing_progress(count, count);
         let reading = copy::reading_progress(count, count);
         let widest = [copy::SIGNING_IN, copy::LOADING_PROJECTS, &listing, &reading];
-        let slot = Slot::info(ui, theme, text.into(), Rank::Refresh, Hook::None);
-        return Some(slot.with_room_for(ui, theme, &widest));
+        let (listing, reading) = (
+            copy::listing_short(count, count),
+            copy::reading_short(count, count),
+        );
+        let shortest = [copy::SIGNING_IN, copy::LOADING_PROJECTS, &listing, &reading];
+        let segment = Segment::new(ui, theme, None, text.into(), Kind::Info);
+        let slot = Slot::new(
+            theme,
+            segment.with_short(ui, theme, short),
+            Rank::Refresh,
+            Hook::None,
+        );
+        let slot = slot.with_room_for(ui, theme, &widest);
+        return Some(slot.with_short_room_for(ui, theme, &shortest));
     }
     let next = cx.state.refresh.next_due.filter(|n| *n > cx.now)?;
     let text = match countdown(next.since(cx.now), focused) {
@@ -227,8 +240,8 @@ fn refresh_slot<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Option<Sl
     Some(slot.with_room_for(ui, theme, &[&minutes, &seconds]))
 }
 
-/// Paints one side's shown slots in order, with a hairline between neighbours; collapsed ones
-/// sit together as a cluster.
+/// Paints one side's shown slots in order, with a hairline between neighbours; collapsed org
+/// dots, and compact counts, sit together as clusters.
 fn show_line(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -236,15 +249,15 @@ fn show_line(
     height: f32,
     slots: Vec<Slot<'_>>,
 ) {
-    // why: `None` before the first slot; then whether the slot before was collapsed.
-    let mut previous: Option<bool> = None;
+    // why: `None` before the first slot; then the cluster the slot before belongs to, if any.
+    let mut previous: Option<Option<Rank>> = None;
     for slot in slots.into_iter().filter(|s| s.shown) {
-        let collapsed = slot.segment.collapsed;
-        let joins = previous == Some(true) && collapsed;
+        let cluster = slot.cluster();
+        let joins = cluster.is_some() && previous == Some(cluster);
         if previous.is_some() && !joins {
             separator(ui, theme);
         }
-        previous = Some(collapsed);
+        previous = Some(cluster);
         let response = slot.segment.show(ui, theme, height);
         respond(cx, slot.hook, response);
     }
@@ -313,19 +326,28 @@ fn repos_text(state: &AppState) -> Option<String> {
     })
 }
 
-/// What a running refresh is doing ("Reading comments 12/40"), when one is.
-fn phase_text(state: &AppState) -> Option<String> {
+/// What a running refresh is doing ("Reading comments 12/40"), when one is, and its short form
+/// for a narrow window ("Reading 12/40").
+fn phase_text(state: &AppState) -> Option<(String, String)> {
     if !state.refresh.in_progress {
         return None;
     }
     let progress = state.refresh.progress.first()?;
+    let (done, total) = (progress.done, progress.total);
     Some(match progress.phase {
-        RefreshPhase::Authenticating => copy::SIGNING_IN.to_owned(),
-        RefreshPhase::Catalog => copy::LOADING_PROJECTS.to_owned(),
-        RefreshPhase::PullRequests | RefreshPhase::Resolving => {
-            copy::listing_progress(progress.done, progress.total)
-        }
-        RefreshPhase::Threads => copy::reading_progress(progress.done, progress.total),
+        RefreshPhase::Authenticating => (copy::SIGNING_IN.to_owned(), copy::SIGNING_IN.to_owned()),
+        RefreshPhase::Catalog => (
+            copy::LOADING_PROJECTS.to_owned(),
+            copy::LOADING_PROJECTS.to_owned(),
+        ),
+        RefreshPhase::PullRequests | RefreshPhase::Resolving => (
+            copy::listing_progress(done, total),
+            copy::listing_short(done, total),
+        ),
+        RefreshPhase::Threads => (
+            copy::reading_progress(done, total),
+            copy::reading_short(done, total),
+        ),
     })
 }
 

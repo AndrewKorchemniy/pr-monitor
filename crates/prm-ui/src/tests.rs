@@ -25,6 +25,8 @@ use crate::{
     view::{ScrollIntent, columns::ColumnId},
 };
 
+mod cards;
+mod dashboard;
 mod gallery;
 mod people;
 mod status_bar;

@@ -7,7 +7,10 @@ mod rows;
 use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
 pub(crate) use self::{
-    menu::{MENU_GAP, MenuMark, menu_button, menu_check, menu_frame, menu_item, menu_item_detail},
+    menu::{
+        MENU_GAP, MenuMark, menu_button, menu_button_width, menu_check, menu_frame,
+        menu_icon_button, menu_item, menu_item_detail,
+    },
     rows::{disclosure, row_divider, segmented, setting_row, toggle_row},
 };
 use crate::theme::{
@@ -78,7 +81,11 @@ fn square_icon_button(
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
     match chrome {
         Chrome::Bordered => paint_frame(ui, rect, &response),
-        Chrome::Ghost => ghost_chrome(ui, theme, rect, &response, false),
+        Chrome::Ghost => {
+            let menu = egui::Popup::default_response_id(&response);
+            let open = egui::Popup::is_id_open(ui.ctx(), menu);
+            ghost_chrome(ui, theme, rect, &response, open);
+        }
     }
     let glyph = Rect::from_center_size(rect.center(), vec2(BUTTON_GLYPH, BUTTON_GLYPH));
     icons::paint(ui.painter(), glyph, icon, hover_color(theme, &response));

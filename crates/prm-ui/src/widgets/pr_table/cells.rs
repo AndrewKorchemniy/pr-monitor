@@ -1,9 +1,10 @@
-//! What each column draws for one pull request row.
+//! What each column draws for one pull request row. The card list paints a card from the same
+//! pieces, so a row and a card read alike.
 
 use eframe::egui::{self, Align, Color32, Layout, Rect, RichText, Sense, pos2, vec2};
 use prm_domain::view::PrRow;
 
-use super::BodyCx;
+use super::rows::RowCx;
 use crate::{
     copy,
     theme::{
@@ -21,30 +22,26 @@ const FLAG_GLYPH: f32 = 11.0;
 
 pub(super) fn cell(
     ui: &mut egui::Ui,
-    bcx: &BodyCx<'_, '_>,
+    rcx: &RowCx<'_, '_>,
     spec: &ColumnSpec,
     pr: &PrRow,
     index: usize,
 ) {
-    let theme = bcx.theme;
+    let theme = rcx.theme;
     let text = |s: &str| {
         RichText::new(s)
             .font(theme.fonts.body.clone())
             .color(theme.colors.text_primary)
     };
     match spec.id {
-        ColumnId::Margin => change_bar(ui, bcx, pr),
+        ColumnId::Margin => change_bar(ui, rcx, pr),
         ColumnId::Status => {
             let compact = ui.available_width() < COMPACT_STATUS;
-            status_pill(ui, theme, pr.status, compact).on_hover_text(copy::status_tooltip(
-                pr.status,
-                pr.tally,
-                pr.active_threads,
-            ));
+            status_cell(ui, theme, pr, compact);
         }
         ColumnId::Number => number_cell(ui, theme, spec, &pr.number_text),
         ColumnId::Flags => flags_cell(ui, theme, pr),
-        ColumnId::Title => title_cell(ui, bcx, pr),
+        ColumnId::Title => title_cell(ui, rcx, pr),
         ColumnId::Repo => {
             ui.add(egui::Label::new(text(&pr.repo_name)).truncate());
         }
@@ -55,14 +52,26 @@ pub(super) fn cell(
             vote_tally(ui, theme, &pr.reviewers);
         }
         ColumnId::Comments => comments_cell(ui, theme, pr),
-        ColumnId::Age => age_cell(ui, bcx, pr, index),
+        ColumnId::Age => {
+            right(ui, |ui| age_label(ui, rcx, pr, index));
+        }
         ColumnId::Org => {
             ui.add(egui::Label::new(text(&pr.org_label)).truncate());
         }
     }
 }
 
-fn mono(theme: &UiTheme, text: &str) -> RichText {
+/// The status glyph (and label unless `compact`), explained on hover.
+pub(crate) fn status_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow, compact: bool) {
+    status_pill(ui, theme, pr.status, compact).on_hover_text(copy::status_tooltip(
+        pr.status,
+        pr.tally,
+        pr.active_threads,
+    ));
+}
+
+/// Numbers and ages: the mono face in the secondary text color.
+pub(crate) fn mono(theme: &UiTheme, text: &str) -> RichText {
     RichText::new(text)
         .font(theme.fonts.mono.clone())
         .color(theme.colors.text_secondary)
@@ -79,8 +88,8 @@ fn number_cell(ui: &mut egui::Ui, theme: &UiTheme, spec: &ColumnSpec, number: &s
     }
 }
 
-/// "2/5" active of total threads, in the active-comments tone while any is open.
-fn comments_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
+/// "2/5" active of total threads, right-aligned, in the active-comments tone while any is open.
+pub(crate) fn comments_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
     if pr.total_threads == 0 {
         return;
     }
@@ -98,28 +107,31 @@ fn comments_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
     });
 }
 
-/// "3h", kept fresh by the age cache, with the creation time on hover.
-fn age_cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow, index: usize) {
-    let age = bcx
+/// "3h" for the row at display `index`, kept fresh by the age cache.
+pub(crate) fn age_text<'a>(rcx: &'a RowCx<'_, '_>, pr: &'a PrRow, index: usize) -> &'a str {
+    let age = rcx
         .input
         .ages
-        .get(bcx.view.display.pr_at(index).unwrap_or(usize::MAX))
+        .get(rcx.view.display.pr_at(index).unwrap_or(usize::MAX))
         .unwrap_or(&pr.age);
-    let when = crate::format::date_time(pr.created_at, bcx.cx_now.offset);
-    right(ui, |ui| {
-        ui.label(mono(bcx.theme, &age.text)).on_hover_text(when);
-    });
+    &age.text
+}
+
+/// The age (`age_text`), with the creation time on hover.
+pub(crate) fn age_label(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, pr: &PrRow, index: usize) {
+    let when = crate::format::date_time(pr.created_at, rcx.frame.offset);
+    ui.label(mono(rcx.theme, age_text(rcx, pr, index)))
+        .on_hover_text(when);
 }
 
 fn right(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.with_layout(Layout::right_to_left(Align::Center), add);
 }
 
-/// Draft, merge conflicts and auto-complete, each in its own slot so the marks line up down the
-/// table and never move the title; each explains itself on hover.
-fn flags_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
+/// Draft, merge conflicts and auto-complete: whether each is set, its glyph, color and tooltip.
+pub(crate) fn flags(theme: &UiTheme, pr: &PrRow) -> [(bool, Icon, Color32, &'static str); 3] {
     let c = &theme.colors;
-    let flags = [
+    [
         (pr.draft, Icon::Pencil, c.text_muted, copy::DRAFT),
         (
             pr.conflicts,
@@ -133,54 +145,66 @@ fn flags_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
             c.tone(Tone::Success).solid,
             copy::AUTO_COMPLETE,
         ),
-    ];
+    ]
+}
+
+/// Each flag in its own slot so the marks line up down the table and never move the title.
+fn flags_cell(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
     let cell = ui.max_rect();
     let mut x = cell.left();
-    for (on, icon, color, tip) in flags {
+    for (on, icon, color, tip) in flags(theme, pr) {
         if on {
             let center = pos2(x + FLAG_SLOT / 2.0, cell.center().y);
-            let rect = Rect::from_center_size(center, vec2(FLAG_GLYPH, FLAG_GLYPH));
-            flag(ui, rect, (icon, color), tip);
+            flag(ui, center, (icon, color), tip);
         }
         x += FLAG_SLOT;
     }
 }
 
-fn flag(ui: &mut egui::Ui, rect: Rect, (icon, color): (Icon, Color32), tip: &str) {
+/// One flag glyph centred on `center`; it explains itself on hover.
+pub(crate) fn flag(
+    ui: &mut egui::Ui,
+    center: egui::Pos2,
+    (icon, color): (Icon, Color32),
+    tip: &str,
+) {
+    let rect = Rect::from_center_size(center, vec2(FLAG_GLYPH, FLAG_GLYPH));
     icons::paint(ui.painter(), rect, icon, color);
     let response = ui.allocate_rect(rect, Sense::hover());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, tip));
     let _ = response.on_hover_text(tip);
 }
 
-fn title_cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow) {
-    let theme = bcx.theme;
+/// The title's face and color: muted while the row could not be refreshed.
+pub(crate) fn title_style(theme: &UiTheme, pr: &PrRow) -> (egui::FontId, Color32) {
     let color = if pr.stale {
         theme.colors.text_muted
     } else {
         theme.colors.text_primary
     };
-    let label = egui::Label::new(
-        RichText::new(pr.title.as_ref())
-            .font(theme.fonts.body.clone())
-            .color(color),
-    )
-    .truncate();
-    let response = ui.add(label);
-    if let Some(note) = bcx.cx_now.changes.note(&pr.key) {
+    (theme.fonts.body.clone(), color)
+}
+
+fn title_cell(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, pr: &PrRow) {
+    let (font, color) = title_style(rcx.theme, pr);
+    let text = RichText::new(pr.title.as_ref()).font(font).color(color);
+    let response = ui.add(egui::Label::new(text).truncate());
+    title_hover(response, rcx, pr);
+}
+
+/// What changed (behind the change bar), else why the row is stale, on hover over the title.
+pub(crate) fn title_hover(response: egui::Response, rcx: &RowCx<'_, '_>, pr: &PrRow) {
+    if let Some(note) = rcx.frame.changes.note(&pr.key) {
         response.on_hover_text(note.text.as_ref());
     } else if pr.stale {
-        let when = pr.last_activity;
-        response.on_hover_text(copy::stale_row(&crate::format::clock(
-            when,
-            bcx.cx_now.offset,
-        )));
+        let when = crate::format::clock(pr.last_activity, rcx.frame.offset);
+        response.on_hover_text(copy::stale_row(&when));
     }
 }
 
 /// The 3 px blue-pencil bar for rows changed since last looked; draws downward when it appears.
-fn change_bar(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow) {
-    let theme = bcx.theme;
+pub(crate) fn change_bar(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, pr: &PrRow) {
+    let theme = rcx.theme;
     let id = ui.scope_id().with(("bar", &pr.key));
     let motion = &theme.tokens.metrics.motion;
     let duration = if theme.policy.animations {
