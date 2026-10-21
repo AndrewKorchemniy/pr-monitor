@@ -96,7 +96,7 @@ pub(crate) const PAT_HELP: &str =
 pub(crate) const HOW_TO_CREATE_TOKEN: &str = "How to create a token";
 pub(crate) const SAVE_TOKEN: &str = "Save token";
 pub(crate) const ENTRA_CLIENT_ID: &str = "Client ID";
-pub(crate) const ENTRA_TENANT: &str = "Tenant (leave empty to use the organization's tenant)";
+pub(crate) const ENTRA_TENANT: &str = "App tenant";
 pub(crate) const ENTRA_HELP: &str = "Ask your admin for a public client app registered with an http://localhost redirect. PR Monitor never fills this in for you.";
 pub(crate) const ADMIN_TITLE: &str = "Ask your admin for access";
 pub(crate) const COPY_MESSAGE: &str = "Copy message";
@@ -147,6 +147,9 @@ pub(crate) const NAME: &str = "Name";
 pub(crate) const WATCH_ORG: &str = "Watch this organization";
 pub(crate) const MUTE_ORG: &str = "Mute notifications from this organization";
 pub(crate) const SIGN_IN_METHOD: &str = "Sign-in method";
+pub(crate) const CONNECTION: &str = "Connection";
+pub(crate) const TENANT_HELP: &str = "Leave empty to find it from the organization.";
+pub(crate) const ENTRA_TENANT_HELP: &str = "Leave empty to use the organization's tenant.";
 pub(crate) const ADVANCED: &str = "Advanced";
 pub(crate) const TENANT_ID: &str = "Tenant ID";
 pub(crate) const TOKEN_EXPIRES: &str = "Token expires on";
@@ -463,6 +466,7 @@ pub(crate) fn user_action_label(action: &UserAction) -> &'static str {
         UserAction::OpenDocs(DocLink::CreatePat) => HOW_TO_CREATE_TOKEN,
         UserAction::OpenDocs(DocLink::EntraAppRegistration) => "How to register an app",
         UserAction::OpenDocs(DocLink::Troubleshooting) => "Troubleshooting",
+        UserAction::OpenDocs(DocLink::ReportProblem) => REPORT_PROBLEM,
         UserAction::OpenSettings(SettingsSection::Scope) => "Review repositories",
         UserAction::OpenSettings(
             SettingsSection::General

@@ -9,6 +9,10 @@ use crate::{
     widgets::{self, controls},
 };
 
+/// The inset on every side of a dialog's parts, so actions sit as far from the right edge as
+/// from the bottom.
+pub(crate) const INSET: f32 = 20.0;
+
 /// The header of a card or dialog.
 pub(crate) struct DialogHead<'a> {
     pub title: &'a str,
@@ -23,9 +27,9 @@ pub(crate) struct DialogHead<'a> {
     clippy::cast_possible_truncation,
     reason = "spacing tokens are small whole points"
 )]
-fn pad(theme: &UiTheme, vertical: f32) -> Margin {
-    let m = &theme.tokens.metrics;
-    Margin::symmetric(m.space.xxl as i8, vertical as i8)
+fn pad(theme: &UiTheme) -> Margin {
+    let inset = INSET.max(theme.tokens.metrics.space.xl);
+    Margin::same(inset as i8)
 }
 
 /// A hairline across the whole card at the cursor.
@@ -42,16 +46,14 @@ pub(crate) fn divider(ui: &mut egui::Ui, theme: &UiTheme) {
 /// The title row, then a divider. Returns true when the close button was clicked.
 pub(crate) fn header(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) -> bool {
     let mut closed = false;
-    egui::Frame::NONE
-        .inner_margin(pad(theme, theme.tokens.metrics.space.xl))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| title(ui, theme, head));
-                if head.close {
-                    closed = close_column(ui, theme);
-                }
-            });
+    egui::Frame::NONE.inner_margin(pad(theme)).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| title(ui, theme, head));
+            if head.close {
+                closed = close_column(ui, theme);
+            }
         });
+    });
     divider(ui, theme);
     closed
 }
@@ -89,7 +91,7 @@ pub(crate) fn body<R>(
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     egui::Frame::NONE
-        .inner_margin(pad(theme, theme.tokens.metrics.space.xl))
+        .inner_margin(pad(theme))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -106,7 +108,7 @@ pub(crate) fn actions<R>(
 ) -> R {
     divider(ui, theme);
     egui::Frame::NONE
-        .inner_margin(pad(theme, theme.tokens.metrics.space.lg))
+        .inner_margin(pad(theme))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {

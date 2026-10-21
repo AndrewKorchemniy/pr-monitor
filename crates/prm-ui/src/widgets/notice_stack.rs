@@ -34,7 +34,8 @@ pub(crate) fn notice_stack(
     let animate = theme.policy.animations;
     egui::Area::new(egui::Id::unique("notices"))
         .anchor(Align2::RIGHT_TOP, vec2(-12.0, top_inset + 8.0))
-        .order(egui::Order::Foreground)
+        // why: above dialogs and the settings window, which share the foreground layer.
+        .order(egui::Order::Tooltip)
         .movable(false)
         .show(ctx, |ui| {
             ui.set_width(WIDTH);

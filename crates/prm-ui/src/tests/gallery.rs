@@ -147,7 +147,7 @@ fn gallery() {
     let dir = out_dir();
     std::fs::create_dir_all(&dir).expect("gallery dir");
     for scene in scenes() {
-        for theme in ["graphite", "vellum"] {
+        for theme in ["graphite", "vellum", "cyanotype"] {
             render(&scene, theme, &dir);
         }
     }

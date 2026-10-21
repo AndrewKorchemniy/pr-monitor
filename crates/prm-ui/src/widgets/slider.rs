@@ -44,6 +44,8 @@ pub(crate) fn slider_field<N: Numeric>(
         pos2(rect.left() + KNOB + 8.0, rect.top()),
         pos2(value_rect.left() - KNOB - 4.0, rect.bottom()),
     );
+    // why: the field is painted after the value editor runs, so reserve its slot underneath.
+    let background = ui.painter().add(egui::Shape::Noop);
     let before = value.to_f64();
     let mut v = before;
     let mut response = drag_rail(ui, rail, spec.id, (lo, hi), &mut v);
@@ -61,7 +63,13 @@ pub(crate) fn slider_field<N: Numeric>(
     let fraction = fraction_of(v, (lo, hi));
     let editing = ui.data(|d| d.get_temp::<String>(spec.id.with("editing")).is_some());
     let focused = response.has_focus() || editing;
-    paint(ui, theme, (rect, rail), (fraction, focused), &response);
+    paint(
+        ui,
+        theme,
+        (rect, rail, background),
+        (fraction, focused),
+        &response,
+    );
     if !editing {
         paint_value(ui, theme, value_rect, &shown(v, spec));
     }
@@ -188,7 +196,7 @@ fn fraction_of(v: f64, (lo, hi): (f64, f64)) -> f32 {
 fn paint(
     ui: &egui::Ui,
     theme: &UiTheme,
-    (rect, rail): (Rect, Rect),
+    (rect, rail, background): (Rect, Rect, egui::layers::ShapeIdx),
     (fraction, focused): (f32, bool),
     response: &egui::Response,
 ) {
@@ -201,12 +209,12 @@ fn paint(
     };
     let painter = ui.painter();
     let corners = CornerRadius::same(metrics.radius.md);
-    painter.rect(
-        rect,
-        corners,
-        colors.surface_sunken,
-        border,
-        StrokeKind::Inside,
+    painter.set(
+        background,
+        egui::Shape::Vec(vec![
+            egui::Shape::rect_filled(rect, corners, colors.control_bg),
+            egui::Shape::rect_stroke(rect, corners, border, StrokeKind::Inside),
+        ]),
     );
     let mid = rect.center().y;
     let knob_x = egui::lerp(rail.left()..=rail.right(), fraction);
@@ -225,7 +233,7 @@ fn paint(
         pos2(knob_x, mid),
         size,
         knob,
-        Stroke::new(2.0, colors.surface_sunken),
+        Stroke::new(2.0, colors.control_bg),
     );
 }
 

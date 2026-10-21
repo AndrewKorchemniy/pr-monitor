@@ -9,6 +9,8 @@ use crate::theme::{
 };
 
 const GLYPH: f32 = 14.0;
+/// The glyph in a square icon button.
+const BUTTON_GLYPH: f32 = 18.0;
 
 /// Paints a control's fill and border for its interaction state, exactly like egui buttons.
 fn paint_frame(ui: &egui::Ui, rect: Rect, response: &egui::Response) {
@@ -40,7 +42,7 @@ pub(crate) fn icon_button(
     let side = theme.control_height();
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
     paint_frame(ui, rect, &response);
-    let glyph = Rect::from_center_size(rect.center(), vec2(GLYPH, GLYPH));
+    let glyph = Rect::from_center_size(rect.center(), vec2(BUTTON_GLYPH, BUTTON_GLYPH));
     icons::paint(ui.painter(), glyph, icon, hover_color(theme, &response));
     let enabled = ui.is_enabled();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
@@ -55,11 +57,11 @@ pub(crate) fn menu_button(
     value: &str,
 ) -> egui::Response {
     let m = &theme.tokens.metrics;
-    let font = theme.fonts.label.clone();
+    let font = theme.fonts.body.clone();
     let painter = ui.painter().clone();
     let label_g = painter.layout_no_wrap(label.to_owned(), font.clone(), theme.colors.text_muted);
     let value_g = painter.layout_no_wrap(value.to_owned(), font, theme.colors.text_primary);
-    let (pad, gap, chevron) = (m.space.md + 2.0, m.space.sm, 8.0);
+    let (pad, gap, chevron) = (m.space.lg, m.space.sm, 10.0);
     let width = pad + label_g.size().x + gap + value_g.size().x + gap + 2.0 + chevron + pad;
     let (rect, response) =
         ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
@@ -329,15 +331,13 @@ pub(crate) fn menu_item(
     let m = &theme.tokens.metrics;
     let size = vec2(ui.available_width(), theme.control_height() - m.space.xs);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let fill = if selected {
-        Some(theme.colors.row_selected)
-    } else if response.hovered() {
-        Some(theme.colors.control_hover)
-    } else {
-        None
-    };
-    if let Some(fill) = fill {
-        ui.painter().rect_filled(rect, 0.0, fill);
+    if selected || response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.colors.row_selected);
+    }
+    if selected {
+        let bar = Rect::from_min_size(rect.min, vec2(2.0, rect.height()));
+        ui.painter().rect_filled(bar, 0.0, theme.colors.accent_base);
     }
     let font = if selected {
         theme.fonts.body_strong.clone()
@@ -357,6 +357,9 @@ pub(crate) fn menu_item(
         .widget_info(|| egui::WidgetInfo::selected(egui::Role::MenuItem, enabled, selected, text));
     response
 }
+
+/// The space between a button and the menu it opens.
+pub(crate) const MENU_GAP: f32 = 6.0;
 
 /// The popup frame for `menu_item` rows: no horizontal margin so highlights reach the edges.
 #[expect(
@@ -416,14 +419,10 @@ pub(crate) fn disclosure(ui: &mut egui::Ui, theme: &UiTheme, label: &str, open: 
 
 /// A borderless square button with a cross, for closing dialogs and drawers.
 pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> egui::Response {
-    let m = &theme.tokens.metrics;
-    let side = m.row.control_height - 2.0;
+    let side = theme.control_height() - theme.tokens.metrics.space.xs;
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
-    if response.hovered() {
-        ui.painter()
-            .rect_filled(rect, m.radius.md, theme.colors.control_hover);
-    }
-    let glyph = Rect::from_center_size(rect.center(), vec2(10.0, 10.0));
+    ghost_fill(ui, theme, rect, &response);
+    let glyph = Rect::from_center_size(rect.center(), vec2(12.0, 12.0));
     icons::paint(
         ui.painter(),
         glyph,
@@ -432,6 +431,20 @@ pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> eg
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     response.on_hover_text(name)
+}
+
+/// The hover fill of a borderless (ghost) button, faded in and out rather than switched.
+pub(crate) fn ghost_fill(ui: &egui::Ui, theme: &UiTheme, rect: Rect, response: &egui::Response) {
+    let t = ui.ctx().animate_bool_with_time(
+        response.id.with("ghost"),
+        response.hovered(),
+        theme.tokens.metrics.motion.quick,
+    );
+    if t > 0.0 {
+        let fill = theme.colors.control_hover.gamma_multiply(t);
+        ui.painter()
+            .rect_filled(rect, theme.tokens.metrics.radius.md, fill);
+    }
 }
 
 /// A check box's state; `Mixed` is a project with only some repositories chosen.

@@ -114,6 +114,8 @@ pub(crate) struct SettingsState {
     pub new_org_url: String,
     pub url_error: bool,
     pub editing: Option<Editor>,
+    /// A section to scroll into view on the next frame ("Edit tracked people" opens People).
+    pub scroll_to: Option<SettingsSection>,
     /// A save is in flight; the base updates when the service confirms.
     pub saving: bool,
     /// A save waits for the service's confirmation notice.
@@ -132,6 +134,7 @@ impl SettingsState {
             new_org_url: String::new(),
             url_error: false,
             editing: None,
+            scroll_to: Some(section),
             saving: false,
             confirm_pending: false,
         }

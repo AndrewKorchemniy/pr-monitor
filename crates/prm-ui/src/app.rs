@@ -377,6 +377,8 @@ impl PrMonitorApp {
     }
 
     fn on_config(&mut self, ctx: &egui::Context) {
+        // why: a save that removed the last organization lands after settings closed.
+        self.restart_first_run();
         let config = self.state.config.clone();
         let prefs = &config.ui;
         self.window.close_to_tray = prefs.close_to_tray;

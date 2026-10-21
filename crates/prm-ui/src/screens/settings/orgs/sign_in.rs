@@ -11,8 +11,14 @@ use crate::{
     route::ModalKind,
     screens::settings::SettingsState,
     theme::{Tone, UiTheme},
-    widgets::{self, controls},
+    widgets::{
+        self, controls,
+        fields::{self, Field},
+    },
 };
+
+/// The width of the Change sign-in menu.
+const MENU_WIDTH: f32 = 260.0;
 
 const MODES: [(AuthMode, &str); 4] = [
     (AuthMode::Auto, "Automatic (Azure CLI, then a saved token)"),
@@ -59,6 +65,8 @@ pub(super) fn section(
     }
 }
 
+/// The sign-in method, the tenant, and (only for the organization's app) its client ID and
+/// tenant, as rows with right-aligned fields.
 fn advanced(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -66,30 +74,62 @@ fn advanced(
     status: &OrgStatus,
 ) {
     let theme = cx.theme.clone();
+    widgets::field_label(ui, &theme, copy::SIGN_IN_METHOD);
     for (mode, label) in MODES {
         controls::radio(ui, &theme, &mut org.auth, mode, label);
     }
-    egui::Grid::new("entra").num_columns(2).show(ui, |ui| {
-        widgets::field_label(ui, &theme, copy::TENANT_ID);
-        ui.add(egui::TextEdit::singleline(&mut org.tenant).desired_width(320.0));
-        ui.end_row();
-        widgets::field_label(ui, &theme, copy::ENTRA_CLIENT_ID);
-        ui.add(egui::TextEdit::singleline(&mut org.entra.client_id).desired_width(320.0));
-        ui.end_row();
-        widgets::field_label(ui, &theme, copy::ENTRA_TENANT);
-        ui.add(egui::TextEdit::singleline(&mut org.entra.tenant).desired_width(320.0));
-        ui.end_row();
-    });
-    widgets::muted(ui, &theme, copy::ENTRA_HELP);
-    if !org.entra.client_id.trim().is_empty() && ui.button(copy::SIGN_IN_ENTRA).clicked() {
-        cx.push(UiAction::Send(Command::SignIn {
-            org: status.id.clone(),
-            method: SignInMethod::Entra,
-        }));
+    controls::row_divider(ui, &theme);
+    field_row(
+        ui,
+        &theme,
+        (copy::TENANT_ID, Some(copy::TENANT_HELP)),
+        &mut org.tenant,
+    );
+    if org.auth == AuthMode::Entra {
+        entra_rows(ui, cx, org, status);
     }
     if let Some(expires) = status.pat_expires_on {
+        controls::row_divider(ui, &theme);
         widgets::muted(ui, &theme, &format!("{} {expires}", copy::TOKEN_EXPIRES));
     }
+}
+
+/// A labelled row with a right-aligned text field.
+fn field_row(ui: &mut egui::Ui, theme: &UiTheme, text: (&str, Option<&str>), value: &mut String) {
+    controls::setting_row(ui, theme, text, |ui| {
+        let id = ui.make_persistent_id(("auth_field", text.0));
+        fields::text_field(ui, theme, value, &Field::new(id, "").width(280.0));
+    });
+}
+
+/// The organization's app: its client ID and tenant, then the sign-in button.
+fn entra_rows(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    org: &mut prm_config::OrgProfile,
+    status: &OrgStatus,
+) {
+    let theme = cx.theme.clone();
+    controls::row_divider(ui, &theme);
+    field_row(
+        ui,
+        &theme,
+        (copy::ENTRA_CLIENT_ID, Some(copy::ENTRA_HELP)),
+        &mut org.entra.client_id,
+    );
+    controls::row_divider(ui, &theme);
+    let tenant = (copy::ENTRA_TENANT, Some(copy::ENTRA_TENANT_HELP));
+    field_row(ui, &theme, tenant, &mut org.entra.tenant);
+    let ready = !org.entra.client_id.trim().is_empty();
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let button = ui.add_enabled(ready, egui::Button::new(copy::SIGN_IN_ENTRA));
+        if button.clicked() {
+            cx.push(UiAction::Send(Command::SignIn {
+                org: status.id.clone(),
+                method: SignInMethod::Entra,
+            }));
+        }
+    });
 }
 
 /// The state dot and headline ("Signed in as Maya Patel", then "via Azure CLI" muted).
@@ -146,8 +186,10 @@ fn signed_in_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus
     let theme = cx.theme.clone();
     egui::Popup::menu(&response)
         .frame(controls::menu_frame(&theme))
+        .gap(controls::MENU_GAP)
+        .width(MENU_WIDTH)
         .show(|ui| {
-            ui.set_min_width(240.0);
+            ui.set_width(MENU_WIDTH);
             ui.spacing_mut().item_spacing.y = 0.0;
             method_items(ui, cx, status);
         });

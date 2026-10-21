@@ -72,9 +72,19 @@ pr-monitor [--minimized] [--activate <prmonitor://...>] [--renderer auto|glow|wg
 
 `pr-monitor --help` describes each flag.
 
-**Remote Desktop.** In a remote session PR Monitor picks the wgpu renderer by
-default. If the window stays blank, flickers or fails to open there, start it with
-`--renderer glow` (or choose OpenGL under Settings › Appearance).
+## Troubleshooting
+
+- **Sign-in keeps failing.** Run `az login` in a terminal and check that
+  `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798` works. If your
+  organization blocks the Azure CLI, use a personal access token from Settings ›
+  Organizations › Change sign-in.
+- **No pull requests show up.** Check Settings › Organizations: the organization must be
+  watched, signed in, and have repositories and people chosen.
+- **The window is blank or flickers, especially over Remote Desktop.** Start PR Monitor with
+  `--renderer glow`, or choose OpenGL under Settings › Appearance.
+- **Something else.** Logs are in `%LOCALAPPDATA%\PRMonitor\logs` (redacted: no tokens).
+  `pr-monitor --debug` logs more detail to the console. Attach the latest log when you
+  [report a problem](https://github.com/AndrewKorchemniy/pr-monitor/issues/new/choose).
 
 ## Building from source
 

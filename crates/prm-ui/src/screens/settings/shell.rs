@@ -11,12 +11,12 @@ use crate::{
     copy,
     frame::FrameCx,
     theme::{UiTheme, adapter, icons},
-    widgets::{self, controls, dialog},
+    widgets::{self, controls},
 };
 
 const NAV_WIDTH: f32 = 232.0;
-/// Left and right padding of the page column.
-const PAGE_PAD: i8 = 32;
+/// Left and right padding of the page column, the same inset as dialogs.
+const PAGE_PAD: i8 = 20;
 
 pub(crate) fn settings_modal(
     ctx: &egui::Context,
@@ -34,24 +34,27 @@ pub(crate) fn settings_modal(
     let modal = egui::Modal::new(egui::Id::unique("settings"))
         .frame(frame)
         .show(ctx, |ui| {
+            let sidebar_fill = ui.painter().add(egui::Shape::Noop);
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let nav = Rect::from_min_size(rect.min, vec2(NAV_WIDTH, rect.height()));
             let page = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
-            paint_sidebar(ui, &theme, nav);
             let inner = nav.shrink2(vec2(12.0, 16.0));
             let builder = UiBuilder::new().id_salt("settings_nav").max_rect(inner);
             ui.scope_builder(builder, |ui| sidebar(ui, cx, st, env));
             let builder = UiBuilder::new().id_salt("settings_page").max_rect(page);
             ui.scope_builder(builder, |ui| page_column(ui, cx, st, env));
+            // why: painted last, from the window's final height, so it always reaches the bottom.
+            let full = Rect::from_min_max(nav.min, pos2(nav.right(), ui.min_rect().bottom()));
+            ui.painter().set(sidebar_fill, sidebar_shape(&theme, full));
         });
-    if modal.should_close() && st.editing.is_none() {
-        cx.push(UiAction::LeaveSettings);
-    }
+    // why: Esc and the close button leave settings; a click outside (say, after signing in
+    // in a browser) must not.
+    let _ = modal;
     orgs::editor(ctx, cx, st, env);
 }
 
 /// The darker sidebar fill (rounded on the window's left corners) and its edge.
-fn paint_sidebar(ui: &egui::Ui, theme: &UiTheme, nav: Rect) {
+fn sidebar_shape(theme: &UiTheme, nav: Rect) -> egui::Shape {
     let r = theme.tokens.metrics.radius.lg;
     let corners = egui::CornerRadius {
         nw: r,
@@ -59,13 +62,14 @@ fn paint_sidebar(ui: &egui::Ui, theme: &UiTheme, nav: Rect) {
         ne: 0,
         se: 0,
     };
-    ui.painter()
-        .rect_filled(nav, corners, theme.colors.surface_canvas);
     let edge = Stroke::new(
         theme.tokens.metrics.stroke.hairline,
         theme.colors.border_subtle,
     );
-    ui.painter().vline(nav.right(), nav.y_range(), edge);
+    egui::Shape::Vec(vec![
+        egui::Shape::rect_filled(nav, corners, theme.colors.surface_canvas),
+        egui::Shape::vline(nav.right(), nav.y_range(), edge),
+    ])
 }
 
 fn sidebar(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState, env: &SettingsEnv<'_>) {
@@ -136,7 +140,7 @@ fn about_footer(
     for (label, url) in [
         (
             copy::REPORT_PROBLEM,
-            prm_domain::app::DocLink::Troubleshooting.url(),
+            prm_domain::app::DocLink::ReportProblem.url(),
         ),
         (copy::SOURCE_CODE, prm_domain::app::REPO_URL),
     ] {
@@ -163,19 +167,31 @@ fn page_column(
     st: &mut SettingsState,
     env: &SettingsEnv<'_>,
 ) {
+    let theme = cx.theme.clone();
     let area = ui.max_rect();
-    let header = Rect::from_min_size(area.min, vec2(area.width(), 72.0));
-    let bar = if st.dirty() { 68.0 } else { 0.0 };
+    let inset = f32::from(PAGE_PAD);
+    let header = Rect::from_min_size(
+        area.min,
+        vec2(area.width(), theme.control_height() + 2.0 * inset),
+    );
+    let bar = if st.dirty() {
+        theme.control_height() + 2.0 * inset + 1.0
+    } else {
+        0.0
+    };
     let body = Rect::from_min_max(
         pos2(area.left(), header.bottom()),
         pos2(area.right(), area.bottom() - bar),
     );
     let builder = UiBuilder::new()
         .id_salt("settings_header")
-        .max_rect(header.shrink2(vec2(f32::from(PAGE_PAD), 0.0)));
+        .max_rect(header.shrink2(vec2(inset, 0.0)));
     ui.scope_builder(builder, |ui| page_header(ui, cx, st));
     let builder = UiBuilder::new().id_salt("settings_body").max_rect(body);
     ui.scope_builder(builder, |ui| {
+        // why: an overlay scrollbar, so rows keep their width when the page starts to scroll
+        // (as it does when the Save bar appears).
+        ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
         egui::ScrollArea::vertical()
             .id_salt("settings_scroll")
             .auto_shrink(false)
@@ -234,19 +250,22 @@ fn save_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
     }
 }
 
-/// "You have unsaved changes" with Discard and Save, under a divider.
+/// "You have unsaved changes" with Discard and Save, under a divider; it fills its rect exactly.
 fn save_bar(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &SettingsState) {
     let theme = cx.theme.clone();
-    dialog::divider(ui, &theme);
-    egui::Frame::NONE
-        .inner_margin(Margin::symmetric(PAGE_PAD, 14))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                widgets::muted(ui, &theme, copy::UNSAVED);
-                let right = egui::Layout::right_to_left(egui::Align::Center);
-                ui.with_layout(right, |ui| {
-                    ui.add_enabled_ui(!st.saving, |ui| save_buttons(ui, cx));
-                });
-            });
+    let rect = ui.max_rect();
+    let stroke = Stroke::new(
+        theme.tokens.metrics.stroke.hairline,
+        theme.colors.border_default,
+    );
+    ui.painter().hline(rect.x_range(), rect.top(), stroke);
+    let row = rect.shrink(f32::from(PAGE_PAD));
+    let layout = egui::Layout::left_to_right(egui::Align::Center);
+    ui.scope_builder(UiBuilder::new().max_rect(row).layout(layout), |ui| {
+        widgets::muted(ui, &theme, copy::UNSAVED);
+        let right = egui::Layout::right_to_left(egui::Align::Center);
+        ui.with_layout(right, |ui| {
+            ui.add_enabled_ui(!st.saving, |ui| save_buttons(ui, cx));
         });
+    });
 }

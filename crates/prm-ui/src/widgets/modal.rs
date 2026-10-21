@@ -67,7 +67,10 @@ pub(crate) fn modal(
                 outcome = ModalOutcome::Button(index);
             }
         });
-    if outcome == ModalOutcome::Open && response.should_close() {
+    // why: a click beside a dialog (or on a browser window over it) must not throw away what
+    // was typed or chosen; Esc and the close button dismiss it.
+    let escaped = response.should_close() && !response.backdrop_response.clicked();
+    if outcome == ModalOutcome::Open && escaped {
         outcome = ModalOutcome::Dismissed;
     }
     outcome

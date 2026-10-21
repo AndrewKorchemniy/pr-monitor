@@ -48,18 +48,29 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsSta
         return;
     }
     let saved = saved(st);
-    card::section(ui, &theme, copy::SIGN_IN_METHOD, None, |ui| {
+    reveal(ui, st, &[SettingsSection::Auth]);
+    card::section(ui, &theme, copy::CONNECTION, None, |ui| {
         sign_in::section(ui, cx, st, saved);
     });
     card::section(ui, &theme, copy::ORGANIZATION, None, |ui| {
         details(ui, &theme, &mut st.draft.orgs[st.org]);
     });
+    reveal(ui, st, &[SettingsSection::Scope]);
     card::section(ui, &theme, copy::REPOSITORIES, None, |ui| {
         repositories(ui, cx, st);
     });
+    reveal(ui, st, &[SettingsSection::People]);
     card::section(ui, &theme, copy::PEOPLE, None, |ui| people(ui, &theme, st));
     if ui.button(copy::REMOVE_ORG).clicked() {
         cx.push(UiAction::Modal(ModalKind::RemoveOrg(st.org)));
+    }
+}
+
+/// Scrolls the section starting here into view when settings opened for it.
+fn reveal(ui: &mut egui::Ui, st: &mut SettingsState, sections: &[SettingsSection]) {
+    if st.scroll_to.is_some_and(|s| sections.contains(&s)) {
+        ui.scroll_to_cursor(Some(egui::Align::TOP));
+        st.scroll_to = None;
     }
 }
 
@@ -194,6 +205,7 @@ fn add_tab(ui: &mut egui::Ui, theme: &UiTheme) -> egui::Response {
     let width = pad + 12.0 + m.space.sm + galley.size().x + pad;
     let size = egui::vec2(width, theme.control_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    controls::ghost_fill(ui, theme, rect, &response);
     let color = if response.hovered() {
         theme.colors.text_primary
     } else {
@@ -214,8 +226,9 @@ fn add_tab(ui: &mut egui::Ui, theme: &UiTheme) -> egui::Response {
     response
 }
 
-/// Adds (or selects) the org typed in the field; true when the URL was valid.
-fn add_org(st: &mut SettingsState) -> bool {
+/// Adds (or selects) the org typed in the field. A new org is applied to the service right away
+/// (on top of the saved config, not the unsaved edits) so it can sign in before Save.
+fn add_org(st: &mut SettingsState, cx: &mut FrameCx<'_>) -> bool {
     let Some(profile) = new_profile(&st.new_org_url) else {
         st.url_error = true;
         return false;
@@ -226,6 +239,9 @@ fn add_org(st: &mut SettingsState) -> bool {
         .iter()
         .position(|o| o.org_id() == profile.id.as_ref());
     st.org = existing.unwrap_or_else(|| {
+        let mut applied = (*st.base).clone();
+        applied.orgs.push(profile.clone());
+        cx.push(UiAction::Send(Command::ApplyConfig(Box::new(applied))));
         st.draft.orgs.push(profile);
         st.draft.orgs.len() - 1
     });
@@ -395,7 +411,7 @@ pub(crate) fn editor(
         return;
     };
     let outcome = match editor {
-        Editor::AddOrg => add_org_dialog(ctx, &cx.theme.clone(), st),
+        Editor::AddOrg => add_org_dialog(ctx, cx, st),
         Editor::Licenses => licenses_dialog(ctx, &cx.theme.clone(), env),
         Editor::Repositories => repositories_dialog(ctx, cx, st),
         Editor::Tracked | Editor::Reviewers | Editor::Ignored => people_dialog(ctx, cx, st, editor),
@@ -436,7 +452,12 @@ fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) 
     })
 }
 
-fn add_org_dialog(ctx: &egui::Context, theme: &UiTheme, st: &mut SettingsState) -> ModalOutcome {
+fn add_org_dialog(
+    ctx: &egui::Context,
+    cx: &mut FrameCx<'_>,
+    st: &mut SettingsState,
+) -> ModalOutcome {
+    let theme = &cx.theme.clone();
     let spec = ModalSpec {
         id: "add_org",
         title: copy::ADD_ORG,
@@ -455,7 +476,7 @@ fn add_org_dialog(ctx: &egui::Context, theme: &UiTheme, st: &mut SettingsState) 
         if fields::action_field(ui, theme, &mut st.new_org_url, action)
             && !st.new_org_url.trim().is_empty()
         {
-            added = add_org(st);
+            added = add_org(st, cx);
         }
         if st.url_error {
             widgets::error_text(ui, theme, copy::BAD_ORG_URL);

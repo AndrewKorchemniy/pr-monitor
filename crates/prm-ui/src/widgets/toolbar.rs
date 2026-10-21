@@ -78,9 +78,13 @@ fn icon_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, icon: Icon, command: Com
 fn group_menu(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, group: GroupBy) {
     let theme = cx.theme.clone();
     let response = controls::menu_button(ui, &theme, copy::GROUP, group_label(group));
-    let popup = egui::Popup::menu(&response).frame(controls::menu_frame(&theme));
+    let width = response.rect.width().max(200.0);
+    let popup = egui::Popup::menu(&response)
+        .frame(controls::menu_frame(&theme))
+        .gap(controls::MENU_GAP)
+        .width(width);
     popup.show(|ui| {
-        ui.set_min_width(response.rect.width().max(180.0));
+        ui.set_width(width);
         ui.spacing_mut().item_spacing.y = 0.0;
         for (value, label, command) in GROUPS {
             if controls::menu_item(ui, &theme, label, value == group).clicked() {

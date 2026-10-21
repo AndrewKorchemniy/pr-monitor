@@ -76,6 +76,8 @@ pub enum DocLink {
     CreatePat,
     EntraAppRegistration,
     Troubleshooting,
+    /// A new GitHub issue (bug report or feature request).
+    ReportProblem,
 }
 
 impl DocLink {
@@ -89,6 +91,7 @@ impl DocLink {
                 "https://learn.microsoft.com/azure/devops/integrate/get-started/authentication/entra-oauth"
             }
             Self::Troubleshooting => concat!(repo_url!(), "#troubleshooting"),
+            Self::ReportProblem => concat!(repo_url!(), "/issues/new/choose"),
         }
     }
 }

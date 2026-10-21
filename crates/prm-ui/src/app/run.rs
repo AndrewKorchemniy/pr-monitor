@@ -236,6 +236,7 @@ impl PrMonitorApp {
             self.settings = Some(SettingsState::new(Arc::clone(&self.state.config), section));
         } else if let Some(settings) = &mut self.settings {
             settings.page = crate::screens::settings::Page::from_section(section);
+            settings.scroll_to = Some(section);
         }
         self.screen = Screen::Settings;
         self.overlay = Overlay::None;
@@ -274,6 +275,19 @@ impl PrMonitorApp {
         self.theme.set_preview(None);
         self.screen = Screen::Dashboard;
         self.overlay = Overlay::None;
+        self.restart_first_run();
+    }
+
+    /// With every organization removed, the app starts over with first run.
+    pub(super) fn restart_first_run(&mut self) {
+        if self.first_run.is_none()
+            && self.screen == Screen::Dashboard
+            && self.state.config.orgs.is_empty()
+        {
+            self.first_run = Some(crate::screens::first_run::FirstRun::new(
+                self.state.config.clone(),
+            ));
+        }
     }
 }
 
