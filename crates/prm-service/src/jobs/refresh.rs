@@ -12,10 +12,10 @@ use prm_ado::{AdoApi, AdoError, OrgWideProbe, RateSnapshot};
 use prm_auth::{AuthSnapshot, OrgAuthenticator};
 use prm_config::{OrgProfile, state::ProbeCache};
 use prm_domain::{
-    OrgId, Person, PrKey, Timestamp,
+    OrgId, Person, PrKey, Timestamp, Vsid,
     auth::AuthError,
     model::{Catalog, PrRecord, PrState, PullRequest, ThreadDigest},
-    plan::{PrQuery, QueryMode, TrackSpec, plan_queries, select_tracked},
+    plan::{PrQuery, QueryMode, TrackSpec, plan_queries, plan_thread_reads, select_tracked},
     ports::Clock,
     scope::{ResolvedScope, resolve_scope},
     tombstone::CloseOutcome,
@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     consts::{
         CATALOG_TTL, LIST_CONCURRENCY, ORG_WIDE_PROBE_TTL, REFRESH_DEADLINE, THREAD_CONCURRENCY,
-        VANISHED_RESOLVE_CAP,
+        THREAD_READ_BUDGET, VANISHED_RESOLVE_CAP,
     },
     org::Fetched,
     state::{RefreshPhase, RefreshProgress},
@@ -124,7 +124,8 @@ async fn refresh(ctx: RefreshCtx) -> Result<RefreshOutput, RefreshFailure> {
     let listed = list_prs(&ctx, &plan_queries(&scope, mode)).await?;
     let track = ctx.profile.track_spec(Some(&me));
     let mut harvested = harvest_prs(&listed.prs);
-    let mut gathered = fetch_threads(&ctx, select_tracked(listed.prs, &scope, &track)).await;
+    let tracked = select_tracked(listed.prs, &scope, &track);
+    let mut gathered = gather(&ctx, tracked, me.id).await;
     harvested.append(&mut gathered.commenters);
     let lost = Lost {
         scope: &scope,
@@ -143,6 +144,7 @@ async fn refresh(ctx: RefreshCtx) -> Result<RefreshOutput, RefreshFailure> {
         scope_issues: scope.issues,
         records: gathered.records,
         stale: gathered.stale,
+        deferred: gathered.deferred,
         closed,
         harvested,
         failed_queries: listed.failed.into_iter().map(|(q, _)| q).collect(),
@@ -302,9 +304,30 @@ struct Gathered {
     records: BTreeMap<PrKey, PrRecord>,
     stale: BTreeSet<PrKey>,
     commenters: Vec<Person>,
+    /// New PRs left for a later refresh by the thread read budget.
+    deferred: usize,
 }
 
 impl Gathered {
+    /// A PR with its threads; their authors join the people picker.
+    fn add(&mut self, record: PrRecord) {
+        self.commenters.extend(commenters(&record.threads));
+        self.records.insert(record.pr.key.clone(), record);
+    }
+
+    /// A known PR keeps its earlier threads, marked stale. A new one is left out until a read
+    /// succeeds: shown without threads, all its comments would read as new later, and it would
+    /// never get its `NewPr`.
+    fn read_failed(&mut self, ctx: &RefreshCtx, pr: PullRequest, error: &AdoError) {
+        let Some(earlier) = ctx.prev.get(&pr.key) else {
+            tracing::debug!(org = %ctx.org, pr = %pr.key, %error, "threads failed; held back");
+            return;
+        };
+        tracing::debug!(org = %ctx.org, pr = %pr.key, %error, "threads failed; reusing previous");
+        self.stale.insert(pr.key.clone());
+        self.add(with_earlier_threads(earlier, pr));
+    }
+
     /// Keeps the previous record, marked stale (it produces no events).
     fn carry(&mut self, record: &PrRecord) {
         let key = record.pr.key.clone();
@@ -313,7 +336,32 @@ impl Gathered {
     }
 }
 
-/// Threads per tracked PR. A failed fetch reuses the previous threads and marks the PR stale.
+/// Threads for the tracked PRs, at most `THREAD_READ_BUDGET` reads. PRs over the budget keep
+/// the threads read before (not stale: only their comments wait); new ones wait for a later
+/// refresh.
+async fn gather(ctx: &RefreshCtx, tracked: Vec<PullRequest>, me: Vsid) -> Gathered {
+    let plan = plan_thread_reads(tracked, &ctx.prev, me, THREAD_READ_BUDGET);
+    if !plan.reuse.is_empty() || plan.deferred > 0 {
+        tracing::debug!(
+            org = %ctx.org,
+            read = plan.read.len(),
+            reused = plan.reuse.len(),
+            deferred = plan.deferred,
+            "more tracked PRs than the thread read budget"
+        );
+    }
+    let mut gathered = fetch_threads(ctx, plan.read).await;
+    for pr in plan.reuse {
+        if let Some(earlier) = ctx.prev.get(&pr.key) {
+            gathered.add(with_earlier_threads(earlier, pr));
+        }
+    }
+    gathered.deferred = plan.deferred;
+    gathered
+}
+
+/// Threads per PR. A failed fetch reuses the previous threads and marks the PR stale; a new
+/// PR whose first read fails is left out until a later read succeeds.
 async fn fetch_threads(ctx: &RefreshCtx, prs: Vec<PullRequest>) -> Gathered {
     let total = prs.len();
     let now = ctx.clock.now();
@@ -332,25 +380,26 @@ async fn fetch_threads(ctx: &RefreshCtx, prs: Vec<PullRequest>) -> Gathered {
     while let Some((pr, result)) = results.next().await {
         done += 1;
         ctx.report(RefreshPhase::Threads, done, total);
-        let key = pr.key.clone();
-        let threads = result.unwrap_or_else(|error| {
-            tracing::debug!(org = %ctx.org, pr = %key, %error, "threads failed; reusing previous");
-            out.stale.insert(key.clone());
-            previous_threads(&ctx.prev, &key)
-        });
-        out.commenters.extend(commenters(&threads));
-        let record = PrRecord {
-            pr,
-            threads,
-            fetched_at: now,
-        };
-        out.records.insert(key, record);
+        match result {
+            Ok(threads) => out.add(PrRecord {
+                pr,
+                threads,
+                fetched_at: now,
+            }),
+            Err(error) => out.read_failed(ctx, pr, &error),
+        }
     }
     out
 }
 
-fn previous_threads(prev: &BTreeMap<PrKey, PrRecord>, key: &PrKey) -> Vec<ThreadDigest> {
-    prev.get(key).map(|r| r.threads.clone()).unwrap_or_default()
+/// `pr` with the threads read before and when they were read, so it stays first in line for
+/// the next read among the known PRs.
+fn with_earlier_threads(earlier: &PrRecord, pr: PullRequest) -> PrRecord {
+    PrRecord {
+        pr,
+        threads: earlier.threads.clone(),
+        fetched_at: earlier.fetched_at,
+    }
 }
 
 fn commenters(threads: &[ThreadDigest]) -> impl Iterator<Item = Person> + '_ {
@@ -379,7 +428,7 @@ impl Lost<'_> {
         !listed.contains_key(&pr.key)
             && self.scope.contains_repo(pr.project, pr.key.repo)
             && !self.covered_by_failure(pr)
-            && self.track.authors.contains(&pr.author.id)
+            && self.track.authors.tracks(pr.author.id)
     }
 }
 

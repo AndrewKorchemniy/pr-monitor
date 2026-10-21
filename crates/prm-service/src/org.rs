@@ -48,10 +48,15 @@ pub(crate) struct OrgData {
     pub stale: BTreeSet<PrKey>,
     pub snapshot: OrgSnapshot,
     pub tombstones: Tombstones,
-    /// A snapshot exists to diff against; the first refresh without one is silent.
+    /// A snapshot exists to diff against; the first refresh without one is silent, and so are
+    /// the ones that finish loading PRs the thread read budget held back.
     pub baseline: bool,
-    /// Scope or authors changed: the next refresh reports no `NewPr` events.
+    /// Scope or authors changed: the next refresh reports no `NewPr` events (nor the ones that
+    /// finish loading held-back PRs). Persisted, so a restart mid-way does not end it.
     pub rebaseline_pending: bool,
+    /// New PRs the thread read budget held back on the last refresh; the next refreshes come
+    /// sooner until they are in.
+    pub loading_more: usize,
     pub people: PeopleCache,
     pub org_wide: Option<ProbeCache>,
     pub signed_out: bool,
@@ -71,6 +76,8 @@ pub(crate) struct Fetched {
     pub scope_issues: Vec<ScopeIssue>,
     pub records: BTreeMap<PrKey, PrRecord>,
     pub stale: BTreeSet<PrKey>,
+    /// New PRs the thread read budget left for a later refresh.
+    pub deferred: usize,
     pub closed: Vec<(PrKey, CloseOutcome)>,
     pub harvested: Vec<Person>,
     pub failed_queries: Vec<PrQuery>,
@@ -79,7 +86,8 @@ pub(crate) struct Fetched {
 
 pub(crate) struct Absorbed {
     pub events: Vec<ChangeEvent>,
-    /// This was the org's first refresh ever: everything counts as already seen.
+    /// No baseline to diff against yet (the first load, including the refreshes that finish
+    /// loading PRs the thread read budget held back): everything counts as already seen.
     pub first_baseline: bool,
 }
 
@@ -92,6 +100,10 @@ impl OrgData {
         now: Timestamp,
     ) -> Self {
         let saved = persisted.unwrap_or_default();
+        // why: a baseline saved under the other meaning of an empty people list (from before
+        // it meant everyone, or edited while closed) would make every newly shown PR news.
+        let rule_changed =
+            saved.baseline && saved.tracks_everyone != profile.people.tracked_authors.is_empty();
         let mut data = Self {
             label: profile.display_label(),
             classify: profile.classify_config(),
@@ -105,7 +117,8 @@ impl OrgData {
             snapshot: OrgSnapshot::new(),
             tombstones: saved.tombstones,
             baseline: saved.baseline,
-            rebaseline_pending: false,
+            rebaseline_pending: saved.rebaseline_pending || rule_changed,
+            loading_more: 0,
             people: PeopleCache::from_persisted(saved.people, now),
             org_wide: saved.org_wide_probe,
             signed_out: saved.signed_out,
@@ -186,8 +199,12 @@ impl OrgData {
         let next = self.classify_all();
         let events = self.diff_against(&next, &fetched.closed, now);
         let first_baseline = !self.baseline;
-        self.baseline = true;
-        self.rebaseline_pending = false;
+        // why: PRs left for a later refresh belong to this silent (re)baseline; they are not
+        // news when they show up.
+        let catching_up = fetched.deferred > 0;
+        self.baseline = self.baseline || !catching_up;
+        self.rebaseline_pending = self.rebaseline_pending && catching_up;
+        self.loading_more = fetched.deferred;
         apply_tombstones(&mut self.tombstones, &events, now);
         self.snapshot = next;
         Absorbed {
@@ -221,6 +238,8 @@ impl OrgData {
             last_good_method: method.or(self.last_good_method),
             signed_out: self.signed_out,
             baseline: self.baseline,
+            rebaseline_pending: self.rebaseline_pending,
+            tracks_everyone: self.profile.people.tracked_authors.is_empty(),
             last_refresh_ok: self.last_ok,
             org_wide_probe: self.org_wide,
             records: (*self.records).clone(),

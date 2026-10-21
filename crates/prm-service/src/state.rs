@@ -180,6 +180,9 @@ pub struct OrgStatus {
     pub last_error: Option<UiError>,
     /// From the profile's `pat_expires_on`, when it parses as a date.
     pub pat_expires_on: Option<time::Date>,
+    /// New pull requests still to load: the thread read budget held them back on the last
+    /// refresh, and the next refreshes come sooner until they are in.
+    pub loading_more: u32,
 }
 
 impl OrgStatus {

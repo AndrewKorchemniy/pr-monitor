@@ -30,6 +30,7 @@ mod dashboard;
 mod gallery;
 mod people;
 mod status_bar;
+mod tracking;
 
 fn signed_out() -> AppState {
     let needs = AuthStateView::NeedsSignIn {

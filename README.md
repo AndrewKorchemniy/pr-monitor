@@ -13,7 +13,8 @@ tells you whose move it is.
 - **One status per PR:** *Needs review*, *Active comments* or *Reviewed*, based on the
   reviewers whose votes count for your team.
 - **Many orgs and repos at once.** Choose projects or single repositories, the people whose
-  PRs you track and the reviewers whose votes count.
+  PRs you track (leave the list empty to track everyone in those repositories) and the
+  reviewers whose votes count.
 - **Notifications that are worth reading:** new PRs, new comments, votes, re-reviews and
   pushes, grouped per PR and capped per refresh.
 - **Lives in the tray.** It refreshes every few minutes (5 by default) and uses no CPU while

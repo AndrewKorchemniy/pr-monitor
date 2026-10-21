@@ -25,7 +25,9 @@ use crate::{
         settings::{Editor, PAGES},
     },
     testing::{
-        demo::{busy_state, crowded_state, demo_state, empty_state, now},
+        demo::{
+            busy_state, crowded_state, demo_state, empty_state, everyone_state, now, quiet_state,
+        },
         screens::{Fixture, NARROW, Shown, WINDOW},
     },
     theme::fonts,
@@ -240,12 +242,14 @@ fn people_search(f: &mut Fixture, phase: &SearchPhase, found: &[PersonCandidate]
     f.settings.pickers.tracked.show_matches("pri", phase, found);
 }
 
+fn show_people(f: &mut Fixture) {
+    f.settings.page = PAGES[1];
+    f.settings.scroll_to = Some(SettingsSection::People);
+}
+
 fn people_scenes() -> [Named; 5] {
     [
-        ("settings-organizations-people", |f| {
-            f.settings.page = PAGES[1];
-            f.settings.scroll_to = Some(SettingsSection::People);
-        }),
+        ("settings-organizations-people", show_people),
         ("settings-edit-people-matches", |f| {
             people_search(f, &SearchPhase::Final, &matches());
             f.settings.pickers.tracked.step(Highlight::Down, 3);
@@ -369,7 +373,7 @@ fn scenes() -> Vec<Scene> {
                 f.dash.view.set_status(StatusFilter::ActiveComments);
             },
         ),
-        scene("dashboard-empty", Shown::Dashboard, empty_state, nothing),
+        scene("dashboard-empty", Shown::Dashboard, quiet_state, nothing),
         scene("palette", Shown::Palette, demo_state, |f| {
             f.palette.query = "sign".to_owned();
         }),
@@ -379,7 +383,106 @@ fn scenes() -> Vec<Scene> {
     all.extend(responsive::scenes());
     all.extend(banner_scenes());
     all.extend(settings_scenes());
+    all.extend(tracking_scenes());
     all
+}
+
+/// Every organization tracks everyone, the user included, and nothing is open.
+fn everyone_quiet(f: &mut Fixture) {
+    let mut config = (*f.state.config).clone();
+    for org in &mut config.orgs {
+        org.people.tracked_authors.clear();
+        org.include_me = true;
+    }
+    f.state.config = Arc::new(config);
+}
+
+/// Every organization's watching is off.
+fn nothing_watched(f: &mut Fixture) {
+    let mut config = (*f.state.config).clone();
+    for org in &mut config.orgs {
+        org.enabled = false;
+    }
+    f.state.config = Arc::new(config);
+    let mut orgs = f.state.orgs.to_vec();
+    for org in &mut orgs {
+        org.enabled = false;
+    }
+    f.state.orgs = orgs.into();
+}
+
+/// The banner while the thread read budget holds new pull requests back.
+fn loading_more(f: &mut Fixture) {
+    f.state.banners = Arc::from([Banner {
+        id: Arc::from("loading:contoso"),
+        severity: Severity::Info,
+        org: Some(org("contoso")),
+        title: Arc::from("Loading 350 more pull requests in contoso"),
+        detail: None,
+        action: None,
+        secondary: None,
+        dismissible: false,
+    }]);
+}
+
+/// An empty people list tracks everyone: where the list is edited, at the smallest window,
+/// and the dashboard states that follow from it.
+fn tracking_scenes() -> Vec<Scene> {
+    vec![
+        scene(
+            "first-run-people-everyone",
+            Shown::FirstRun,
+            everyone_state,
+            |f| {
+                first_run_step(f, Step::People);
+                f.first_run.settings.draft.orgs[0].people.reviewers.clear();
+            },
+        ),
+        scene(
+            "settings-organizations-people-everyone",
+            Shown::Settings,
+            everyone_state,
+            show_people,
+        ),
+        scene(
+            "settings-organizations-people-narrow",
+            Shown::Settings,
+            demo_state,
+            show_people,
+        )
+        .at(NARROW),
+        scene(
+            "settings-organizations-people-everyone-narrow",
+            Shown::Settings,
+            everyone_state,
+            show_people,
+        )
+        .at(NARROW),
+        scene(
+            "settings-edit-people-everyone",
+            Shown::Settings,
+            everyone_state,
+            |f| editing(f, Editor::Tracked),
+        ),
+        scene(
+            "dashboard-empty-everyone",
+            Shown::Dashboard,
+            quiet_state,
+            everyone_quiet,
+        ),
+        scene(
+            "dashboard-nothing-watched",
+            Shown::Dashboard,
+            quiet_state,
+            nothing_watched,
+        ),
+        scene(
+            "dashboard-loading-more",
+            Shown::Dashboard,
+            demo_state,
+            loading_more,
+        ),
+    ]
 }
 
 /// Each settings page, its dialogs, the people search and the failures shown in place.

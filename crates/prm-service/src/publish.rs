@@ -133,6 +133,7 @@ fn org_status(view: &OrgView<'_>, rows: &[PrRow], now: Moment) -> OrgStatus {
         catalog_error: live.catalog_error.clone(),
         last_error: live.last_error.clone(),
         pat_expires_on: data.profile.pat_expiry(),
+        loading_more: u32::try_from(data.loading_more).unwrap_or(u32::MAX),
     }
 }
 
@@ -202,6 +203,7 @@ pub(crate) fn banners(input: &BannerInput<'_>) -> Vec<Banner> {
         out.push(config);
     }
     out.extend(notify_banner(input.notifications));
+    out.extend(enabled.iter().filter_map(|o| loading_banner(o)));
     let autostart_off =
         input.autostart.desired && input.autostart.actual == Some(AutostartState::DisabledByUser);
     if autostart_off {
@@ -259,6 +261,20 @@ fn pat_banner(org: &OrgStatus, today: time::Date) -> Option<Banner> {
             Severity::Warning,
             Some(&org.id),
             &text::pat_expiry(&org.label, days),
+        )
+    })
+}
+
+/// The list is still filling in: the thread read budget held new PRs back. It clears itself
+/// within minutes, so it cannot be dismissed.
+fn loading_banner(org: &OrgStatus) -> Option<Banner> {
+    (org.loading_more > 0).then(|| Banner {
+        dismissible: false,
+        ..banner(
+            &format!("loading:{}", org.id),
+            Severity::Info,
+            Some(&org.id),
+            &text::loading_more(&org.label, org.loading_more),
         )
     })
 }

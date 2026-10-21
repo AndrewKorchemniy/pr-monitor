@@ -37,6 +37,7 @@ fn status(name: &str, health: OrgHealth, auth: AuthStateView) -> OrgStatus {
         catalog_error: None,
         last_error: None,
         pat_expires_on: None,
+        loading_more: 0,
     }
 }
 

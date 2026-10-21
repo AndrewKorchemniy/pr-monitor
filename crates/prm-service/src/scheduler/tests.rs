@@ -74,6 +74,38 @@ fn after_success_resets_failures_and_uses_interval() {
     assert_eq!(schedule.due_wall(), Some(ts(1_300)));
 }
 
+/// PRs the thread read budget held back used to wait a full interval per refresh, so a large
+/// project's list took many minutes to fill in.
+#[test]
+fn policy_with_backlog_catches_up_sooner_and_still_stretches() {
+    let now = at(Instant::now(), 0);
+    let mut rng = fastrand::Rng::with_seed(1);
+    let cases = [
+        (0, None, 5 * MINUTE),
+        (10, None, CATCH_UP_DELAY),
+        (10, Some(0.1), 2 * CATCH_UP_DELAY),
+    ];
+    for (held_back, headroom, expected) in cases {
+        let mut schedule = Schedule::default();
+        let next = policy(0).with_backlog(held_back);
+        after_success(next, &mut schedule, now, headroom, &mut rng);
+        assert_eq!(
+            delay(&schedule, now),
+            expected,
+            "{held_back} held back, headroom {headroom:?}"
+        );
+    }
+    let short = Policy {
+        interval: Duration::from_secs(20),
+        jitter_pct: 0,
+    };
+    assert_eq!(
+        short.with_backlog(10),
+        short,
+        "never later than the interval"
+    );
+}
+
 #[test]
 fn after_failure_exponential_capped_by_interval() {
     let now = at(Instant::now(), 0);
