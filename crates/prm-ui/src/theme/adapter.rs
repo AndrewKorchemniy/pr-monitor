@@ -227,12 +227,9 @@ pub(crate) fn frame_canvas(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE.fill(theme.colors.surface_canvas)
 }
 
-/// The table area: the canvas, with room on the right so the last column clears the edge.
+/// The table area: the canvas, edge to edge (the last column keeps its own margin).
 pub(crate) fn frame_table(theme: &UiTheme) -> egui::Frame {
-    frame_canvas(theme).inner_margin(Margin {
-        right: px(theme.tokens.metrics.space.md),
-        ..Margin::ZERO
-    })
+    frame_canvas(theme)
 }
 
 /// A standalone card with a hairline border, like a dialog (first run).

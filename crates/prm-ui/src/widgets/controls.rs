@@ -9,7 +9,7 @@ use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, StrokeKind, pos2, ve
 
 pub(crate) use self::{
     menu::{
-        MENU_GAP, MenuMark, menu_button, menu_button_width, menu_check, menu_frame,
+        MENU_GAP, MENU_WIDTH, MenuMark, menu_button, menu_button_width, menu_check, menu_frame,
         menu_icon_button, menu_item, menu_item_detail,
     },
     rows::{disclosure, row_divider, setting_row, toggle_row},

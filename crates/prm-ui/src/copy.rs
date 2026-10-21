@@ -229,6 +229,7 @@ pub(crate) const SHORTCUTS_TITLE: &str = "Keyboard shortcuts";
 pub(crate) const TRAY_OPEN: &str = "Open PR Monitor";
 pub(crate) const TRAY_REFRESH: &str = "Refresh now";
 pub(crate) const REFRESHING: &str = "Refreshing…";
+pub(crate) const COLUMN_NO_ROOM: &str = "No room";
 pub(crate) const TRAY_PAUSE: &str = "Pause notifications for 1 hour";
 pub(crate) const TRAY_RESUME: &str = "Resume notifications";
 pub(crate) const TRAY_SIGN_IN: &str = "Sign in…";
@@ -565,6 +566,7 @@ pub(crate) const ALL: &[&str] = &[
     ENTRA_HELP,
     REFRESH_HELP,
     REFRESHING,
+    COLUMN_NO_ROOM,
     REMOVE_ORG_BODY,
     REVIEWERS_HELP,
     TRACK_FROM_HELP,

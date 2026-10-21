@@ -29,8 +29,6 @@ pub(crate) const GROUPS: [(GroupBy, &str, CommandId); 6] = [
 
 /// The filter field gives up room down to this before the menus drop their text (points).
 const SEARCH_MIN: f32 = 160.0;
-/// The menus' popups are at least this wide (points).
-const MENU_WIDTH: f32 = 200.0;
 
 pub(crate) fn group_label(group: GroupBy) -> &'static str {
     GROUPS
@@ -197,7 +195,7 @@ fn menu_opener(
 }
 
 fn menu_popup(response: &egui::Response, theme: &UiTheme) -> (egui::Popup<'static>, f32) {
-    let width = response.rect.width().max(MENU_WIDTH);
+    let width = response.rect.width().max(controls::MENU_WIDTH);
     let popup = egui::Popup::menu(response)
         .frame(controls::menu_frame(theme))
         .gap(controls::MENU_GAP)

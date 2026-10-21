@@ -17,6 +17,8 @@ const MENU_MARK: f32 = 14.0;
 
 /// The space between a button and the menu it opens.
 pub(crate) const MENU_GAP: f32 = 6.0;
+/// The usual width of a menu (points).
+pub(crate) const MENU_WIDTH: f32 = 200.0;
 
 /// The chevron at the end of a `menu_button`.
 const CHEVRON: f32 = 10.0;

@@ -19,7 +19,8 @@ use crate::{
     widgets::pr_table::{
         TableInputs, TableOut, cells,
         rows::{
-            RowCx, answer_row, group_row, mark_selected, record_scroll, rows_rect, scroll_request,
+            self, RowCx, answer_row, group_row, mark_selected, record_scroll, rows_rect,
+            scroll_request,
         },
     },
 };
@@ -49,6 +50,7 @@ pub(crate) fn pr_cards(
         .extend(columns::squeezed(&[], &view.hidden_columns));
     let pitch = card_pitch(ui, &theme);
     let spacing = ui.spacing().item_spacing.y;
+    let spacing_x = ui.spacing().item_spacing.x;
     let heights = (pitch.pr - spacing, pitch.group - spacing);
     let builder = TableBuilder::new(ui)
         .id_salt("pr_cards")
@@ -67,6 +69,7 @@ pub(crate) fn pr_cards(
             view,
             input,
             frame: cx,
+            label_x: card::text_x(&theme, spacing_x),
         };
         cards_body(body, &rcx, heights, &mut pending);
     });
@@ -116,7 +119,7 @@ fn card_row(
     };
     let selected = mark_selected(row, rcx, pr);
     row.col(|ui| cells::change_bar(ui, rcx, pr));
-    row.col(|ui| card::card(ui, rcx, pr, index));
+    row.col(|ui| rows::last_cell(ui, rcx.theme, |ui| card::card(ui, rcx, pr, index)));
     answer_row(&row.response(), rcx, (pr, selected), list, pending);
 }
 

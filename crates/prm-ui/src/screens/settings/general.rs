@@ -108,9 +108,10 @@ fn column_checklist(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, choices: Choices<'_
         .show(ui, |ui| {
             for (index, column) in columns::listed().enumerate() {
                 let check = choices.check(&column);
-                let response = column_choice(ui, &theme, &column, check, |ui, state, label| {
-                    controls::check(ui, &theme, state, label)
-                });
+                let response =
+                    column_choice(ui, &theme, (&column, check, false), |ui, state, label| {
+                        controls::check(ui, &theme, state, label)
+                    });
                 if response.clicked() {
                     cx.push(UiAction::ToggleColumn(column.id));
                 }

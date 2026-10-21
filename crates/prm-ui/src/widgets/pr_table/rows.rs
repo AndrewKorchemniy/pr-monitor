@@ -2,7 +2,7 @@
 //! request row answers the pointer (select, open, context menu, focus ring), the pending scroll
 //! request, and what the list records about where it scrolled.
 
-use eframe::egui::{self, Rect, Response, Stroke, StrokeKind};
+use eframe::egui::{self, Rect, Response, Stroke, StrokeKind, UiBuilder};
 use egui_extras::{TableBody, TableBuilder, TableRow};
 use prm_domain::view::{GroupBy, PrRow, group::GroupSpan};
 
@@ -18,6 +18,7 @@ use crate::{
         icons::{self, Icon},
     },
     view::{DashboardView, ScrollIntent, display::Pitch},
+    widgets::controls,
 };
 
 /// What a row's painters read: the theme, the view, the list's inputs and the frame.
@@ -26,7 +27,15 @@ pub(crate) struct RowCx<'a, 'b> {
     pub view: &'a DashboardView,
     pub input: &'a TableInputs<'a>,
     pub frame: &'a FrameCx<'b>,
+    /// How far a group header's label starts from the list's left edge, so it lines up with
+    /// the text of the rows below; its chevron sits just before it.
+    pub label_x: f32,
 }
+
+/// Where a table's group labels start (points from the list's left edge).
+pub(crate) const TABLE_LABEL_X: f32 = 26.0;
+/// From a group label back to the centre of its chevron (points).
+const CHEVRON_BACK: f32 = 14.0;
 
 /// A group header: the whole row (chevron included) collapses and expands it. `cells` is how
 /// many cells the row has; `(full, clip)` are the list's rect and clip.
@@ -49,7 +58,7 @@ pub(crate) fn group_row(
     for i in 0..cells {
         row.col(|ui| {
             if i == last {
-                group_label(ui, rcx.theme, group, collapsed, (full, clip));
+                group_label(ui, rcx, (group, collapsed), (full, clip));
             }
         });
     }
@@ -62,25 +71,49 @@ pub(crate) fn group_row(
     }
 }
 
+/// Runs `add` in the cell short of the row margin on its right: the last column keeps a margin
+/// as wide as the first column, so the fills reach the list's edge and the text keeps clear.
+pub(crate) fn last_cell<R>(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let rect = ui.max_rect();
+    let inner = rect.with_max_x(rect.right() - theme.tokens.metrics.row.margin_col);
+    let builder = UiBuilder::new().max_rect(inner).layout(*ui.layout());
+    ui.scope_builder(builder, add).inner
+}
+
 /// Paints a group header across the whole row from inside one of its cells.
 fn group_label(
     ui: &egui::Ui,
-    theme: &UiTheme,
-    group: &GroupSpan,
-    collapsed: bool,
+    rcx: &RowCx<'_, '_>,
+    (group, collapsed): (&GroupSpan, bool),
     (full, clip): (Rect, Rect),
 ) {
+    let theme = rcx.theme;
     let cell = ui.max_rect();
     let line = Rect::from_x_y_ranges(full.x_range(), cell.y_range()).intersect(clip);
+    // why: the row's band reaches half a gap past the cell; a header owns all of it, on the
+    // canvas rather than a stripe, with its rule on the band's bottom edge.
+    let half = ui.spacing().item_spacing.y / 2.0;
+    let band = line.expand2(egui::vec2(0.0, half)).intersect(clip);
     let mut painter = ui.painter().clone();
-    painter.set_clip_rect(line);
+    painter.set_clip_rect(band);
+    let fill = if ui.rect_contains_pointer(band) {
+        theme.colors.row_hover
+    } else {
+        theme.colors.surface_canvas
+    };
+    painter.rect_filled(band, 0.0, fill);
     let chevron = if collapsed {
         Icon::ChevronRight
     } else {
         Icon::ChevronDown
     };
     let y = line.center().y;
-    let icon = Rect::from_center_size(egui::pos2(line.left() + 12.0, y), egui::vec2(9.0, 9.0));
+    let x = line.left() + rcx.label_x;
+    let icon = Rect::from_center_size(egui::pos2(x - CHEVRON_BACK, y), egui::vec2(9.0, 9.0));
     icons::paint(&painter, icon, chevron, theme.colors.text_muted);
     let label = painter.layout_no_wrap(
         group.label.to_string(),
@@ -88,7 +121,6 @@ fn group_label(
         theme.colors.text_primary,
     );
     let label_w = label.size().x;
-    let x = line.left() + 26.0;
     painter.galley(
         egui::pos2(x, y - label.size().y / 2.0),
         label,
@@ -103,7 +135,7 @@ fn group_label(
     painter.galley(at, count, theme.colors.text_muted);
     painter.hline(
         line.x_range(),
-        line.bottom() - 0.5,
+        band.bottom() - 0.5,
         Stroke::new(
             theme.tokens.metrics.stroke.hairline,
             theme.colors.border_subtle,
@@ -147,7 +179,14 @@ pub(crate) fn answer_row(
     if response.double_clicked() {
         pending.push(UiAction::Open(pr.key.clone()));
     }
-    response.context_menu(|ui| context_menu(ui, pr, pending));
+    egui::Popup::context_menu(response)
+        .frame(controls::menu_frame(rcx.theme))
+        .width(controls::MENU_WIDTH)
+        .show(|ui| {
+            ui.set_width(controls::MENU_WIDTH);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            context_menu(ui, rcx.theme, pr, pending);
+        });
 }
 
 /// The ring round the selected row: an even inset inside the row's selection fill, starting
@@ -174,7 +213,8 @@ fn focus_ring(response: &Response, theme: &UiTheme, list: Rect) {
         .rect_stroke(ring, 2.0, stroke, StrokeKind::Inside);
 }
 
-fn context_menu(ui: &mut egui::Ui, pr: &PrRow, pending: &mut Vec<UiAction>) {
+/// The row's actions as menu rows, grouped: open, the copies, then peek and mark as seen.
+fn context_menu(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow, pending: &mut Vec<UiAction>) {
     let items = [
         (copy::OPEN_IN_BROWSER, CommandId::PrOpen),
         (copy::COPY_LINK, CommandId::PrCopyLink),
@@ -187,10 +227,16 @@ fn context_menu(ui: &mut egui::Ui, pr: &PrRow, pending: &mut Vec<UiAction>) {
         if command == CommandId::PrMarkSeen && !pr.unread {
             continue;
         }
-        if ui.button(label).clicked() {
+        if controls::menu_item(ui, theme, label, false).clicked() {
             pending.push(UiAction::Select(pr.key.clone()));
             pending.push(UiAction::Run(command));
             ui.close();
+        }
+        if matches!(command, CommandId::PrOpen | CommandId::PrCopyTitle) {
+            let space = theme.tokens.metrics.space.xs;
+            ui.add_space(space);
+            controls::row_divider(ui, theme);
+            ui.add_space(space);
         }
     }
 }

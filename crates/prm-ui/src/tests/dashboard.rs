@@ -56,11 +56,11 @@ fn the_harness_margin_is_the_one_the_tests_allow_for() {
     assert!((margin - HARNESS_MARGIN).abs() < 0.5, "{margin}");
 }
 
-/// Where the list's rows end: inside the body's right margin and the scroll bar's lane.
+/// Where the list's text ends: inside the scroll bar's lane and the last column's margin.
 fn list_end(h: &Harness<'_, Fixture>) -> f32 {
     let theme = theme::fallback();
     let style = adapter::style(&theme, theme.policy);
-    let margin = adapter::frame_table(&theme).total_margin().right;
+    let margin = theme.tokens.metrics.row.margin_col;
     dashboard_right(h) - margin - style.spacing.scroll.allocated_width()
 }
 

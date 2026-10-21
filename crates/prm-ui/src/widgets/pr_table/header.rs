@@ -28,8 +28,6 @@ use crate::{
 const ARROW: f32 = 8.0;
 /// Half a divider's drag strip, like the `egui_extras` resize grab.
 const GRAB: f32 = 3.0;
-/// The column menu.
-const MENU_WIDTH: f32 = 200.0;
 
 /// A width dragged this frame, or `None` when a double-click asked for the default back.
 pub(super) struct Resize {
@@ -65,7 +63,12 @@ pub(super) fn header_row(
             if index == 0 {
                 header_rule(ui, hcx.theme, hcx.span);
             }
-            all = Some(join(all.take(), header_col(ui, hcx, spec, pending)));
+            let col = if index == last {
+                super::rows::last_cell(ui, hcx.theme, |ui| header_col(ui, hcx, spec, pending))
+            } else {
+                header_col(ui, hcx, spec, pending)
+            };
+            all = Some(join(all.take(), col));
             if let Some(cell) = cells.get_mut(index) {
                 *cell = ui.max_rect();
             }
@@ -358,9 +361,9 @@ fn column_menu(all: &egui::Response, hcx: &HeaderCx<'_>, pending: &mut Vec<UiAct
         .id(menu_id())
         .frame(controls::menu_frame(theme))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .width(MENU_WIDTH)
+        .width(controls::MENU_WIDTH)
         .show(|ui| {
-            ui.set_width(MENU_WIDTH);
+            ui.set_width(controls::MENU_WIDTH);
             ui.spacing_mut().item_spacing.y = 0.0;
             column_checks(ui, hcx, pending);
             let space = theme.tokens.metrics.space.xs;
@@ -382,8 +385,7 @@ fn column_checks(ui: &mut egui::Ui, hcx: &HeaderCx<'_>, pending: &mut Vec<UiActi
         let response = super::column_choice(
             ui,
             theme,
-            &column,
-            choices.check(&column),
+            (&column, choices.check(&column), true),
             |ui, state, label| controls::menu_check(ui, theme, state, label),
         );
         if response.clicked() {

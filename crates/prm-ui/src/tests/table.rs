@@ -282,7 +282,8 @@ fn the_column_menu_marks_columns_a_narrow_table_left_out() {
     h.get_by_role_and_label(Role::Button, copy::COLUMN_AGE)
         .click_secondary();
     h.run();
-    let repo = h.get_by_role_and_label(Role::MenuItemCheckBox, copy::COLUMN_REPO);
+    let noted = format!("{}  {}", copy::COLUMN_REPO, copy::COLUMN_NO_ROOM);
+    let repo = h.get_by_role_and_label(Role::MenuItemCheckBox, &noted);
     assert_eq!(repo.accesskit_node().toggled(), Some(Toggled::True));
     repo.hover();
     h.run();

@@ -81,8 +81,14 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.circle_filled(at(0.75, 0.7), r * 0.15, color);
         }
         Icon::Pause => {
-            painter.line_segment([at(-0.35, -0.7), at(-0.35, 0.7)], s);
-            painter.line_segment([at(0.35, -0.7), at(0.35, 0.7)], s);
+            // why: filled bars snapped to whole pixels keep their full colour; thin strokes
+            // anti-aliased to a faint mark at small sizes.
+            let bar = |x: f32| {
+                let r = Rect::from_min_max(at(x - 0.17, -0.7), at(x + 0.17, 0.7));
+                eframe::emath::GuiRounding::round_to_pixels(r, painter.pixels_per_point())
+            };
+            painter.rect_filled(bar(-0.38), 1.0, color);
+            painter.rect_filled(bar(0.38), 1.0, color);
         }
         Icon::Cross => {
             painter.line_segment([at(-0.6, -0.6), at(0.6, 0.6)], s);

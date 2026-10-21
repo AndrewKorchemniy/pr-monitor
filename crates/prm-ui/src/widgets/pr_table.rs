@@ -45,8 +45,10 @@ pub(crate) struct TableOut {
 /// The room the table's columns share in a list `width` points wide.
 pub(crate) fn table_room(spacing: &egui::Spacing, theme: &UiTheme, width: f32) -> Room {
     Room {
-        // why: egui_extras keeps the scroll bar's lane out of the columns' width.
-        width: width - spacing.scroll.allocated_width(),
+        // why: egui_extras keeps the scroll bar's lane out of the columns' width, and the
+        // last column keeps a margin as wide as the first one's, so the fills reach the
+        // window's edge while the text keeps clear of it.
+        width: width - spacing.scroll.allocated_width() - theme.tokens.metrics.row.margin_col,
         gap: spacing.item_spacing.x,
         margin: theme.tokens.metrics.row.margin_col,
     }
@@ -110,6 +112,7 @@ pub(crate) fn pr_table(
                 view,
                 input,
                 frame: cx,
+                label_x: rows::TABLE_LABEL_X,
             };
             table_body(body, &rcx, &columns, &mut pending);
         });
@@ -163,33 +166,50 @@ fn resize_column(view: &mut DashboardView, (room, show_org): (Room, bool), resiz
 }
 
 /// A listed column's check in the column menu or the settings checklist; `add` draws it.
-/// Status and Title are locked on; a column the table has no room for reads muted and says so.
+/// Status and Title are locked on; a column the table has no room for says so on hover and,
+/// with `note`, after its name.
 pub(crate) fn column_choice(
     ui: &mut egui::Ui,
     theme: &UiTheme,
-    column: &ColumnSpec,
-    check: ColumnCheck,
+    (column, check, note): (&ColumnSpec, ColumnCheck, bool),
     add: impl FnOnce(&mut egui::Ui, Check, egui::WidgetText) -> egui::Response,
 ) -> egui::Response {
     let locked = column.visibility() == Visibility::Locked;
-    let name = egui::RichText::new(column.name);
+    let name = egui::WidgetText::from(column.name);
     let (state, label, hint) = match check {
         ColumnCheck::Off => (Check::Off, name, None),
         ColumnCheck::On => (Check::On, name, None),
+        // why: a muted label read as locked; the name stays plain, with a short note after it
+        // where there is room for one (`note`), and the reason on hover.
         ColumnCheck::Squeezed => (
             Check::On,
-            name.color(theme.colors.text_muted),
+            if note {
+                squeezed_label(theme, column.name)
+            } else {
+                name
+            },
             Some(copy::COLUMN_SQUEEZED),
         ),
     };
     let response = ui
-        .add_enabled_ui(!locked, |ui| add(ui, state, label.into()))
+        .add_enabled_ui(!locked, |ui| add(ui, state, label))
         .inner
         .on_disabled_hover_text(copy::COLUMN_LOCKED);
     match hint {
         Some(hint) => response.on_hover_text(hint),
         None => response,
     }
+}
+
+/// "Name  No room": the column's name, then a muted note that the window is too narrow for it.
+fn squeezed_label(theme: &UiTheme, name: &str) -> egui::WidgetText {
+    let mut job = egui::text::LayoutJob::default();
+    let c = &theme.colors;
+    let format = |font: &egui::FontId, color| egui::TextFormat::simple(font.clone(), color);
+    job.append(name, 0.0, format(&theme.fonts.body, c.text_primary));
+    let note = format!("  {}", copy::COLUMN_NO_ROOM);
+    job.append(&note, 0.0, format(&theme.fonts.small, c.text_muted));
+    job.into()
 }
 
 /// Columns at this frame's widths, and any pending scroll request (taken from the view).
@@ -255,8 +275,15 @@ fn pr_row(
         return;
     };
     let selected = mark_selected(row, rcx, pr);
-    for spec in columns {
-        row.col(|ui| cells::cell(ui, rcx, spec, pr, index));
+    let last = columns.len().saturating_sub(1);
+    for (i, spec) in columns.iter().enumerate() {
+        row.col(|ui| {
+            if i == last {
+                rows::last_cell(ui, rcx.theme, |ui| cells::cell(ui, rcx, spec, pr, index));
+            } else {
+                cells::cell(ui, rcx, spec, pr, index);
+            }
+        });
     }
     answer_row(&row.response(), rcx, (pr, selected), list, pending);
 }
