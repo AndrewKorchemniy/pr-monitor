@@ -26,6 +26,7 @@ use crate::{
 };
 
 mod gallery;
+mod status_bar;
 
 fn signed_out() -> AppState {
     let needs = AuthStateView::NeedsSignIn {
@@ -54,7 +55,7 @@ fn the_dashboard_lists_pull_requests_and_counts() {
 }
 
 #[test]
-fn clicking_a_count_chip_asks_for_that_status_filter() {
+fn clicking_a_status_count_asks_for_that_status_filter() {
     let mut h = harness(Fixture::new(Shown::Dashboard, state_with(sample_rows())));
     h.run();
     h.get_by_label("1 Active comments").click();
@@ -66,6 +67,23 @@ fn clicking_a_count_chip_asks_for_that_status_filter() {
             .any(|a| matches!(a, UiAction::SetStatus(StatusFilter::ActiveComments))),
         "{actions:?}"
     );
+}
+
+#[test]
+fn status_counts_report_which_filter_is_on() {
+    let mut fixture = Fixture::new(Shown::Dashboard, state_with(sample_rows()));
+    fixture.dash.view.set_status(StatusFilter::ActiveComments);
+    let mut h = harness(fixture);
+    h.run();
+    for (label, on) in [
+        ("2 Needs review", false),
+        ("1 Active comments", true),
+        ("1 Reviewed", false),
+    ] {
+        let toggled = h.get_by_label(label).accesskit_node().toggled();
+        let expected = if on { Toggled::True } else { Toggled::False };
+        assert_eq!(toggled, Some(expected), "{label}");
+    }
 }
 
 #[test]

@@ -74,7 +74,8 @@ pub struct LaunchSpec {
 }
 
 const DEFAULT_SIZE: [f32; 2] = [1280.0, 760.0];
-const MIN_SIZE: [f32; 2] = [720.0, 420.0];
+/// The smallest window, in points; the screens must stay usable at this size.
+pub(crate) const MIN_SIZE: [f32; 2] = [720.0, 420.0];
 
 pub fn native_options(spec: &LaunchSpec) -> eframe::NativeOptions {
     let mut viewport = egui::ViewportBuilder::default()

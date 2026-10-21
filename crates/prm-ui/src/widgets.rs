@@ -2,7 +2,6 @@
 
 pub(crate) mod banner;
 pub(crate) mod card;
-pub(crate) mod chip;
 pub(crate) mod controls;
 pub(crate) mod dialog;
 pub(crate) mod empty_state;

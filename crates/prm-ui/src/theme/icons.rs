@@ -42,7 +42,7 @@ pub(crate) enum Icon {
     Info,
     /// A filled dot (status-bar auth indicator).
     Dot,
-    /// The change bar mark.
+    /// Changed since last looked: a short rounded bar, like a changed row's edge.
     Bar,
 }
 
@@ -164,11 +164,9 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.circle_filled(at(0.0, -0.4), s.width * 0.6, color);
         }
         Icon::Bar => {
-            painter.rect_filled(
-                Rect::from_center_size(c, vec2(r * 0.35, r * 1.8)),
-                0.0,
-                color,
-            );
+            // why: wide and rounded enough that it never reads as a hairline divider.
+            let size = vec2(r * 0.6, r * 1.6);
+            painter.rect_filled(Rect::from_center_size(c, size), size.x / 2.0, color);
         }
     }
 }

@@ -258,11 +258,11 @@ pub(crate) const fn vote_word(vote: VoteKind) -> &'static str {
     }
 }
 
-pub(crate) fn status_chip(count: u32, status: PrStatus) -> String {
+pub(crate) fn status_count(count: u32, status: PrStatus) -> String {
     format!("{count} {}", status.label())
 }
 
-pub(crate) fn changed_chip(count: u32) -> String {
+pub(crate) fn changed_count(count: u32) -> String {
     format!("{count} Changed")
 }
 
