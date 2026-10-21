@@ -25,10 +25,10 @@ use prm_domain::{
     uri::AppUri,
 };
 use prm_platform::{
-    Acquired, ForwardOutcome, HandoffRequest, HandoffServer, InstanceKey, InstanceLock,
-    InstanceScope, PlatformAdapters, PlatformInit, RegistrationReport, RegistrationSpec,
-    SecretBackendPref, acquire_instance, adapters, console, ensure_shell_identity,
-    forward_to_primary, shared::registration::registration_scope,
+    Acquired, BuildKind, ForwardOutcome, HandoffRequest, HandoffServer, IdentityStatus,
+    InstanceKey, InstanceLock, InstanceScope, PlatformAdapters, PlatformInit, RegisterOverride,
+    RegistrationScope, RegistrationSpec, SecretBackendPref, acquire_instance, adapters, console,
+    ensure_shell_identity, forward_to_primary, is_same_root, registration_scope,
 };
 use prm_service::{ServiceHandle, SystemClock, channel_sink};
 
@@ -160,7 +160,7 @@ pub(crate) fn run() -> ExitCode {
             self_test::run()
         }
         StartupPlan::Unregister { purge } => match data_root(&args) {
-            Ok((root, scope, home)) => unregister::run(&root, scope, purge, home.as_deref()),
+            Ok((root, scope, _)) => unregister::run(&root, scope, purge),
             Err(error) => fatal(&error),
         },
         StartupPlan::Run => match data_root(&args) {
@@ -206,14 +206,30 @@ fn data_root(
         .home
         .clone()
         .or_else(|| env_home.clone().map(PathBuf::from));
-    let scope = if home.is_some() {
-        InstanceScope::Isolated
-    } else {
-        InstanceScope::Default
-    };
     let cwd = std::env::current_dir().unwrap_or_default();
-    let root = prm_config::resolve_root(args.home.clone(), env_home, dirs::data_local_dir(), &cwd)?;
+    let data_local = dirs::data_local_dir();
+    let default_root = data_local
+        .as_ref()
+        .map(|dir| dir.join(prm_domain::app::DATA_DIR_NAME));
+    let root = prm_config::resolve_root(args.home.clone(), env_home, data_local, &cwd)?;
+    let scope = root_scope(home.as_deref(), &root, default_root.as_deref());
     Ok((root, scope, home))
+}
+
+/// An override (`home`) that names the default folder, however spelled, is still the default
+/// instance, so it shares the default instance's single-instance names instead of running
+/// beside it on the same files.
+pub(crate) fn root_scope(
+    home: Option<&std::path::Path>,
+    root: &std::path::Path,
+    default_root: Option<&std::path::Path>,
+) -> InstanceScope {
+    let is_default = home.is_none() || default_root.is_some_and(|d| is_same_root(root, d));
+    if is_default {
+        InstanceScope::Default
+    } else {
+        InstanceScope::Isolated
+    }
 }
 
 /// The fallback child retries while its parent still holds the lock.
@@ -279,8 +295,17 @@ struct Base {
     paths: AppPaths,
     clock: Arc<dyn Clock>,
     log: logging::LogHandle,
-    registration: RegistrationReport,
+    toast_identity: IdentityStatus,
+    registration_scope: RegistrationScope,
     exe: PathBuf,
+}
+
+fn register_override() -> RegisterOverride {
+    if env_flag(ENV_REGISTER) {
+        RegisterOverride::Forced
+    } else {
+        RegisterOverride::Auto
+    }
 }
 
 fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
@@ -299,18 +324,19 @@ fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
     panic::prune_crash_logs(&paths.logs, CRASH_LOGS_KEPT);
     let exe =
         std::env::current_exe().unwrap_or_else(|_| PathBuf::from(prm_domain::app::APP_EXE_NAME));
-    let default_root = root.scope == InstanceScope::Default;
-    let registration = ensure_shell_identity(&RegistrationSpec {
+    let registration = registration_scope(root.scope, BuildKind::current(), register_override());
+    let toast_identity = ensure_shell_identity(&RegistrationSpec {
         exe: &exe,
         icon_png_path: &paths.icon_png,
         icon_png: assets::ICON_256_PNG,
-        scope: registration_scope(default_root, cfg!(debug_assertions), env_flag(ENV_REGISTER)),
+        scope: registration,
     });
     Ok(Base {
         paths,
         clock,
         log,
-        registration,
+        toast_identity,
+        registration_scope: registration,
         exe,
     })
 }
@@ -381,7 +407,8 @@ fn platform(root: &Root, base: &Base, key: &InstanceKey) -> PlatformAdapters {
         exe: &base.exe,
         scope: root.scope,
         instance_suffix: &key.suffix,
-        registration: &base.registration,
+        toast_identity: base.toast_identity,
+        registration_scope: base.registration_scope,
         secret_pref: SecretBackendPref::parse(std::env::var(ENV_SECRET_STORE).ok().as_deref()),
         home_override: root.home.as_deref(),
     })

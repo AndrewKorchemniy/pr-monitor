@@ -52,8 +52,7 @@ pub(crate) fn credman_targets(prefix: &str) -> Result<Vec<String>, PortError> {
 
 /// Deletes each credential by target name. Returns how many failed.
 pub(crate) fn delete_targets(targets: &[String]) -> Result<usize, PortError> {
-    let store = windows_native_keyring_store::Store::new()
-        .map_err(|e| PortError::new(prm_domain::ports::PortErrorKind::Failed, e.to_string()))?;
+    let store = windows_native_keyring_store::Store::new().map_err(crate::common::failed)?;
     let mut failures = 0;
     for target in targets {
         let modifiers = HashMap::from([("target", target.as_str())]);

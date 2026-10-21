@@ -89,3 +89,29 @@ fn should_relaunch_only_for_a_first_init_error_before_the_first_frame() {
         );
     }
 }
+
+/// `--home %LOCALAPPDATA%\PRMonitor\` used to run as an isolated instance beside the default
+/// one, both writing the same `state.json`.
+#[test]
+fn root_scope_treats_the_default_folder_as_default() {
+    let default = PathBuf::from("/data/PRMonitor");
+    let other = PathBuf::from("/data/prm-test");
+    let spelled = PathBuf::from("/data/./PRMonitor/");
+    let cases = [
+        (None, &default, InstanceScope::Default),
+        (Some(&spelled), &spelled, InstanceScope::Default),
+        (Some(&other), &other, InstanceScope::Isolated),
+    ];
+    for (home, root, expected) in cases {
+        assert_eq!(
+            root_scope(home.map(PathBuf::as_path), root, Some(&default)),
+            expected,
+            "{home:?} {root:?}"
+        );
+    }
+    assert_eq!(
+        root_scope(Some(&other), &other, None),
+        InstanceScope::Isolated,
+        "no default folder to compare with"
+    );
+}

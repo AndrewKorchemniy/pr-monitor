@@ -2,6 +2,7 @@
 
 use prm_domain::ports::PortError;
 
+/// How hard to look for a PAC/WPAD proxy.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ProxyMode {
     /// Use the PAC/WPAD answer when the system has one; otherwise leave it to reqwest.
@@ -10,6 +11,7 @@ pub enum ProxyMode {
     PacOnly,
 }
 
+/// How to reach one target URL, as the system decides it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProxyDecision {
     Direct,

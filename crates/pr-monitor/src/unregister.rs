@@ -56,20 +56,23 @@ fn take_lock(root: &Path, scope: InstanceScope) -> Option<(prm_platform::Instanc
     }
 }
 
-pub(crate) fn run(root: &Path, scope: InstanceScope, purge: bool, home: Option<&Path>) -> ExitCode {
+pub(crate) fn run(root: &Path, scope: InstanceScope, purge: bool) -> ExitCode {
     let mut out = prm_platform::console::console_out();
     let Some((lock, suffix)) = take_lock(root, scope) else {
         let _ = writeln!(out, "PR Monitor is still running. Close it and try again.");
         return ExitCode::FAILURE;
     };
     let orgs = org_ids(root);
+    // why: the purge guard needs the user's real home folder, not the `--home` override the
+    // data root came from (comparing a root with itself let `--home .` delete the profile).
+    let user_home = dirs::home_dir();
     let report = prm_platform::unregister(&UnregisterSpec {
         root,
         scope,
         instance_suffix: &suffix,
         purge,
         org_ids: &orgs,
-        home,
+        user_home: user_home.as_deref(),
     });
     drop(lock);
     let mut ok = true;

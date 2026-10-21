@@ -1,5 +1,6 @@
 //! Local versus remote desktop sessions, which pick the renderer.
 
+/// Where the desktop is shown; remote sessions get the software-friendly renderer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SessionKind {
     Local,
@@ -7,6 +8,7 @@ pub enum SessionKind {
     OtherRemote,
 }
 
+/// What kind of session this process runs in, re-probed on each `DesktopShell::session`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SessionInfo {
     pub kind: SessionKind,
@@ -22,7 +24,7 @@ impl SessionInfo {
 
 /// `sm_remote` is `SM_REMOTESESSION`; `glass_mismatch` is the documented RemoteFX check
 /// (`GlassSessionId` differs from ours). `SESSIONNAME` tells RDP from other remote sessions.
-pub fn classify_session(
+pub(crate) fn classify_session(
     sm_remote: bool,
     glass_mismatch: bool,
     session_name: Option<&str>,

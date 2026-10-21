@@ -25,6 +25,12 @@ impl SecretKey {
         Self(format!("{org}/entra-rt"))
     }
 
+    /// Every slot an org can have. Uninstall deletes these where the store cannot be listed,
+    /// so a new per-org kind must be added here.
+    pub fn all_for(org: &OrgId) -> [Self; 2] {
+        [Self::pat(org), Self::entra_refresh(org)]
+    }
+
     /// The `index`-th chunk of a value too large for one slot.
     pub fn part(&self, index: usize) -> Self {
         Self(format!("{}#{index}", self.0))
@@ -60,3 +66,6 @@ pub trait SecretStore: Send + Sync + 'static {
     /// Succeeds when the key is absent.
     fn delete(&self, key: &SecretKey) -> Result<(), SecretStoreError>;
 }
+
+#[cfg(test)]
+mod tests;

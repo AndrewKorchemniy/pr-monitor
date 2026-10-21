@@ -1,6 +1,6 @@
 //! Shell identity: the process AUMID, the toast identity key (name and icon in Action Center)
 //! and the `prmonitor:` URL protocol. Values are written only when they differ, so a moved
-//! portable exe heals itself without churn.
+//! portable exe heals itself without churn. Each failure is logged where it happens.
 
 #![allow(
     unsafe_code,
@@ -14,7 +14,7 @@ use windows::{Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID, core::H
 use windows_registry::{CURRENT_USER, Key};
 
 use crate::{
-    identity::{IdentityStatus, RegistrationReport, RegistrationSpec},
+    identity::{IdentityStatus, RegistrationSpec},
     shared::{registration::RegistrationScope, run_command::protocol_command},
 };
 
@@ -26,91 +26,85 @@ fn protocol_key() -> String {
     format!(r"Software\Classes\{URI_SCHEME}")
 }
 
-/// Writes `value` unless it is already there; `true` when it changed.
-fn upsert(key: &Key, name: &str, value: &str) -> windows_registry::Result<bool> {
+/// Writes `value` unless it is already there.
+fn upsert(key: &Key, name: &str, value: &str) -> windows_registry::Result<()> {
     match key.get_string(name) {
-        Ok(current) if current == value => Ok(false),
-        _ => key.set_string(name, value).map(|()| true),
+        Ok(current) if current == value => Ok(()),
+        _ => key.set_string(name, value),
     }
 }
 
-pub(crate) fn ensure(spec: &RegistrationSpec<'_>) -> RegistrationReport {
-    let mut report = RegistrationReport::default();
+fn log_failure(step: &str, error: &dyn std::fmt::Display) {
+    tracing::warn!(step, error = %error, "shell registration failed");
+}
+
+/// Returns the toast identity's status (the only part a caller acts on).
+pub(crate) fn ensure(spec: &RegistrationSpec<'_>) -> IdentityStatus {
     let aumid = HSTRING::from(AUMID);
     // SAFETY: `aumid` is NUL-terminated and outlives the call.
-    report.process_aumid_set = unsafe { SetCurrentProcessExplicitAppUserModelID(&aumid) }.is_ok();
-    report.icon_written = write_icon(spec, &mut report.errors);
-    report.toast_identity = toast_identity(spec, &mut report.errors);
-    report.protocol = protocol(spec, &mut report.errors);
-    report
+    if let Err(error) = unsafe { SetCurrentProcessExplicitAppUserModelID(&aumid) } {
+        log_failure("process AUMID", &error.message());
+    }
+    write_icon(spec);
+    let toast = toast_identity(spec);
+    protocol(spec);
+    toast
 }
 
-fn write_icon(spec: &RegistrationSpec<'_>, errors: &mut Vec<String>) -> bool {
+fn write_icon(spec: &RegistrationSpec<'_>) {
     if fs::read(spec.icon_png_path).is_ok_and(|current| current == spec.icon_png) {
-        return false;
+        return;
     }
-    match prm_config::store::atomic_write(spec.icon_png_path, spec.icon_png) {
-        Ok(()) => true,
-        Err(error) => {
-            errors.push(format!("icon: {error}"));
-            false
-        }
+    if let Err(error) = prm_config::store::atomic_write(spec.icon_png_path, spec.icon_png) {
+        log_failure("icon", &error);
     }
 }
 
-fn status(
-    result: windows_registry::Result<bool>,
-    what: &str,
-    errors: &mut Vec<String>,
-) -> IdentityStatus {
+fn status(result: windows_registry::Result<()>, step: &str) -> IdentityStatus {
     match result {
-        Ok(changed) => IdentityStatus::Registered { changed },
+        Ok(()) => IdentityStatus::Registered,
         Err(error) => {
-            errors.push(format!("{what}: {}", error.message()));
+            log_failure(step, &error.message());
             IdentityStatus::Failed
         }
     }
 }
 
-fn toast_identity(spec: &RegistrationSpec<'_>, errors: &mut Vec<String>) -> IdentityStatus {
+fn toast_identity(spec: &RegistrationSpec<'_>) -> IdentityStatus {
     let path = aumid_key();
     if spec.scope == RegistrationScope::ToastOnlyIfMissing && CURRENT_USER.open(&path).is_ok() {
         return IdentityStatus::Skipped;
     }
     let icon = spec.icon_png_path.to_string_lossy();
     let written = CURRENT_USER.create(&path).and_then(|key| {
-        let name = upsert(&key, "DisplayName", APP_DISPLAY_NAME)?;
-        let icon = upsert(&key, "IconUri", &icon)?;
-        Ok(name || icon)
+        upsert(&key, "DisplayName", APP_DISPLAY_NAME)?;
+        upsert(&key, "IconUri", &icon)
     });
-    status(written, "toast identity", errors)
+    status(written, "toast identity")
 }
 
-fn protocol(spec: &RegistrationSpec<'_>, errors: &mut Vec<String>) -> IdentityStatus {
+fn protocol(spec: &RegistrationSpec<'_>) {
     if spec.scope != RegistrationScope::Full {
-        return IdentityStatus::Skipped;
+        return;
     }
     let command = match protocol_command(spec.exe) {
         Ok(command) => command,
-        Err(error) => {
-            errors.push(format!("protocol: {}", error.message));
-            return IdentityStatus::Failed;
-        }
+        Err(error) => return log_failure("protocol", &error.message),
     };
     let icon = format!("\"{}\",0", spec.exe.display());
-    let root = protocol_key();
-    let written = CURRENT_USER.create(&root).and_then(|key| {
-        let mut changed = upsert(&key, "", PROTOCOL_DESCRIPTION)?;
-        changed |= upsert(&key, "URL Protocol", "")?;
-        changed |= upsert(&key.create("DefaultIcon")?, "", &icon)?;
-        changed |= upsert(&key.create(r"shell\open\command")?, "", &command)?;
-        Ok(changed)
+    let written = CURRENT_USER.create(protocol_key()).and_then(|key| {
+        upsert(&key, "", PROTOCOL_DESCRIPTION)?;
+        upsert(&key, "URL Protocol", "")?;
+        upsert(&key.create("DefaultIcon")?, "", &icon)?;
+        upsert(&key.create(r"shell\open\command")?, "", &command)
     });
-    status(written, "protocol", errors)
+    if let Err(error) = written {
+        log_failure("protocol", &error.message());
+    }
 }
 
 /// Deletes a key tree under HKCU; a missing key counts as removed.
-pub(crate) fn remove_tree(path: &str) -> Result<(), String> {
+fn remove_tree(path: &str) -> Result<(), String> {
     match CURRENT_USER.remove_tree(path) {
         Ok(()) => Ok(()),
         Err(error) if super::is_not_found(&error) => Ok(()),

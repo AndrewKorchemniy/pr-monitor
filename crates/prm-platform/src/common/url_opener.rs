@@ -7,7 +7,7 @@ use prm_domain::{
 
 /// Blocking (spawns the browser); the service calls it on the blocking pool.
 #[derive(Copy, Clone, Debug, Default)]
-pub struct BrowserOpener;
+pub(crate) struct BrowserOpener;
 
 impl UrlOpener for BrowserOpener {
     fn open(&self, url: &url::Url) -> Result<(), PortError> {
@@ -17,7 +17,7 @@ impl UrlOpener for BrowserOpener {
         let mut options = webbrowser::BrowserOptions::new();
         options.with_suppress_output(true);
         webbrowser::open_browser_with_options(webbrowser::Browser::Default, url.as_str(), &options)
-            .map_err(|e| PortError::new(PortErrorKind::Failed, e.to_string()))
+            .map_err(super::failed)
     }
 }
 

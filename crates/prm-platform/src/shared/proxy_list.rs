@@ -3,7 +3,7 @@
 /// Entries are separated by `;` or whitespace, each `[scheme=]host[:port]` or
 /// `[scheme://]host[:port]`. Prefers the `https=` entry, then the first unprefixed one, then
 /// `http=`. `DIRECT` or nothing usable is `None`. A missing scheme means `http://`.
-pub fn parse_proxy_list(list: &str) -> Option<url::Url> {
+pub(crate) fn parse_proxy_list(list: &str) -> Option<url::Url> {
     let entries: Vec<(Option<&str>, &str)> = list
         .split(|c: char| c == ';' || c.is_whitespace())
         .filter(|e| !e.is_empty())

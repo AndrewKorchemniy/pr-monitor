@@ -1,14 +1,10 @@
 //! Desktop integration on macOS and Linux (no title-bar theming or cloaking).
 
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
-
-use prm_domain::ports::{PortError, PortErrorKind};
+use prm_domain::ports::PortError;
 use raw_window_handle::HasWindowHandle;
 
 use crate::{
+    common::unsupported,
     shared::{
         colors::TitleBarColors,
         session_kind::{SessionInfo, SessionKind},
@@ -17,21 +13,15 @@ use crate::{
 };
 
 pub(crate) struct UnixShell {
-    root: PathBuf,
     os: String,
 }
 
 impl UnixShell {
-    pub(crate) fn new(root: PathBuf) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            root,
             os: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
         }
     }
-}
-
-fn unsupported() -> PortError {
-    PortError::new(PortErrorKind::Unsupported, "not supported on this platform")
 }
 
 impl DesktopShell for UnixShell {
@@ -58,36 +48,6 @@ impl DesktopShell for UnixShell {
             },
             id: None,
         }
-    }
-
-    fn taskbar_light_theme(&self) -> Option<bool> {
-        None
-    }
-
-    fn reveal_path(&self, path: &Path) -> Result<(), PortError> {
-        let denied = || PortError::new(PortErrorKind::Denied, "outside the data folder");
-        let target = path.canonicalize().map_err(|_| denied())?;
-        let root = self.root.canonicalize().map_err(|_| denied())?;
-        if !target.starts_with(&root) {
-            return Err(denied());
-        }
-        let mut command = if cfg!(target_os = "macos") {
-            let mut open = Command::new("open");
-            open.arg("-R").arg(&target);
-            open
-        } else {
-            let mut xdg = Command::new("xdg-open");
-            xdg.arg(if target.is_dir() {
-                target.as_path()
-            } else {
-                target.parent().unwrap_or(&root)
-            });
-            xdg
-        };
-        command
-            .spawn()
-            .map(drop)
-            .map_err(|e| PortError::new(PortErrorKind::Failed, e.to_string()))
     }
 
     fn os_description(&self) -> &str {
