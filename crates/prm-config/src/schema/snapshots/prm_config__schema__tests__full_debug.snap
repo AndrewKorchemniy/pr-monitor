@@ -34,7 +34,6 @@ Config {
         theme: "system",
         theme_dark: "graphite",
         theme_light: "vellum",
-        density: Compact,
         font_scale: 1.0,
         animations: Auto,
         renderer: Auto,

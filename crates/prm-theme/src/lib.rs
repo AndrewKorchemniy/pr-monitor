@@ -23,7 +23,7 @@ pub use color::Rgba8;
 pub use file::{Appearance, ThemeFile};
 pub use issue::{IssueLevel, ThemeId, ThemeIssue};
 pub use mark::{MarkColors, render_mark};
-pub use metrics::{Density, Metrics, TypeRole};
+pub use metrics::{Metrics, TypeRole};
 pub use palette::Palette;
 pub use registry::{ThemeRegistry, ThemeSelection, ThemeSet, resolve};
 pub use scan::ThemeDirScanner;

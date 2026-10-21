@@ -7,7 +7,6 @@ use crate::{
     builtin::builtin_sources,
     file::{ThemeFile, parse_theme},
     issue::{IssueLevel, ThemeId, ThemeIssue},
-    metrics::Density,
     scan::load_dir,
     tokens::{ThemeSource, Tokens},
 };
@@ -79,10 +78,9 @@ impl ThemeRegistry {
     }
 
     /// Built tokens plus every issue (parse and validation).
-    pub fn tokens(&self, id: &str, density: Density) -> Option<(Tokens, Vec<ThemeIssue>)> {
+    pub fn tokens(&self, id: &str) -> Option<(Tokens, Vec<ThemeIssue>)> {
         let entry = self.get(id)?;
-        let (tokens, mut issues) =
-            Tokens::build(&entry.file, &entry.src, entry.source.clone(), density);
+        let (tokens, mut issues) = Tokens::build(&entry.file, &entry.src, entry.source.clone());
         issues.splice(0..0, entry.issues.iter().cloned());
         Some((tokens, issues))
     }
@@ -97,7 +95,6 @@ pub struct ThemeSelection {
     pub dark: String,
     /// Used for a light OS appearance when following the system.
     pub light: String,
-    pub density: Density,
 }
 
 /// The tokens to use now, for either OS appearance.
@@ -114,13 +111,7 @@ pub struct ThemeSet {
 pub fn resolve(registry: &ThemeRegistry, selection: &ThemeSelection) -> ThemeSet {
     let mut issues = Vec::new();
     let mut pick = |id: &str, fallback: &str| -> Arc<Tokens> {
-        Arc::new(load_or_fallback(
-            registry,
-            id,
-            fallback,
-            selection.density,
-            &mut issues,
-        ))
+        Arc::new(load_or_fallback(registry, id, fallback, &mut issues))
     };
     if selection.theme == SYSTEM {
         let dark = pick(&selection.dark, DEFAULT_DARK);
@@ -145,10 +136,9 @@ fn load_or_fallback(
     registry: &ThemeRegistry,
     id: &str,
     fallback: &str,
-    density: Density,
     issues: &mut Vec<ThemeIssue>,
 ) -> Tokens {
-    if let Some((tokens, found)) = registry.tokens(id, density) {
+    if let Some((tokens, found)) = registry.tokens(id) {
         issues.extend(found);
         return tokens;
     }
@@ -157,9 +147,7 @@ fn load_or_fallback(
         IssueLevel::Warning,
         format!("theme {id:?} not found; using {fallback:?}"),
     ));
-    let (tokens, found) = registry
-        .tokens(fallback, density)
-        .unwrap_or_else(|| last_resort(density));
+    let (tokens, found) = registry.tokens(fallback).unwrap_or_else(last_resort);
     issues.extend(found);
     tokens
 }
@@ -169,13 +157,13 @@ fn load_or_fallback(
     clippy::expect_used,
     reason = "built-ins are compiled in; builtin_themes_parse_without_issues covers both expects"
 )]
-fn last_resort(density: Density) -> (Tokens, Vec<ThemeIssue>) {
+fn last_resort() -> (Tokens, Vec<ThemeIssue>) {
     let (stem, src) = builtin_sources()
         .first()
         .copied()
         .expect("at least one built-in theme");
     let (file, issues) = parse_theme(src, stem).expect("built-in themes parse");
-    let (tokens, mut built) = Tokens::build(&file, src, ThemeSource::Builtin, density);
+    let (tokens, mut built) = Tokens::build(&file, src, ThemeSource::Builtin);
     built.extend(issues);
     (tokens, built)
 }

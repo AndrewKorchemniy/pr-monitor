@@ -13,7 +13,7 @@ fn graphite() -> (ThemeFile, &'static str) {
 fn override_unknown_key_warns() {
     let (mut file, src) = graphite();
     file.overrides.insert("row.nope".into(), Rgba8::WHITE);
-    let (_, issues) = Tokens::build(&file, src, ThemeSource::Builtin, Density::Compact);
+    let (_, issues) = Tokens::build(&file, src, ThemeSource::Builtin);
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].level, IssueLevel::Warning);
     assert!(issues[0].message.contains("row.nope"));
@@ -26,7 +26,7 @@ fn override_applies_then_validates() {
     file.overrides.insert("row.selected".into(), selected);
     file.overrides
         .insert("text.primary".into(), Rgba8::rgb(0x30, 0x30, 0x30));
-    let (tokens, issues) = Tokens::build(&file, src, ThemeSource::Builtin, Density::Compact);
+    let (tokens, issues) = Tokens::build(&file, src, ThemeSource::Builtin);
     assert_eq!(tokens.palette.row_selected, selected);
     assert!(
         issues
@@ -38,10 +38,10 @@ fn override_applies_then_validates() {
 #[test]
 fn build_carries_identity_and_metrics() {
     let (file, src) = graphite();
-    let (tokens, issues) = Tokens::build(&file, src, ThemeSource::Builtin, Density::Comfortable);
+    let (tokens, issues) = Tokens::build(&file, src, ThemeSource::Builtin);
     assert_eq!(issues, Vec::new());
     assert_eq!(tokens.id.as_str(), "graphite");
     assert_eq!(tokens.appearance, Appearance::Dark);
-    assert_eq!(tokens.metrics.density, Density::Comfortable);
+    assert_eq!(tokens.metrics, Metrics::new(&file.metrics));
     assert_eq!(tokens.file_toml.as_ref(), src);
 }

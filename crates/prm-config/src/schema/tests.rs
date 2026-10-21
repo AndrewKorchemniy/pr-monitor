@@ -88,15 +88,29 @@ fn oversized_numbers_saturate_instead_of_failing() {
 
 #[test]
 fn unknown_fields_ignored() {
-    let config = parse("future_key = 1\n[ui]\nunknown = true\ndensity = \"comfortable\"\n");
-    assert_eq!(config.ui.density, Density::Comfortable);
+    let config = parse("future_key = 1\n[ui]\nunknown = true\nfont_scale = 1.25\n");
+    assert!((config.ui.font_scale - 1.25).abs() < f32::EPSILON);
+}
+
+/// `ui.density` was removed; files written before then still load, keep their other prefs and
+/// drop the key on the next save.
+#[test]
+fn retired_density_key_still_loads() {
+    for value in ["compact", "comfortable", "spacious"] {
+        let text = format!("[ui]\ndensity = \"{value}\"\ntheme = \"cyanotype\"\n");
+        let (config, issues) = normalize(parse(&text));
+        assert_eq!(issues, Vec::new(), "{value}");
+        assert_eq!(config.ui.theme, "cyanotype", "{value}");
+        let saved = toml::to_string_pretty(&config).unwrap();
+        assert!(!saved.contains("density"), "{saved}");
+    }
 }
 
 #[test]
 fn unknown_enum_value_falls_back() {
-    let config = parse("[ui]\ndensity = \"spacious\"\nrenderer = \"vulkan\"\n");
-    assert_eq!(config.ui.density, Density::Compact);
+    let config = parse("[ui]\nrenderer = \"vulkan\"\nshow_org_column = \"sometimes\"\n");
     assert_eq!(config.ui.renderer, RendererPref::Auto);
+    assert_eq!(config.ui.show_org_column, OrgColumn::Auto);
 }
 
 #[test]

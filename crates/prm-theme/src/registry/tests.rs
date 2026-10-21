@@ -27,7 +27,6 @@ fn selection(theme: &str) -> ThemeSelection {
         theme: theme.into(),
         dark: DEFAULT_DARK.into(),
         light: DEFAULT_LIGHT.into(),
-        density: Density::Compact,
     }
 }
 
@@ -99,7 +98,7 @@ fn resolve_unknown_falls_back_with_warning() {
 
 #[test]
 fn last_resort_builds_first_builtin() {
-    let (tokens, issues) = last_resort(Density::Compact);
+    let (tokens, issues) = last_resort();
     assert_eq!(tokens.id.as_str(), builtin_sources()[0].0);
     assert_eq!(issues, Vec::new());
 }

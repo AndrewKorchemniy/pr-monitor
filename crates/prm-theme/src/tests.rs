@@ -1,6 +1,6 @@
 //! The built-in themes as a whole: they parse, match their file names, and pass every rule.
 
-use crate::{Density, ThemeRegistry, builtin::builtin_sources, file::parse_theme, self_check};
+use crate::{ThemeRegistry, builtin::builtin_sources, file::parse_theme, self_check};
 
 #[test]
 fn builtin_themes_parse_without_issues() {
@@ -11,13 +11,11 @@ fn builtin_themes_parse_without_issues() {
 }
 
 #[test]
-fn builtin_themes_meet_contrast_rules_both_densities() {
+fn builtin_themes_meet_contrast_rules() {
     let registry = ThemeRegistry::builtin();
     for (id, _) in registry.list() {
-        for density in [Density::Compact, Density::Comfortable] {
-            let (_, issues) = registry.tokens(id.as_str(), density).unwrap();
-            assert_eq!(issues, Vec::new(), "{id} {density:?}");
-        }
+        let (_, issues) = registry.tokens(id.as_str()).unwrap();
+        assert_eq!(issues, Vec::new(), "{id}");
     }
 }
 
