@@ -23,7 +23,7 @@ use crate::{
     },
     theme::{ThemeRuntime, fonts},
     ui_state::PeekLayout,
-    view::{DashboardView, changes::ChangeLog},
+    view::{DashboardView, changes::ChangeLog, columns::Choices},
     widgets::palette_view::{PaletteOutcome, palette_view},
 };
 
@@ -104,7 +104,7 @@ impl Fixture {
             Shown::Settings => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let env = SettingsEnv {
-                    hidden_columns: &self.dash.view.hidden_columns,
+                    columns: self.dash.view.column_choices(),
                     ..env()
                 };
                 settings_modal(&ctx, &mut cx, &mut self.settings, &env);
@@ -152,7 +152,10 @@ pub(crate) fn env() -> SettingsEnv<'static> {
         },
         licenses: "Third-party license text.",
         renderer_line: "Using OpenGL on Test GPU",
-        hidden_columns: &[],
+        columns: Choices {
+            hidden: &[],
+            squeezed: &[],
+        },
     }
 }
 

@@ -6,7 +6,7 @@ mod header;
 
 use eframe::egui::{self, Align, Layout, Rect, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBody, TableBuilder, TableRow};
-use prm_domain::view::{GroupBy, PrRow, age::AgeCache};
+use prm_domain::view::{PrRow, age::AgeCache};
 
 use crate::{
     actions::UiAction,
@@ -20,14 +20,15 @@ use crate::{
     },
     view::{
         DashboardView, ScrollIntent,
-        columns::{ColumnId, ColumnSpec, Width, columns_hash, visible_columns},
+        columns::{
+            self, ColumnCheck, ColumnLayout, ColumnSpec, Room, Visibility, Width, columns_hash,
+            visible_columns,
+        },
         display::DisplayRow,
     },
+    widgets::controls::Check,
 };
 use header::{HeaderCx, header_row};
-
-/// The Status column's width when grouped by status, where only the glyph shows.
-const STATUS_GLYPH: f32 = 24.0;
 
 pub(crate) struct TableInputs<'a> {
     pub ages: &'a AgeCache,
@@ -66,10 +67,7 @@ pub(crate) fn pr_table(
 ) -> TableOut {
     let theme = cx.theme.clone();
     let metrics = &theme.tokens.metrics.row;
-    let mut columns = visible_columns(ui.available_width(), input.show_org, &view.hidden_columns);
-    if view.group == GroupBy::Status {
-        compact_status(&mut columns);
-    }
+    let columns = table_columns(ui, &theme, view, input.show_org);
     let span = ui.available_rect_before_wrap().x_range();
     let builder = table_builder(ui, &theme, &columns, view);
     let mut pending = Vec::new();
@@ -116,31 +114,60 @@ pub(crate) fn pr_table(
     }
 }
 
-/// Grouped by status, the group header already names it: the status cell shows only its glyph.
-fn compact_status(columns: &mut [ColumnSpec]) {
-    for spec in columns.iter_mut() {
-        match spec.id {
-            ColumnId::Status => {
-                spec.header = "";
-                spec.width = Width::Fixed(STATUS_GLYPH);
-                spec.min = STATUS_GLYPH;
-                spec.sort = None;
-            }
-            ColumnId::Number => {
-                spec.key = "number_left";
-                spec.align_right = false;
-                spec.width = Width::Initial(56.0);
-            }
-            ColumnId::Margin
-            | ColumnId::Flags
-            | ColumnId::Title
-            | ColumnId::Repo
-            | ColumnId::Author
-            | ColumnId::Reviews
-            | ColumnId::Comments
-            | ColumnId::Age
-            | ColumnId::Org => {}
-        }
+/// This frame's columns for the room the table has, noting the chosen ones it had to leave out.
+fn table_columns(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    view: &mut DashboardView,
+    show_org: bool,
+) -> Vec<ColumnSpec> {
+    let spacing = ui.spacing();
+    let room = Room {
+        // why: egui_extras keeps the scroll bar's lane out of the columns' width.
+        width: ui.available_width() - spacing.scroll.allocated_width(),
+        gap: spacing.item_spacing.x,
+        margin: theme.tokens.metrics.row.margin_col,
+    };
+    let layout = ColumnLayout {
+        group: view.group,
+        show_org,
+        hidden: &view.hidden_columns,
+        widths: &view.widths,
+    };
+    let visible = visible_columns(room, &layout);
+    view.squeezed.clear();
+    view.squeezed
+        .extend(columns::squeezed(&visible, &view.hidden_columns));
+    visible
+}
+
+/// A listed column's check in the column menu or the settings checklist; `add` draws it.
+/// Status and Title are locked on; a column the table has no room for reads muted and says so.
+pub(crate) fn column_choice(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    column: &ColumnSpec,
+    check: ColumnCheck,
+    add: impl FnOnce(&mut egui::Ui, Check, egui::WidgetText) -> egui::Response,
+) -> egui::Response {
+    let locked = column.visibility() == Visibility::Locked;
+    let name = egui::RichText::new(column.name);
+    let (state, label, hint) = match check {
+        ColumnCheck::Off => (Check::Off, name, None),
+        ColumnCheck::On => (Check::On, name, None),
+        ColumnCheck::Squeezed => (
+            Check::On,
+            name.color(theme.colors.text_muted),
+            Some(copy::COLUMN_SQUEEZED),
+        ),
+    };
+    let response = ui
+        .add_enabled_ui(!locked, |ui| add(ui, state, label.into()))
+        .inner
+        .on_disabled_hover_text(copy::COLUMN_LOCKED);
+    match hint {
+        Some(hint) => response.on_hover_text(hint),
+        None => response,
     }
 }
 
@@ -152,8 +179,13 @@ fn table_builder<'a>(
     view: &mut DashboardView,
 ) -> TableBuilder<'a> {
     let margin = theme.tokens.metrics.row.margin_col;
+    let salt = (columns_hash(columns), view.table_epoch);
+    let renamed = view
+        .table_salt
+        .replace(salt)
+        .is_some_and(|last| last != salt);
     let mut builder = TableBuilder::new(ui)
-        .id_salt(("pr_table", columns_hash(columns), view.table_epoch))
+        .id_salt(("pr_table", salt.0, salt.1))
         .striped(theme.tokens.metrics.stripes)
         .sense(Sense::click())
         .auto_shrink(false)
@@ -165,6 +197,9 @@ fn table_builder<'a>(
     match std::mem::take(&mut view.scroll) {
         ScrollIntent::ToRow(row, align) => builder.scroll_to_row(row, align),
         ScrollIntent::Offset(offset) => builder.vertical_scroll_offset(offset),
+        // why: a new id is a new scroll area, which starts at the top; showing, hiding or
+        // squeezing a column must not move the rows.
+        ScrollIntent::None if renamed => builder.vertical_scroll_offset(view.offset_y),
         ScrollIntent::None => builder,
     }
 }

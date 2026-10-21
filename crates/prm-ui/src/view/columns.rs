@@ -1,7 +1,9 @@
 //! Table columns: ids, persisted keys, default widths, sorting, who may hide each one, and which
-//! show at a width.
+//! the table has room for.
 
-use prm_domain::view::SortKey;
+use std::collections::BTreeMap;
+
+use prm_domain::view::{GroupBy, SortKey};
 
 use crate::copy;
 
@@ -61,23 +63,6 @@ impl ColumnId {
             Self::Org => Visibility::BySetting,
         }
     }
-
-    /// Whether the column fits the window: narrow windows drop the widest optional columns.
-    fn fits(self, width: f32, show_org: bool) -> bool {
-        match self {
-            Self::Org => show_org && width >= NARROW,
-            Self::Reviews => width >= NARROW,
-            Self::Repo => width >= NARROWER,
-            Self::Margin
-            | Self::Status
-            | Self::Number
-            | Self::Flags
-            | Self::Title
-            | Self::Author
-            | Self::Comments
-            | Self::Age => true,
-        }
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -108,13 +93,24 @@ pub(crate) struct ColumnSpec {
 }
 
 impl ColumnSpec {
-    /// Only `Initial` columns get a drag strip on their right divider.
+    /// Only `Initial` columns get a drag strip, on their divider away from Title.
     pub(crate) const fn is_resizable(&self) -> bool {
         matches!(self.width, Width::Initial(_))
     }
 
     pub(crate) const fn visibility(&self) -> Visibility {
         self.id.visibility()
+    }
+
+    /// The least room the column takes: its dragged or default width, Title its minimum, and
+    /// the margin `margin` (points).
+    fn narrowest(&self, margin: f32, saved: Option<f32>) -> f32 {
+        match self.width {
+            Width::Exact => margin,
+            Width::Fixed(width) => width,
+            Width::Remainder => self.min,
+            Width::Initial(width) => saved.unwrap_or(width).max(self.min),
+        }
     }
 }
 
@@ -242,10 +238,64 @@ pub(crate) const COLUMNS: [ColumnSpec; 11] = [
     ),
 ];
 
-/// Below this width Reviews and Organization hide.
-pub(crate) const NARROW: f32 = 900.0;
-/// Below this width Repository hides too.
-pub(crate) const NARROWER: f32 = 760.0;
+/// What a table too narrow for its columns drops, first to last, until the rest fit. Status,
+/// Number, Flags, Title and Age always stay.
+const SQUEEZE_ORDER: [ColumnId; 5] = [
+    ColumnId::Org,
+    ColumnId::Reviews,
+    ColumnId::Repo,
+    ColumnId::Author,
+    ColumnId::Comments,
+];
+
+/// The Status column's width when grouped by status, where only the glyph shows (points).
+const STATUS_GLYPH: f32 = 24.0;
+/// The PR number's width when it leads the compact layout (points).
+const NUMBER_COMPACT: f32 = 56.0;
+
+/// The space the table lays its columns out in (points).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct Room {
+    /// What the columns share: the table's width less the scroll bar's lane.
+    pub width: f32,
+    /// The space between two columns.
+    pub gap: f32,
+    /// The change-bar margin's width.
+    pub margin: f32,
+}
+
+/// The user's choices that shape the table's columns.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ColumnLayout<'a> {
+    /// Grouped by status, the Status column shows only its glyph (`compact_status`).
+    pub group: GroupBy,
+    /// Settings › General › Organization column.
+    pub show_org: bool,
+    /// Column keys the user hid.
+    pub hidden: &'a [String],
+    /// Widths the user dragged, by key (points).
+    pub widths: &'a BTreeMap<String, f32>,
+}
+
+impl ColumnLayout<'_> {
+    fn wants(&self, column: &ColumnSpec) -> bool {
+        match column.visibility() {
+            Visibility::BySetting => self.show_org,
+            Visibility::Unlisted | Visibility::Locked | Visibility::Optional => {
+                chosen(column, self.hidden)
+            }
+        }
+    }
+
+    /// The room `columns` need side by side, Title at its minimum (points).
+    fn needed(&self, columns: &[ColumnSpec], room: Room) -> f32 {
+        let spaced: f32 = columns
+            .iter()
+            .map(|c| c.narrowest(room.margin, self.widths.get(c.key).copied()) + room.gap)
+            .sum();
+        spaced - room.gap
+    }
+}
 
 /// The column with this id, from the table above.
 pub(crate) fn column(id: ColumnId) -> Option<ColumnSpec> {
@@ -266,14 +316,91 @@ pub(crate) fn chosen(column: &ColumnSpec, hidden: &[String]) -> bool {
     }
 }
 
-/// Columns in order for the available width: the user's choice (`hidden` keys), then what
-/// fits.
-pub(crate) fn visible_columns(width: f32, show_org: bool, hidden: &[String]) -> Vec<ColumnSpec> {
-    COLUMNS
-        .into_iter()
-        .filter(|c| chosen(c, hidden))
-        .filter(|c| c.id.fits(width, show_org))
-        .collect()
+/// Columns in order: the user's choice, then, while they need more room than there is, the
+/// next column in `SQUEEZE_ORDER` drops out. So hiding a column leaves room for others, and
+/// the table never runs past its right edge.
+pub(crate) fn visible_columns(room: Room, layout: &ColumnLayout<'_>) -> Vec<ColumnSpec> {
+    let mut columns: Vec<ColumnSpec> = COLUMNS.into_iter().filter(|c| layout.wants(c)).collect();
+    if layout.group == GroupBy::Status {
+        compact_status(&mut columns);
+    }
+    for id in SQUEEZE_ORDER {
+        if layout.needed(&columns, room) <= room.width {
+            break;
+        }
+        columns.retain(|c| c.id != id);
+    }
+    columns
+}
+
+/// Grouped by status, the group header already names it: the status cell shows only its glyph.
+fn compact_status(columns: &mut [ColumnSpec]) {
+    for spec in columns.iter_mut() {
+        match spec.id {
+            ColumnId::Status => {
+                spec.header = "";
+                spec.width = Width::Fixed(STATUS_GLYPH);
+                spec.min = STATUS_GLYPH;
+                spec.sort = None;
+            }
+            ColumnId::Number => {
+                spec.key = "number_left";
+                spec.align_right = false;
+                spec.width = Width::Initial(NUMBER_COMPACT);
+            }
+            ColumnId::Margin
+            | ColumnId::Flags
+            | ColumnId::Title
+            | ColumnId::Repo
+            | ColumnId::Author
+            | ColumnId::Reviews
+            | ColumnId::Comments
+            | ColumnId::Age
+            | ColumnId::Org => {}
+        }
+    }
+}
+
+/// Listed columns the user chose that `visible` (this frame's columns) had no room for.
+pub(crate) fn squeezed<'a>(
+    visible: &'a [ColumnSpec],
+    hidden: &'a [String],
+) -> impl Iterator<Item = ColumnId> + 'a {
+    listed()
+        .filter(move |c| chosen(c, hidden) && !visible.iter().any(|v| v.id == c.id))
+        .map(|c| c.id)
+}
+
+/// How a listed column's check reads in the column menu and the settings checklist.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ColumnCheck {
+    /// The user hid it.
+    Off,
+    /// In the table.
+    On,
+    /// Chosen, but the table has no room for it right now.
+    Squeezed,
+}
+
+/// The user's column choices and what the table's width overrode last frame.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Choices<'a> {
+    /// Column keys the user hid.
+    pub hidden: &'a [String],
+    /// Chosen columns the table had no room for last frame (`squeezed`).
+    pub squeezed: &'a [ColumnId],
+}
+
+impl Choices<'_> {
+    pub(crate) fn check(&self, column: &ColumnSpec) -> ColumnCheck {
+        if !chosen(column, self.hidden) {
+            ColumnCheck::Off
+        } else if self.squeezed.contains(&column.id) {
+            ColumnCheck::Squeezed
+        } else {
+            ColumnCheck::On
+        }
+    }
 }
 
 /// A stable id for the visible set, so `egui_extras` width state never mismatches the count.

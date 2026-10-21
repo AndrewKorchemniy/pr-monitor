@@ -50,6 +50,7 @@ pub(crate) const COLUMN_AUTHOR: &str = "Author";
 pub(crate) const COLUMN_COMMENTS: &str = "Comments";
 pub(crate) const COLUMN_AGE: &str = "Age";
 pub(crate) const COLUMN_LOCKED: &str = "Always shown";
+pub(crate) const COLUMN_SQUEEZED: &str = "Hidden while the table is this narrow";
 pub(crate) const AUTO_COMPLETE: &str = "Auto-complete is set";
 pub(crate) const COLUMNS: &str = "Columns";
 pub(crate) const COLUMNS_HELP: &str = "Status and Title always show. Changes apply right away, and you can also right-click a column header.";
@@ -517,6 +518,7 @@ pub(crate) const ALL: &[&str] = &[
     DRAFT,
     CONFLICTS,
     AUTO_COMPLETE,
+    COLUMN_SQUEEZED,
     COLUMNS_HELP,
     REVIEWS,
     NO_OPEN_THREADS,

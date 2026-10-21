@@ -56,7 +56,7 @@ impl PrMonitorApp {
                 build: self.build,
                 licenses: self.licenses,
                 renderer_line: &renderer_line,
-                hidden_columns: &self.dash.view.hidden_columns,
+                columns: self.dash.view.column_choices(),
             };
             let mut cx = frame_cx!(self, &ctx);
             settings_modal(&ctx, &mut cx, settings, &env);

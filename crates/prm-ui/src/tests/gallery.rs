@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::Role;
+use eframe::egui::{self, Role};
 use egui_kittest::{Harness, kittest::Queryable as _};
 use prm_domain::view::{GroupBy, SortKey};
 use prm_service::AppState;
@@ -27,10 +27,13 @@ use crate::{
 /// What the pointer does once a scene has settled (hover a control, open a menu).
 type Pointer = fn(&mut Harness<'_, Fixture>);
 
+/// The smallest window the app allows (`render::MIN_SIZE` wide), a little taller.
+const SMALL_WINDOW: egui::Vec2 = egui::vec2(720.0, 620.0);
+
 /// Scenes that need the pointer: hover states, the column menu, and the settings column
-/// checklist scrolled into view.
+/// checklist scrolled into view; then the same two in a small window (`small_window_scenes`).
 fn pointer_scenes() -> Vec<(Scene, Pointer)> {
-    vec![
+    let mut all = vec![
         (
             scene(
                 "dashboard-header-hover",
@@ -71,12 +74,52 @@ fn pointer_scenes() -> Vec<(Scene, Pointer)> {
             ),
             show_column_checklist as Pointer,
         ),
+    ];
+    all.extend(small_window_scenes());
+    all
+}
+
+/// The column menu and the settings checklist in the smallest window, where the table has no
+/// room for some chosen columns and the checklist wraps to fewer per line.
+fn small_window_scenes() -> [(Scene, Pointer); 2] {
+    [
+        (
+            scene(
+                "dashboard-column-menu-small",
+                Shown::Dashboard,
+                demo_state,
+                nothing,
+            ),
+            small_column_menu,
+        ),
+        (
+            scene(
+                "settings-general-columns-small",
+                Shown::Settings,
+                demo_state,
+                |f| f.settings.page = PAGES[0],
+            ),
+            small_column_checklist,
+        ),
     ]
 }
 
 fn show_column_checklist(h: &mut Harness<'_, Fixture>) {
     h.get_by_role_and_label(Role::CheckBox, copy::COLUMN_FLAGS)
         .scroll_to_me();
+}
+
+fn small_column_checklist(h: &mut Harness<'_, Fixture>) {
+    h.set_size(SMALL_WINDOW);
+    h.run();
+    show_column_checklist(h);
+}
+
+fn small_column_menu(h: &mut Harness<'_, Fixture>) {
+    h.set_size(SMALL_WINDOW);
+    h.run();
+    h.get_by_role_and_label(Role::Button, copy::COLUMN_AGE)
+        .click_secondary();
 }
 
 fn hover(h: &Harness<'_, Fixture>, label: &str) {
