@@ -1,5 +1,7 @@
 //! Notifications: on/off, while in front, sound, the per-refresh budget, event toggles, pause
-//! and a test notification.
+//! and a test notification (its result shows beside the button).
+
+use std::sync::Arc;
 
 use eframe::egui;
 use prm_config::{Config, limits};
@@ -52,7 +54,16 @@ fn toggles(events: &mut EventToggles) -> [(&mut bool, &'static str); 12] {
     ]
 }
 
-pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) {
+/// The last test notification's outcome: sent, or the message saying why Windows did not show
+/// it (built once, when the result arrives).
+pub(crate) type TestResult = Option<Result<(), Arc<str>>>;
+
+pub(crate) fn page(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    draft: &mut Config,
+    test: &mut TestResult,
+) {
     let theme = cx.theme.clone();
     let prefs = &mut draft.notifications;
     section(ui, &theme, copy::SECTION_DELIVERY, None, |ui| {
@@ -63,7 +74,9 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) 
             events(ui, &theme, &mut prefs.events);
         });
     });
-    section(ui, &theme, copy::SECTION_TRY, None, |ui| try_out(ui, cx));
+    section(ui, &theme, copy::SECTION_TRY, None, |ui| {
+        try_out(ui, cx, test);
+    });
 }
 
 /// The event toggles in two columns.
@@ -117,11 +130,12 @@ fn delivery(ui: &mut egui::Ui, theme: &UiTheme, prefs: &mut NotificationPrefs) {
     });
 }
 
-/// A test notification, and pausing or resuming notifications for an hour.
-fn try_out(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
+/// A test notification with its result, and pausing or resuming notifications for an hour.
+fn try_out(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, test: &mut TestResult) {
     let theme = cx.theme.clone();
     ui.horizontal(|ui| {
         if ui.button(copy::SEND_TEST).clicked() {
+            *test = None;
             cx.push(UiAction::Send(Command::TestNotification));
         }
         let paused = cx.state.notifications.paused_until.is_some();
@@ -132,6 +146,15 @@ fn try_out(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
         };
         if ui.button(label).clicked() {
             cx.run(command);
+        }
+        match test {
+            Some(Ok(())) => {
+                widgets::muted(ui, &theme, copy::TEST_SENT);
+            }
+            Some(Err(message)) => {
+                widgets::error_text(ui, &theme, message);
+            }
+            None => {}
         }
     });
     if let Some(until) = cx.state.notifications.paused_until {

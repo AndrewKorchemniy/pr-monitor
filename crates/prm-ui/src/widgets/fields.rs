@@ -2,7 +2,7 @@
 //! field with a flush action button, and the toolbar's seamless search field.
 
 use eframe::egui::{
-    self, CornerRadius, Rect, Sense, Shape, Stroke, StrokeKind, TextEdit, pos2, vec2,
+    self, CornerRadius, EventFilter, Rect, Sense, Shape, Stroke, StrokeKind, TextEdit, pos2, vec2,
 };
 
 use crate::theme::{
@@ -24,6 +24,8 @@ pub(crate) struct Field<'a> {
     pub error: bool,
     /// `None` fills the available width.
     pub width: Option<f32>,
+    /// Esc stays with the field (a combobox closing its dropdown) instead of taking its focus.
+    pub keeps_escape: bool,
 }
 
 impl<'a> Field<'a> {
@@ -33,11 +35,17 @@ impl<'a> Field<'a> {
             hint,
             error: false,
             width: None,
+            keeps_escape: false,
         }
     }
 
     pub(crate) const fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
+        self
+    }
+
+    pub(crate) const fn keeps_escape(mut self, keeps: bool) -> Self {
+        self.keeps_escape = keeps;
         self
     }
 }
@@ -69,13 +77,18 @@ pub(crate) fn text_field(
 }
 
 fn edit<'t>(theme: &UiTheme, text: &'t mut String, field: &Field<'_>) -> TextEdit<'t> {
-    TextEdit::singleline(text)
+    let edit = TextEdit::singleline(text)
         .id(field.id)
         .hint_text(field.hint)
         .frame(egui::Frame::NONE)
         .font(theme.fonts.body.clone())
         .align(egui::Align2::LEFT_CENTER)
-        .desired_width(f32::INFINITY)
+        .desired_width(f32::INFINITY);
+    let filter = edit.get_event_filter();
+    edit.event_filter(EventFilter {
+        escape: field.keeps_escape,
+        ..filter
+    })
 }
 
 /// Where the text sits inside a field: inset from the left border, up to `right`.

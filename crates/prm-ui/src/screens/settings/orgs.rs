@@ -24,7 +24,7 @@ use crate::{
         fields::{self, Field},
         modal::{self, ModalOutcome, ModalSpec},
         people_picker::{self, people_picker},
-        scope_picker::{self, scope_picker},
+        scope_picker::{self, CatalogState, scope_picker},
     },
 };
 
@@ -253,7 +253,8 @@ fn add_org(st: &mut SettingsState, cx: &mut FrameCx<'_>) -> bool {
 
 fn details(ui: &mut egui::Ui, theme: &UiTheme, org: &mut OrgProfile) {
     setting_row(ui, theme, (copy::NAME, Some(&org.url)), |ui| {
-        let field = Field::new(ui.make_persistent_id("org_name"), "").width(280.0);
+        // why: the hint is also the field's accessible name.
+        let field = Field::new(ui.make_persistent_id("org_name"), copy::NAME).width(280.0);
         fields::text_field(ui, theme, &mut org.label, &field);
     });
     controls::row_divider(ui, theme);
@@ -264,18 +265,16 @@ fn details(ui: &mut egui::Ui, theme: &UiTheme, org: &mut OrgProfile) {
 
 fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
+    let state = cx.state;
     let org = &mut st.draft.orgs[st.org];
     let id: Option<OrgId> = org.org_id().cloned();
-    let catalog = id
-        .as_ref()
-        .and_then(|id| cx.state.org(id))
-        .and_then(|o| o.catalog.clone());
-    if catalog.is_none()
+    let catalog = CatalogState::of(id.as_ref().and_then(|id| state.org(id)));
+    if matches!(catalog, CatalogState::Loading)
         && let Some(id) = &id
     {
         request_catalog(ui, cx, id, false);
     }
-    let summary = scope_picker::summary(catalog.as_deref(), &org.scope);
+    let summary = scope_picker::summary(catalog, &org.scope);
     let detail = scope_picker::detail(&org.scope);
     if row_with_button(ui, &theme, (&summary, Some(&detail)), copy::CHOOSE) {
         st.editing = Some(Editor::Repositories);
@@ -512,14 +511,12 @@ fn repositories_dialog(
         return ModalOutcome::Dismissed;
     };
     let id = org.org_id().cloned();
-    let catalog = id
-        .as_ref()
-        .and_then(|id| cx.state.org(id))
-        .and_then(|o| o.catalog.clone());
+    let state = cx.state;
+    let catalog = CatalogState::of(id.as_ref().and_then(|id| state.org(id)));
     let filter = &mut st.scope_filter;
     let mut reload = false;
     let outcome = modal::modal(ctx, &theme, &spec, |ui| {
-        reload = scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope);
+        reload = scope_picker(ui, &theme, filter, catalog, &mut org.scope);
     });
     if reload && let Some(id) = id {
         cx.push(UiAction::Send(Command::LoadCatalog {
@@ -559,7 +556,11 @@ fn people_dialog(
         width: 480.0,
     };
     let list = people_list(org, editor);
-    modal::modal(ctx, &theme, &spec, |ui| {
+    let outcome = modal::modal(ctx, &theme, &spec, |ui| {
         people_picker(ui, cx, picker, id.as_ref(), list);
-    })
+    });
+    if outcome != ModalOutcome::Open {
+        picker.close();
+    }
+    outcome
 }

@@ -2,16 +2,14 @@
 
 use std::{ops::ControlFlow, sync::Arc};
 
-use prm_config::Severity;
 use prm_domain::{OrgId, PrKey, app::is_openable_url, notify::Notification, uri::AppUri};
 
 use super::Service;
 use crate::{
     command::Command,
-    consts::NOTICE_TTL,
-    event::{AppEvent, Notice},
+    event::AppEvent,
     jobs::{JobKind, JobOutput, JobTag, blocking},
-    publish, text,
+    publish,
 };
 
 impl Service {
@@ -86,11 +84,10 @@ impl Service {
         }
     }
 
-    /// Opens an allow-listed link; `false` (with a notice) for anything else.
+    /// Opens an allow-listed link; `false` (and logged) for anything else.
     fn open_url(&mut self, url: url::Url) -> bool {
         if !is_openable_url(&url) {
             tracing::warn!(host = url.host_str(), "blocked link");
-            self.global_notice(Severity::Warning, text::LINK_BLOCKED);
             return false;
         }
         let opener = self.deps.opener.clone();
@@ -152,6 +149,7 @@ impl Service {
             return;
         }
         runtime.link.catalog_loading = true;
+        runtime.live.catalog_error = None;
         let (api, id, generation) = (
             runtime.link.api.clone(),
             org.clone(),
@@ -164,17 +162,6 @@ impl Service {
                 generation,
                 result,
             }
-        });
-    }
-
-    /// `None` org: an app-wide notice.
-    pub(super) fn global_notice(&mut self, severity: Severity, text: &str) {
-        self.notice(Notice {
-            severity,
-            text: Arc::from(text),
-            org: None,
-            action: None,
-            ttl: NOTICE_TTL,
         });
     }
 

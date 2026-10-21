@@ -10,7 +10,6 @@ mod deps;
 mod format;
 mod frame;
 mod link;
-mod notices;
 mod render;
 mod route;
 mod screens;

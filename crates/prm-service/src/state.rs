@@ -174,6 +174,8 @@ pub struct OrgStatus {
     pub counts: StatusSummary,
     /// Projects and repositories, for the scope editor.
     pub catalog: Option<Arc<Catalog>>,
+    /// Why the last catalog load failed, until a load starts again or one succeeds.
+    pub catalog_error: Option<UiError>,
     /// The last refresh or sign-in error; cleared by a successful refresh.
     pub last_error: Option<UiError>,
     /// From the profile's `pat_expires_on`, when it parses as a date.

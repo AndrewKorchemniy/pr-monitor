@@ -173,6 +173,7 @@ pub fn initial_state(
             desired: config.ui.launch_at_login,
             ..AutostartStatus::default()
         },
+        state_not_saved: false,
         shutting_down: false,
         now: Moment {
             mono: tokio::time::Instant::now(),

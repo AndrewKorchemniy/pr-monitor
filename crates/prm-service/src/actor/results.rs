@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use prm_ado::AdoError;
-use prm_config::Severity;
 use prm_domain::{OrgId, auth::AuthError, model::Catalog};
 use tokio::task::Id;
 
@@ -59,7 +58,7 @@ impl Service {
                 state,
                 set_error,
             } => self.on_autostart(seq, state, set_error.as_ref()),
-            JobOutput::Opened(result) => self.on_opened(result),
+            JobOutput::Opened(result) => Self::on_opened(result),
             JobOutput::TestNotification(result) => {
                 let result = result.map_err(|e| UiError::port(text::NOTIFICATION_FAILED, &e));
                 self.deps
@@ -76,10 +75,9 @@ impl Service {
         self.on_state_saved(saved);
     }
 
-    fn on_opened(&mut self, result: Result<(), prm_domain::ports::PortError>) {
+    fn on_opened(result: Result<(), prm_domain::ports::PortError>) {
         if let Err(error) = result {
             tracing::warn!(error = %error.message, "open failed");
-            self.global_notice(Severity::Warning, text::OPEN_FAILED);
         }
     }
 
@@ -89,7 +87,6 @@ impl Service {
             Saved::Config => {
                 if let Err(error) = &result {
                     tracing::warn!(error = %error.title, "config save failed");
-                    self.global_notice(Severity::Error, text::SETTINGS_NOT_SAVED);
                 }
                 self.on_config_saved(result.is_ok());
             }
@@ -107,7 +104,6 @@ impl Service {
         }
         if let Err(error) = result {
             tracing::warn!(org = %org, %error, "sign-out could not delete secrets");
-            self.org_notice(org, &error.to_string());
         }
     }
 
@@ -126,7 +122,7 @@ impl Service {
             }
             Err(error) => {
                 tracing::warn!(org = %org, %error, "catalog failed");
-                self.org_notice(org, text::CATALOG_FAILED);
+                self.orgs[idx].live.catalog_error = Some(UiError::from(&error));
             }
         }
     }
@@ -141,8 +137,8 @@ impl Service {
         if seq != self.autostart_seq {
             return;
         }
-        if set_error.is_some() {
-            self.global_notice(Severity::Warning, text::AUTOSTART_FAILED);
+        if let Some(error) = set_error {
+            tracing::warn!(error = %error.message, "launch at login could not be changed");
         }
         let read_error = state.as_ref().err().map(|e| e.message.clone());
         self.autostart.actual = state.ok();
@@ -163,7 +159,11 @@ impl Service {
                 let error = AuthError::Other("sign-in task failed".into());
                 self.on_sign_in(&org, seq, Err(error));
             }
-            (JobKind::Catalog, Some(idx)) => self.orgs[idx].link.catalog_loading = false,
+            (JobKind::Catalog, Some(idx)) => {
+                self.orgs[idx].link.catalog_loading = false;
+                self.orgs[idx].live.catalog_error =
+                    Some(UiError::internal("catalog task panicked"));
+            }
             (JobKind::Save | JobKind::Flush, _) => self.on_save_panicked(job),
             (
                 JobKind::Refresh

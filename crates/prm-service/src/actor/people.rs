@@ -4,7 +4,6 @@
 use std::sync::Arc;
 
 use prm_ado::AdoError;
-use prm_config::Severity;
 use prm_domain::{
     OrgId, Vsid,
     ids::RequestId,
@@ -13,9 +12,9 @@ use prm_domain::{
 
 use super::Service;
 use crate::{
-    consts::{NOTICE_TTL, PEOPLE_REMOTE_MIN_CHARS, SEARCH_DEBOUNCE, SEARCH_LIMIT},
+    consts::{PEOPLE_REMOTE_MIN_CHARS, SEARCH_DEBOUNCE, SEARCH_LIMIT},
     errors::UiError,
-    event::{AppEvent, Notice, SearchPhase},
+    event::{AppEvent, SearchPhase},
     jobs::{JobKind, JobOutput, JobTag, people},
     text,
 };
@@ -27,16 +26,22 @@ impl Service {
         };
         let query: Arc<str> = Arc::from(query.trim());
         let local = self.orgs[idx].data.people.search(&query, SEARCH_LIMIT);
+        let signed_in = self.orgs[idx].live.auth_state.is_signed_in();
+        let remote = signed_in && query.chars().count() >= PEOPLE_REMOTE_MIN_CHARS;
         self.deps.events.emit(AppEvent::PeopleResults {
             request,
             org: org.clone(),
             query: query.clone(),
-            phase: SearchPhase::Local,
+            // why: with no directory search to follow, the local results are all there is.
+            phase: if remote {
+                SearchPhase::Local
+            } else {
+                SearchPhase::Final
+            },
             candidates: local.into(),
         });
         self.orgs[idx].link.abort_search();
-        let signed_in = self.orgs[idx].live.auth_state.is_signed_in();
-        if query.chars().count() < PEOPLE_REMOTE_MIN_CHARS || !signed_in {
+        if !remote {
             return;
         }
         let api = self.orgs[idx].link.api.clone();
@@ -69,19 +74,25 @@ impl Service {
         }
         link.search = None;
         let local = self.orgs[idx].data.people.search(query, SEARCH_LIMIT);
-        let candidates = match result {
-            Ok(remote) => merge_candidates(local, remote, SEARCH_LIMIT),
+        let (phase, candidates) = match result {
+            Ok(remote) => (
+                SearchPhase::Final,
+                merge_candidates(local, remote, SEARCH_LIMIT),
+            ),
             Err(error) => {
                 tracing::warn!(org = %org, %error, "directory search failed");
-                self.org_notice(org, text::SEARCH_FAILED);
-                local
+                let failed = UiError {
+                    detail: Some(UiError::from(&error).title),
+                    ..UiError::new(text::SEARCH_FAILED)
+                };
+                (SearchPhase::Failed(failed), local)
             }
         };
         self.deps.events.emit(AppEvent::PeopleResults {
             request,
             org: org.clone(),
             query: query.clone(),
-            phase: SearchPhase::Final,
+            phase,
             candidates: candidates.into(),
         });
     }
@@ -150,16 +161,6 @@ impl Service {
             request,
             org: org.clone(),
             result,
-        });
-    }
-
-    pub(super) fn org_notice(&mut self, org: &OrgId, text: &str) {
-        self.notice(Notice {
-            severity: Severity::Warning,
-            text: Arc::from(text),
-            org: Some(org.clone()),
-            action: None,
-            ttl: NOTICE_TTL,
         });
     }
 }

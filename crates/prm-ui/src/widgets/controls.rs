@@ -328,6 +328,17 @@ pub(crate) fn menu_item(
     text: &str,
     selected: bool,
 ) -> egui::Response {
+    menu_item_detail(ui, theme, (text, None), selected)
+}
+
+/// A `menu_item` with an optional muted second text after the label (a person's sign-in
+/// name), cut to fit the row.
+pub(crate) fn menu_item_detail(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (text, detail): (&str, Option<&str>),
+    selected: bool,
+) -> egui::Response {
     let m = &theme.tokens.metrics;
     let size = vec2(ui.available_width(), theme.control_height() - m.space.xs);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -351,11 +362,33 @@ pub(crate) fn menu_item(
         rect.left() + m.space.lg,
         rect.center().y - galley.size().y / 2.0,
     );
+    let after = at.x + galley.size().x + m.space.md;
     ui.painter().galley(at, galley, theme.colors.text_primary);
+    if let Some(detail) = detail {
+        let space = Rect::from_min_max(pos2(after, rect.top()), rect.max - vec2(m.space.lg, 0.0));
+        paint_detail(ui, theme, detail, space);
+    }
     let enabled = ui.is_enabled();
     response
         .widget_info(|| egui::WidgetInfo::selected(egui::Role::MenuItem, enabled, selected, text));
     response
+}
+
+/// A muted single line, vertically centred in `space` and truncated to its width.
+fn paint_detail(ui: &egui::Ui, theme: &UiTheme, detail: &str, space: Rect) {
+    if space.width() <= 0.0 {
+        return;
+    }
+    let color = theme.colors.text_muted;
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        detail.to_owned(),
+        theme.fonts.small.clone(),
+        color,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(space.width());
+    let galley = ui.painter().layout_job(job);
+    let at = pos2(space.left(), space.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, color);
 }
 
 /// The space between a button and the menu it opens.
@@ -433,23 +466,19 @@ pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> eg
     response.on_hover_text(name)
 }
 
-/// A compact ghost close button for notices and chips.
-pub(crate) fn small_close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
-    ghost_fill(ui, theme, rect, &response);
-    let glyph = Rect::from_center_size(rect.center(), vec2(9.0, 9.0));
-    icons::paint(
-        ui.painter(),
-        glyph,
-        Icon::Cross,
-        hover_color(theme, &response),
-    );
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-    response.on_hover_text(name)
-}
-
 /// The hover fill of a borderless (ghost) button, faded in and out rather than switched.
 pub(crate) fn ghost_fill(ui: &egui::Ui, theme: &UiTheme, rect: Rect, response: &egui::Response) {
+    let corners = CornerRadius::same(theme.tokens.metrics.radius.md);
+    ghost_fill_corners(ui, theme, (rect, corners), response);
+}
+
+/// `ghost_fill` with its own corners, for a ghost button flush inside another shape.
+pub(crate) fn ghost_fill_corners(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    (rect, corners): (Rect, CornerRadius),
+    response: &egui::Response,
+) {
     let t = ui.ctx().animate_bool_with_time(
         response.id.with("ghost"),
         response.hovered(),
@@ -457,8 +486,7 @@ pub(crate) fn ghost_fill(ui: &egui::Ui, theme: &UiTheme, rect: Rect, response: &
     );
     if t > 0.0 {
         let fill = theme.colors.control_hover.gamma_multiply(t);
-        ui.painter()
-            .rect_filled(rect, theme.tokens.metrics.radius.md, fill);
+        ui.painter().rect_filled(rect, corners, fill);
     }
 }
 

@@ -27,7 +27,6 @@ use crate::{
     },
     deps::{BuildInfo, ChromeColors, UiHost, UiInit},
     link::{ServiceLink, StateCheck},
-    notices::NoticeStack,
     render::{
         AdapterFacts, RenderEnv, RendererKind, adapter_facts,
         hover_bands::HoverBands,
@@ -42,9 +41,6 @@ use crate::{
     view::{DashboardView, changes::ChangeLog},
     window::{WindowController, WindowLaunch},
 };
-
-/// The "service stopped" notice stays until the app restarts (it cannot recover).
-const SERVICE_STOPPED_TTL: std::time::Duration = std::time::Duration::from_hours(24);
 
 /// A `FrameCx` over the app's fields (a macro so the other fields stay borrowable).
 macro_rules! frame_cx {
@@ -85,7 +81,6 @@ pub(crate) struct PrMonitorApp {
     pat_error: Option<Arc<str>>,
     /// The org whose token dialog `pat_input` belongs to; the draft is wiped when it closes.
     pat_org: Option<OrgId>,
-    notices: NoticeStack,
     changes: ChangeLog,
     actions: Actions,
     ui_sync: UiStateSync,
@@ -96,7 +91,6 @@ pub(crate) struct PrMonitorApp {
     activation: Option<AppUri>,
     build: BuildInfo,
     licenses: &'static str,
-    service_stopped: bool,
     chrome: Option<ChromeColors>,
     applied_config: Option<Arc<Config>>,
 }
@@ -142,7 +136,6 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
         pat_input: String::new(),
         pat_error: None,
         pat_org: None,
-        notices: NoticeStack::default(),
         changes: ChangeLog::default(),
         actions: Actions::default(),
         ui_sync: UiStateSync::new((*state.ui_state).clone()),
@@ -153,7 +146,6 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
         activation: init.activation,
         build: init.build,
         licenses: init.licenses,
-        service_stopped: false,
         chrome: None,
         applied_config: Some(state.config.clone()),
         state,
@@ -242,7 +234,7 @@ impl eframe::App for PrMonitorApp {
         if self.quit_requested.load(Ordering::Relaxed) {
             self.quit(ctx);
         }
-        self.drain_events(ctx, now);
+        self.drain_events(ctx);
         self.poll_state(ctx);
         self.drain_tray(ctx, now);
         self.window
@@ -263,7 +255,6 @@ impl eframe::App for PrMonitorApp {
         }
         self.theme.apply(ctx);
         self.sync_tray(ctx);
-        self.notices.prune(now);
         self.publish_hover_bands();
         let layout = layout_of(&self.dash, &self.window);
         self.ui_sync
@@ -339,13 +330,12 @@ impl PrMonitorApp {
             open,
         );
     }
-    /// Re-reads `keymap.toml`; problems show as notices.
+    /// Re-reads `keymap.toml`; problems go to the log.
     fn reload_keymap(&mut self) {
         let (keymap, issues) = load_keymap(&self.paths);
         self.keymap = keymap;
-        let now = self.clock.now();
         for issue in issues {
-            self.notices.info(&issue.0, now);
+            tracing::warn!(issue = %issue.0, "keymap.toml entry ignored");
         }
     }
 
@@ -399,20 +389,12 @@ impl PrMonitorApp {
         self.applied_config = Some(config);
     }
 
+    /// The service cannot recover; a banner over the table says so until the app restarts.
     fn on_service_stopped(&mut self) {
-        if !self.service_stopped {
-            self.service_stopped = true;
-            self.notices.push(
-                &prm_service::Notice {
-                    severity: prm_config::Severity::Error,
-                    text: Arc::from(crate::copy::SERVICE_STOPPED),
-                    org: None,
-                    action: None,
-                    ttl: SERVICE_STOPPED_TTL,
-                },
-                self.clock.now(),
-            );
+        if self.dash.service_stopped.is_none() {
+            tracing::error!("background service stopped");
         }
+        self.dash.show_service_stopped();
     }
 
     fn drain_tray(&mut self, ctx: &egui::Context, now: Timestamp) {
@@ -464,7 +446,6 @@ impl PrMonitorApp {
 
     fn schedule_repaint(&self, ctx: &egui::Context, now: Timestamp) {
         let deadlines = [
-            self.notices.next_expiry(),
             self.ui_sync.deadline(),
             self.state.notifications.paused_until,
         ];

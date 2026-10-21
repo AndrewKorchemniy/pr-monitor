@@ -1,4 +1,4 @@
-//! User-facing strings for banners, notices and `UiError`s raised by the service. Sentence case,
+//! User-facing strings for banners and `UiError`s raised by the service. Sentence case,
 //! active voice; errors say what happened and what to do.
 
 use std::sync::Arc;
@@ -21,14 +21,9 @@ pub(crate) const REFRESH_TIMED_OUT: &str = "Refreshing took too long and was sto
 pub(crate) const SETTINGS_NOT_SAVED: &str = "Couldn't save settings";
 pub(crate) const STATE_NOT_SAVED: &str =
     "Couldn't save PR Monitor's data. Changes may be lost on exit.";
-pub(crate) const CATALOG_FAILED: &str = "Couldn't load projects and repositories";
 pub(crate) const SEARCH_FAILED: &str = "Couldn't search the directory; showing known people only";
 pub(crate) const PERSON_UNRESOLVED: &str = "Couldn't look up this person";
-pub(crate) const LINK_BLOCKED: &str = "That link doesn't go to Azure DevOps, so it wasn't opened";
-pub(crate) const OPEN_FAILED: &str = "Couldn't open the browser";
 pub(crate) const NOTIFICATION_FAILED: &str = "Couldn't show a notification";
-pub(crate) const AUTOSTART_FAILED: &str = "Couldn't change launch at login";
-pub(crate) const NETWORK_RESTART: &str = "Network settings apply after you restart PR Monitor";
 pub(crate) const OFFLINE: &str = "Can't reach Azure DevOps. Showing the last data.";
 pub(crate) const CONFIG_ERRORS: &str = "Some settings couldn't be used";
 pub(crate) const NOTIFY_BLOCKED_BY_USER: &str =

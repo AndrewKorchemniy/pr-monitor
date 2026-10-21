@@ -34,12 +34,12 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     command::Command,
     consts::{PUBLISH_THROTTLE, SCHEDULER_MAX_SLEEP},
-    event::{AppEvent, Notice},
+    event::AppEvent,
     handle::{InitialData, ServiceDeps},
     jobs::{JobKind, JobOutput, JobTag, blocking},
     org::{Connectors, OrgData, OrgLink, OrgLive, OrgRuntime, startup_orgs},
     ports::NotifierCapability,
-    publish::{self, Composition, NoticeLog, OrgView},
+    publish::{self, Composition, OrgView},
     scheduler::{Moment, Policy},
     state::{AppState, AutostartStatus, NotificationsStatus, PauseReason, RefreshProgress},
 };
@@ -93,7 +93,6 @@ pub(crate) struct Service {
     rows: Rows,
     publisher: Publisher,
     persist: PersistState,
-    notices: NoticeLog,
     rng: fastrand::Rng,
     last_wake: Option<Moment>,
     root: CancellationToken,
@@ -155,7 +154,6 @@ impl Service {
                 deadline: None,
             },
             persist: PersistState::default(),
-            notices: NoticeLog::default(),
             rng: rng_seed.map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed),
             last_wake: None,
             root: CancellationToken::new(),
@@ -228,15 +226,6 @@ impl Service {
         let handle = self.jobs.spawn(job);
         self.tags.insert(handle.id(), tag);
         handle
-    }
-
-    fn notice(&mut self, notice: Notice) {
-        if self
-            .notices
-            .admit(&notice.text, notice.org.as_ref(), Instant::now())
-        {
-            self.deps.events.emit(AppEvent::Notice(notice));
-        }
     }
 
     fn on_start(&mut self) {
@@ -364,6 +353,7 @@ impl Service {
             notifications: self.notifications_status(),
             ui_state: &self.ui_state,
             autostart: &self.autostart,
+            state_not_saved: self.persist.failed,
             shutting_down: self.shutting_down,
             now,
         });

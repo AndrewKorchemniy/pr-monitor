@@ -3,12 +3,19 @@
 //! `cargo test -p prm-ui gallery -- --ignored`, output in `$PRM_GALLERY_DIR` or
 //! `target/gallery`.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use egui_kittest::Harness;
-use prm_service::AppState;
+use prm_domain::{
+    Person,
+    auth::SettingsSection,
+    person::{CandidateSource, PersonCandidate},
+    testing::person,
+};
+use prm_service::{AppState, SearchPhase, UiError};
 
 use crate::{
+    copy,
     screens::{
         first_run::Step,
         settings::{Editor, PAGES},
@@ -18,6 +25,7 @@ use crate::{
         screens::{Fixture, Shown, WINDOW},
     },
     theme::fonts,
+    widgets::people_picker::Step as Highlight,
 };
 
 /// One screen, set up from a fresh fixture.
@@ -57,6 +65,70 @@ fn editing(f: &mut Fixture, editor: Editor) {
     f.settings.editing = Some(editor);
 }
 
+/// Fictional matches for "pri": one person seen in pull requests, two from the directory.
+fn matches() -> [PersonCandidate; 3] {
+    let directory = |descriptor: &str, name: &str, unique: &str| PersonCandidate {
+        id: None,
+        descriptor: Some(Arc::from(descriptor)),
+        name: Arc::from(name),
+        unique_name: Some(Arc::from(unique)),
+        group: false,
+        source: CandidateSource::Directory,
+    };
+    let harvested = Person {
+        unique_name: Some(Arc::from("prisha.nair@contoso.com")),
+        ..person(11, "Prisha Nair")
+    };
+    [
+        harvested.to_candidate(CandidateSource::Harvested),
+        directory("aad.pd", "Priyanka Das", "priyanka.das@contoso.com"),
+        directory("aad.pw", "Prince Walker", "prince.walker@contoso.com"),
+    ]
+}
+
+/// The tracked-people dialog with its dropdown open on `phase`.
+fn people_search(f: &mut Fixture, phase: &SearchPhase, found: &[PersonCandidate]) {
+    editing(f, Editor::Tracked);
+    f.settings.pickers.tracked.show_matches("pri", phase, found);
+}
+
+fn people_scenes() -> [Named; 4] {
+    [
+        ("settings-organizations-people", |f| {
+            f.settings.page = PAGES[1];
+            f.settings.scroll_to = Some(SettingsSection::People);
+        }),
+        ("settings-edit-people-matches", |f| {
+            people_search(f, &SearchPhase::Final, &matches());
+            f.settings.pickers.tracked.step(Highlight::Down, 3);
+        }),
+        ("settings-edit-people-searching", |f| {
+            people_search(f, &SearchPhase::Local, &matches()[..1]);
+        }),
+        ("settings-edit-people-failed", |f| {
+            let failed = UiError::new("Couldn't search the directory; showing known people only");
+            people_search(f, &SearchPhase::Failed(failed), &matches()[..1]);
+        }),
+    ]
+}
+
+/// What used to be a passing message, now shown where the user is looking.
+fn failure_scenes() -> [Named; 2] {
+    [
+        ("settings-save-failed", |f| {
+            let reason = copy::changes_not_saved(copy::SAVE_FAILED);
+            f.settings.save_error = Some(Arc::from(reason));
+        }),
+        ("settings-choose-repositories-failed", |f| {
+            let mut orgs = f.state.orgs.to_vec();
+            orgs[0].catalog = None;
+            orgs[0].catalog_error = Some(UiError::new("Can't reach Azure DevOps"));
+            f.state.orgs = orgs.into();
+            editing(f, Editor::Repositories);
+        }),
+    ]
+}
+
 fn scenes() -> Vec<Scene> {
     let mut all = vec![
         scene("first-run-connect", Shown::FirstRun, empty_state, nothing),
@@ -78,6 +150,14 @@ fn scenes() -> Vec<Scene> {
             f.dash.view.set_text("token");
         }),
         scene("dashboard-empty", Shown::Dashboard, empty_state, nothing),
+        scene(
+            "dashboard-service-stopped",
+            Shown::Dashboard,
+            demo_state,
+            |f| {
+                f.dash.show_service_stopped();
+            },
+        ),
         scene("palette", Shown::Palette, demo_state, |f| {
             f.palette.query = "sign".to_owned();
         }),
@@ -104,6 +184,8 @@ fn scenes() -> Vec<Scene> {
     all.extend(
         dialogs
             .into_iter()
+            .chain(people_scenes())
+            .chain(failure_scenes())
             .map(|(name, setup)| scene(name, Shown::Settings, demo_state, setup)),
     );
     all
@@ -120,7 +202,7 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path) {
     let mut state = (scene.state)();
     let mut config = (*state.config).clone();
     config.ui.theme = theme.to_owned();
-    state.config = std::sync::Arc::new(config);
+    state.config = Arc::new(config);
     let mut fixture = Fixture::new(scene.shown, state);
     fixture.now = now();
     (scene.setup)(&mut fixture);

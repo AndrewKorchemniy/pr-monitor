@@ -195,6 +195,7 @@ impl Service {
                 .extend(snapshot.iter().map(|(k, c)| (k.clone(), c.fingerprint)));
         }
         if let Some(catalog) = refetched {
+            self.orgs[idx].live.catalog_error = None;
             self.save_catalog(idx, &catalog);
         }
         if let Some(method) = auth.method {

@@ -241,6 +241,8 @@ pub(crate) struct OrgLive {
     pub auth: AuthSnapshot,
     pub health: OrgHealth,
     pub last_error: Option<UiError>,
+    /// The last catalog load failed and none has succeeded since; cleared when a load starts.
+    pub catalog_error: Option<UiError>,
     pub rate: RateSnapshot,
     pub schedule: Schedule,
 }
@@ -253,6 +255,7 @@ impl OrgLive {
             auth: AuthSnapshot::default(),
             health: OrgHealth::Idle,
             last_error: None,
+            catalog_error: None,
             rate: RateSnapshot::default(),
             schedule: Schedule::default(),
         };

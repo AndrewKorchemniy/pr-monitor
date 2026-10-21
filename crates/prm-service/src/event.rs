@@ -1,18 +1,11 @@
 //! Ordered, one-off events from the service to the UI, and the sink that delivers them. Durable
 //! state goes through the `watch` channel instead; events are for things that must not coalesce.
 
-use std::{
-    sync::{Arc, mpsc},
-    time::Duration,
-};
+use std::sync::{Arc, mpsc};
 
-use prm_config::{ConfigIssue, Severity};
+use prm_config::ConfigIssue;
 use prm_domain::{
-    OrgId, Person,
-    auth::{AuthMethod, UserAction},
-    diff::ChangeEvent,
-    ids::RequestId,
-    person::PersonCandidate,
+    OrgId, Person, auth::AuthMethod, diff::ChangeEvent, ids::RequestId, person::PersonCandidate,
     uri::AppUri,
 };
 
@@ -21,7 +14,6 @@ use crate::errors::UiError;
 /// One event from the service to the UI, delivered in order and never coalesced.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppEvent {
-    Notice(Notice),
     /// Bring the window forward (single-instance relaunch, toast click).
     Activate(AppUri),
     PeopleResults {
@@ -56,22 +48,16 @@ pub enum AppEvent {
     Stopped,
 }
 
-/// People-picker results arrive twice: instantly from the local cache, then merged with the
-/// directory.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// People-picker results arrive instantly from the local cache and, when a directory search
+/// follows, again merged with the directory's (or, if it failed, as the local results with the
+/// error). Without a directory search the local results are already final.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SearchPhase {
+    /// More results follow for this request.
     Local,
     Final,
-}
-
-/// A transient in-app message.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Notice {
-    pub severity: Severity,
-    pub text: Arc<str>,
-    pub org: Option<OrgId>,
-    pub action: Option<UserAction>,
-    pub ttl: Duration,
+    /// The directory search failed; the candidates are the local results only.
+    Failed(UiError),
 }
 
 /// Where the service sends events. `wake` asks the UI to run its logic (a repaint request).

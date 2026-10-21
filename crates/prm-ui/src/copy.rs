@@ -20,18 +20,18 @@ pub(crate) const THROTTLED: &str =
     "Azure DevOps is throttling requests, so PR Monitor refreshes less often until it recovers.";
 pub(crate) const SIGNING_IN: &str = "Signing in…";
 pub(crate) const LOADING_PROJECTS: &str = "Loading projects…";
+pub(crate) const PROJECTS_FAILED: &str = "Couldn't load projects";
 pub(crate) const CHANGED_TOOLTIP: &str = "Changed since you last looked";
 pub(crate) const DRAFT: &str = "Draft";
 pub(crate) const GROUP: &str = "Group";
 pub(crate) const CONFLICTS: &str = "Merge conflicts";
-pub(crate) const LINK_COPIED: &str = "Link copied";
-pub(crate) const MARKDOWN_COPIED: &str = "Markdown link copied";
-pub(crate) const TITLE_COPIED: &str = "Title copied";
 pub(crate) const REVIEWS: &str = "Reviews";
 pub(crate) const NO_OPEN_THREADS: &str = "No open threads.";
 pub(crate) const OPEN_THREADS: &str = "Open threads";
 pub(crate) const NO_REVIEWS: &str = "No reviews yet.";
 pub(crate) const GROUP_TAG: &str = "group";
+/// After a team's name on its pill.
+pub(crate) const GROUP_SUFFIX: &str = " · group";
 pub(crate) const REQUIRED_TAG: &str = "required";
 pub(crate) const OPEN_IN_BROWSER: &str = "Open in browser";
 pub(crate) const COPY_LINK: &str = "Copy link";
@@ -104,7 +104,6 @@ pub(crate) const COPY_MESSAGE: &str = "Copy message";
 pub(crate) const UNSAVED: &str = "You have unsaved changes.";
 pub(crate) const DISCARD: &str = "Discard";
 pub(crate) const SAVE_CHANGES: &str = "Save changes";
-pub(crate) const CHANGES_SAVED: &str = "Changes saved";
 pub(crate) const SAVE_FAILED: &str = "the settings file couldn't be written";
 pub(crate) const DISCARD_TITLE: &str = "Discard changes?";
 pub(crate) const DISCARD_BODY: &str = "Your edits to settings will be lost.";
@@ -173,7 +172,7 @@ pub(crate) const IGNORE_FROM: &str = "Ignore comments from";
 pub(crate) const IGNORE_HELP: &str = "Bots and pipelines.";
 pub(crate) const ADD_PEOPLE: &str = "Add people";
 pub(crate) const SEARCH_MIN: &str = "Type 3 or more letters to search the directory.";
-pub(crate) const SEARCHING: &str = "Searching directory…";
+pub(crate) const SEARCHING: &str = "Searching…";
 pub(crate) const ADDING: &str = "Adding…";
 pub(crate) const SHOW_NOTIFICATIONS: &str = "Show Windows notifications";
 pub(crate) const WHILE_IN_FRONT: &str = "While PR Monitor is in front";
@@ -304,10 +303,6 @@ pub(crate) fn branches(source: &str, target: &str) -> String {
     format!("{source} into {target}")
 }
 
-pub(crate) fn marked_seen(n: usize) -> String {
-    format!("Marked {n} as seen")
-}
-
 pub(crate) fn open_threads(active: u32, total: u32) -> String {
     format!("Open threads ({active} of {total})")
 }
@@ -369,10 +364,6 @@ pub(crate) fn pat_title(org: &str) -> String {
     format!("Use a personal access token for {org}")
 }
 
-pub(crate) fn token_saved(name: &str) -> String {
-    format!("Token saved. Signed in as {name}.")
-}
-
 pub(crate) fn remove_org_title(org: &str) -> String {
     format!("Remove {org}?")
 }
@@ -394,7 +385,12 @@ pub(crate) fn search_scope(projects: usize, repos: usize) -> String {
 }
 
 pub(crate) fn no_people(query: &str) -> String {
-    format!("No people found for “{query}”.")
+    format!("No people match “{query}”.")
+}
+
+/// The accessible name of a pill's remove button.
+pub(crate) fn remove_person(name: &str) -> String {
+    format!("Remove {name}")
 }
 
 pub(crate) fn test_failed(reason: &str) -> String {
@@ -522,6 +518,11 @@ pub(crate) const ALL: &[&str] = &[
     ANY_NON_AUTHOR,
     SEARCH_MIN,
     SEARCHING,
+    ADDING,
+    GROUP_SUFFIX,
+    PROJECTS_FAILED,
+    SAVE_FAILED,
+    TEST_SENT,
     ANIMATIONS_HELP,
     PRIVACY,
     PALETTE_HINT,

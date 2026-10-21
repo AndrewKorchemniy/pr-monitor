@@ -185,7 +185,7 @@ fn page_column(
         area.min,
         vec2(area.width(), theme.control_height() + 2.0 * inset),
     );
-    let bar = if st.dirty() {
+    let bar = if st.save_bar_shown() {
         theme.control_height() + 2.0 * inset + 1.0
     } else {
         0.0
@@ -245,23 +245,25 @@ fn page_body(
     match st.page {
         Page::General => general::page(ui, cx, &mut st.draft),
         Page::Organizations => orgs::page(ui, cx, st),
-        Page::Notifications => notifications::page(ui, cx, &mut st.draft),
+        Page::Notifications => notifications::page(ui, cx, &mut st.draft, &mut st.test_result),
         Page::Appearance => appearance::page(ui, cx, &mut st.draft, env),
     }
     ui.add_space(cx.theme.tokens.metrics.space.xxl);
 }
 
-fn save_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
+/// Save (which also retries a save that could not be written), and Discard while dirty.
+fn save_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, dirty: bool) {
     let theme = cx.theme.clone();
     if widgets::primary_button(ui, &theme, copy::SAVE_CHANGES).clicked() {
         cx.push(UiAction::SaveSettings);
     }
-    if ui.button(copy::DISCARD).clicked() {
+    if dirty && ui.button(copy::DISCARD).clicked() {
         cx.push(UiAction::DiscardSettings);
     }
 }
 
-/// "You have unsaved changes" with Discard and Save, under a divider; it fills its rect exactly.
+/// "You have unsaved changes" (or why the last save was not written) with Discard and Save,
+/// under a divider; it fills its rect exactly.
 fn save_bar(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &SettingsState) {
     let theme = cx.theme.clone();
     let rect = ui.max_rect();
@@ -273,10 +275,14 @@ fn save_bar(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &SettingsState) {
     let row = rect.shrink(f32::from(PAGE_PAD));
     let layout = egui::Layout::left_to_right(egui::Align::Center);
     ui.scope_builder(UiBuilder::new().max_rect(row).layout(layout), |ui| {
-        widgets::muted(ui, &theme, copy::UNSAVED);
+        match &st.save_error {
+            Some(error) => widgets::error_text(ui, &theme, error),
+            None => widgets::muted(ui, &theme, copy::UNSAVED),
+        };
         let right = egui::Layout::right_to_left(egui::Align::Center);
+        let dirty = st.dirty();
         ui.with_layout(right, |ui| {
-            ui.add_enabled_ui(!st.saving, |ui| save_buttons(ui, cx));
+            ui.add_enabled_ui(!st.saving, |ui| save_buttons(ui, cx, dirty));
         });
     });
 }
