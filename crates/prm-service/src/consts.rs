@@ -30,6 +30,8 @@ pub const MANUAL_REFRESH_DEBOUNCE: Duration = Duration::from_secs(2);
 pub const PUBLISH_THROTTLE: Duration = Duration::from_millis(100);
 /// Seen marks and UI state are written after this quiet period.
 pub const PERSIST_DEBOUNCE: Duration = Duration::from_secs(2);
+/// At shutdown, a running state save gets this long to finish before the final save.
+pub const SHUTDOWN_SAVE_WAIT: Duration = Duration::from_secs(2);
 /// First retry delay after a failed refresh; doubles per failure, capped by the interval.
 pub const FAILURE_BACKOFF_BASE: Duration = Duration::from_secs(60);
 /// Rate-limit slowdown never stretches the interval beyond this factor.

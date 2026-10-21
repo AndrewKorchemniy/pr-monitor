@@ -168,7 +168,7 @@ pub struct FakeOrgAuth {
     sign_in: Mutex<Result<AuthMethod, AuthError>>,
     snapshot: Mutex<AuthSnapshot>,
     stored_pats: Mutex<Vec<String>>,
-    sign_in_delay: Option<Duration>,
+    sign_in_delay: Mutex<Option<Duration>>,
     sign_ins: AtomicUsize,
 }
 
@@ -182,7 +182,7 @@ impl Default for FakeOrgAuth {
                 ..AuthSnapshot::default()
             }),
             stored_pats: Mutex::new(Vec::new()),
-            sign_in_delay: None,
+            sign_in_delay: Mutex::new(None),
             sign_ins: AtomicUsize::new(0),
         }
     }
@@ -197,9 +197,14 @@ impl FakeOrgAuth {
         *lock(&self.sign_in) = result;
     }
 
-    pub fn with_sign_in_delay(mut self, delay: Duration) -> Self {
-        self.sign_in_delay = Some(delay);
+    pub fn with_sign_in_delay(self, delay: Duration) -> Self {
+        self.set_sign_in_delay(Some(delay));
         self
+    }
+
+    /// Later sign-ins wait this long (or until cancelled) before answering.
+    pub fn set_sign_in_delay(&self, delay: Option<Duration>) {
+        *lock(&self.sign_in_delay) = delay;
     }
 
     /// How many times `sign_in` was called (any method).
@@ -231,7 +236,8 @@ impl OrgAuthenticator for FakeOrgAuth {
         cancel: CancellationToken,
     ) -> Result<AuthMethod, AuthError> {
         self.sign_ins.fetch_add(1, Ordering::SeqCst);
-        if let Some(delay) = self.sign_in_delay {
+        let delay = *lock(&self.sign_in_delay);
+        if let Some(delay) = delay {
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
                 () = cancel.cancelled() => return Err(AuthError::Cancelled),

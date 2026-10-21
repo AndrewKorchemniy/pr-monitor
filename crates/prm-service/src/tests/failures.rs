@@ -3,7 +3,10 @@
 use std::time::Duration;
 
 use prm_ado::{AdoError, RateSnapshot, testing::ApiCall};
-use prm_config::ConfigError;
+use prm_config::{
+    ConfigError,
+    store::{MemoryRepo, Saved},
+};
 use prm_domain::{
     diff::ChangeKind,
     model::PrState,
@@ -18,11 +21,19 @@ use super::support::{
 };
 use crate::{
     command::Command,
+    consts::PERSIST_DEBOUNCE,
     event::AppEvent,
     state::{OrgHealth, PauseReason},
     testing::{HarnessSetup, ServiceHarness},
     text,
 };
+
+fn state_saves(repo: &MemoryRepo) -> usize {
+    repo.saved()
+        .iter()
+        .filter(|s| matches!(s, Saved::State(_)))
+        .count()
+}
 
 fn rate(remaining: f64) -> RateSnapshot {
     RateSnapshot {
@@ -293,6 +304,40 @@ async fn persist_failure_notice_continues() {
     h.send(Command::RefreshNow);
     refreshed(&mut h, CONTOSO, 2).await;
     assert_eq!(list_calls(&h, CONTOSO), 2);
+    h.stop().await;
+}
+
+/// A failed state save used to wait for the next unrelated change, so a crash in between lost
+/// seen marks and could repeat toasts.
+#[tokio::test(start_paused = true)]
+async fn persist_failure_retried() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    let repo = h.repo.clone();
+    h.wait_for("first save", move |_| repo.last_state().is_some())
+        .await;
+    let before = state_saves(&h.repo);
+    h.repo.fail_next(ConfigError::Serialize("disk full".into()));
+
+    h.send(Command::MarkAllSeen);
+    let events = h.events.clone();
+    h.wait_for("save notice", move |_| {
+        events
+            .events()
+            .iter()
+            .any(|e| matches!(e, AppEvent::Notice(n) if n.text.as_ref() == text::STATE_NOT_SAVED))
+    })
+    .await;
+    let failed_at = Instant::now();
+    let repo = h.repo.clone();
+    h.wait_for("retried save", move |_| state_saves(&repo) > before)
+        .await;
+
+    assert!(
+        failed_at.elapsed() <= PERSIST_DEBOUNCE,
+        "{:?}",
+        failed_at.elapsed()
+    );
     h.stop().await;
 }
 

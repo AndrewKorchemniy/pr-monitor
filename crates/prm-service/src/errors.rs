@@ -13,13 +13,18 @@ use prm_domain::{
 
 use crate::text;
 
+/// An error ready to show: what happened, more detail, and the actions that fix it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UiError {
+    /// One sentence saying what happened.
     pub title: Arc<str>,
+    /// More detail (the server's message, a path), shown on demand.
     pub detail: Option<Arc<str>>,
     /// A `TF…`/`VS…`/`AADSTS…` code, for support.
     pub code: Option<Arc<str>>,
+    /// The main button that fixes it.
     pub action: Option<UserAction>,
+    /// A second, less likely fix.
     pub secondary: Option<UserAction>,
     /// Likely to clear up on its own; the UI shows it quietly.
     pub transient: bool,

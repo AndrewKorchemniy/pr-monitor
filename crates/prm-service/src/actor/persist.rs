@@ -1,24 +1,31 @@
 //! Writing `state.json`: debounced, at most one save in flight, and a "flush" that saves before
 //! showing a cycle's toasts.
 
-use prm_config::{PersistedState, state::STATE_SCHEMA};
+use prm_config::{ConfigError, PersistedState, Severity, StateRepo, state::STATE_SCHEMA};
 use prm_domain::{model::Catalog, notify::NotifierOp};
-use tokio::time::Instant;
+use tokio::{
+    task::{AbortHandle, Id},
+    time::Instant,
+};
 
 use super::Service;
 use crate::{
-    consts::PERSIST_DEBOUNCE,
+    consts::{PERSIST_DEBOUNCE, SHUTDOWN_SAVE_WAIT},
     errors::UiError,
     jobs::{JobKind, JobOutput, JobTag, Saved, apply_notifier_ops, blocking},
-    publish,
+    publish, text,
 };
 
 #[derive(Default)]
 pub(super) struct PersistState {
     pub deadline: Option<Instant>,
-    in_flight: bool,
+    /// The running state save (plain or flush); saves never overlap, so an older state can
+    /// never land after a newer one.
+    in_flight: Option<Id>,
     /// Dirtied again while a save was running: save once more afterwards.
     again: bool,
+    /// Toasts of cycles that finished while a save was running: flushed after it.
+    queued: Option<Vec<NotifierOp>>,
 }
 
 impl Service {
@@ -31,30 +38,30 @@ impl Service {
 
     pub(super) fn start_persist(&mut self) {
         self.persist.deadline = None;
-        if self.persist.in_flight {
+        if self.persist.in_flight.is_some() {
             self.persist.again = true;
             return;
         }
-        self.persist.in_flight = true;
         let state = self.build_persisted();
-        let repo = self.deps.repo.clone();
-        self.spawn(JobTag::global(JobKind::Save), async move {
-            let result = blocking(move || repo.save_state(&state)).await;
-            JobOutput::Saved {
-                what: Saved::State,
-                result: save_result(result),
-            }
+        let job = self.spawn_save(JobTag::global(JobKind::Save), Saved::State, move |repo| {
+            repo.save_state(&state)
         });
+        self.persist.in_flight = Some(job.id());
     }
 
-    /// Saves now, then shows the toasts: a crash in between loses a toast, never duplicates one.
+    /// Saves now, then shows the toasts, so a restart does not toast the same changes again. A
+    /// crash in between loses a toast; a failed save can still duplicate one after a restart.
     pub(super) fn flush(&mut self, ops: Vec<NotifierOp>) {
+        if self.persist.in_flight.is_some() {
+            self.persist.queued.get_or_insert_default().extend(ops);
+            return;
+        }
         self.persist.deadline = None;
-        self.persist.in_flight = true;
+        self.persist.again = false;
         let state = self.build_persisted();
         let repo = self.deps.repo.clone();
         let notifier = self.deps.notifier.clone();
-        self.spawn(JobTag::global(JobKind::Flush), async move {
+        let job = self.spawn(JobTag::global(JobKind::Flush), async move {
             let saved = save_result(blocking(move || repo.save_state(&state)).await);
             let failures = blocking(move || apply_notifier_ops(notifier.as_ref(), &ops)).await;
             JobOutput::Flushed {
@@ -62,23 +69,50 @@ impl Service {
                 notify_failures: failures.unwrap_or(1),
             }
         });
+        self.persist.in_flight = Some(job.id());
     }
 
-    /// A state save (plain or flush) finished.
+    /// A state save (plain or flush) finished: start whatever waited for it.
     pub(super) fn on_state_saved(&mut self, result: Result<(), UiError>) {
-        self.persist.in_flight = false;
+        self.persist.in_flight = None;
         if let Err(error) = result {
-            tracing::warn!(error = %error.title, "state save failed");
-            self.notice(crate::event::Notice {
-                severity: prm_config::Severity::Warning,
-                text: crate::text::STATE_NOT_SAVED.into(),
-                org: None,
-                action: None,
-                ttl: crate::consts::NOTICE_TTL,
-            });
+            tracing::warn!(error = %error.title, "state save failed; retrying");
+            self.global_notice(Severity::Warning, text::STATE_NOT_SAVED);
+            self.mark_persist();
         }
-        if std::mem::take(&mut self.persist.again) {
+        if let Some(ops) = self.persist.queued.take() {
+            self.flush(ops);
+        } else if std::mem::take(&mut self.persist.again) {
             self.persist.deadline = Some(Instant::now());
+        }
+    }
+
+    /// A save job panicked; only the running state save holds anything up.
+    pub(super) fn on_save_panicked(&mut self, job: Id) {
+        if self.persist.in_flight == Some(job) {
+            self.on_state_saved(Err(UiError::internal("save task panicked")));
+        }
+    }
+
+    /// At shutdown: lets a running save finish (bounded), so the final save is the last write.
+    pub(super) async fn wait_for_save(&mut self) {
+        let Some(id) = self.persist.in_flight else {
+            return;
+        };
+        if tokio::time::timeout(SHUTDOWN_SAVE_WAIT, self.join_until(id))
+            .await
+            .is_err()
+        {
+            tracing::warn!("state save still running at shutdown");
+        }
+    }
+
+    /// Drains finished jobs (their results no longer matter) until `job` is one of them.
+    async fn join_until(&mut self, job: Id) {
+        while let Some(joined) = self.jobs.join_next_with_id().await {
+            if joined.map_or_else(|error| error.id(), |(id, _)| id) == job {
+                return;
+            }
         }
     }
 
@@ -104,20 +138,29 @@ impl Service {
     pub(super) fn save_catalog(&mut self, idx: usize, catalog: &Catalog) {
         let org = self.orgs[idx].data.id.clone();
         let catalog = catalog.clone();
+        let tag = JobTag::org(&org, JobKind::Save);
+        self.spawn_save(tag, Saved::Catalog, move |repo| {
+            repo.save_catalog(&org, &catalog)
+        });
+    }
+
+    /// Runs one repository write on the blocking pool and reports it as `what`.
+    pub(super) fn spawn_save<F>(&mut self, tag: JobTag, what: Saved, save: F) -> AbortHandle
+    where
+        F: FnOnce(&dyn StateRepo) -> Result<(), ConfigError> + Send + 'static,
+    {
         let repo = self.deps.repo.clone();
-        self.spawn(JobTag::org(&org, JobKind::Save), async move {
-            let result = blocking(move || repo.save_catalog(&org, &catalog)).await;
+        self.spawn(tag, async move {
+            let result = blocking(move || save(repo.as_ref())).await;
             JobOutput::Saved {
-                what: Saved::Catalog,
+                what,
                 result: save_result(result),
             }
-        });
+        })
     }
 }
 
-pub(super) fn save_result(
-    result: Option<Result<(), prm_config::ConfigError>>,
-) -> Result<(), UiError> {
+fn save_result(result: Option<Result<(), ConfigError>>) -> Result<(), UiError> {
     match result {
         Some(Ok(())) => Ok(()),
         Some(Err(error)) => Err(UiError::from(&error)),

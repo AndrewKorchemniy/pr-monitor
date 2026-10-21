@@ -147,3 +147,34 @@ async fn persist_happens_before_toasts() {
     );
     h.stop().await;
 }
+
+/// A cycle's flush used to start while a plain save was still writing; the older save could
+/// land last, so a restart toasted the same changes again.
+#[tokio::test(start_paused = true)]
+async fn flush_waits_for_running_save() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    let repo = h.repo.clone();
+    h.wait_for("first save", move |_| repo.last_state().is_some())
+        .await;
+    let before = h.gate.started();
+    h.gate.hold();
+    h.send(Command::MarkAllSeen);
+    h.settle().await;
+    h.advance(Duration::from_secs(3)).await;
+    h.gate.wait_started(before + 1);
+
+    add_pr(&h, CONTOSO, 2);
+    h.send(Command::RefreshNow);
+    refreshed(&mut h, CONTOSO, 2).await;
+    h.settle().await;
+    assert_eq!(h.gate.started(), before + 1, "flush waits");
+    assert_eq!(h.notifier.shown(), Vec::new());
+
+    h.gate.release();
+    wait_toasts(&mut h, 1).await;
+    assert_eq!(h.gate.peak(), 1, "saves never overlap");
+    let saved = h.repo.last_state().unwrap();
+    assert_eq!(saved.orgs[&org(CONTOSO)].records.len(), 2);
+    h.stop().await;
+}

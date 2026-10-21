@@ -2,14 +2,14 @@
 //! published), and `OrgLink` (the authenticator, API client and running jobs).
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 
 use prm_ado::{AdoApi, AdoConnector, ClientPolicy, OrgEndpoint, RateSnapshot};
 use prm_auth::{AuthFactory, AuthSnapshot, AuthSpec, OrgAuthenticator, entra::EntraConfig};
 use prm_config::{
-    OrgPersisted, OrgProfile,
+    Config, OrgPersisted, OrgProfile,
     state::{ProbeCache, TenantCache},
 };
 use prm_domain::{
@@ -287,6 +287,8 @@ pub(crate) struct OrgLink {
     /// The notification cycle the running refresh belongs to.
     pub cycle: Option<u64>,
     pub sign_in: Option<CancellationToken>,
+    /// Identifies the current sign-in job; results of older (abandoned) jobs are ignored.
+    pub sign_in_seq: u64,
     /// The auth state to restore when a sign-in is cancelled.
     pub pre_sign_in: Option<AuthState>,
     pub search: Option<(RequestId, AbortHandle)>,
@@ -314,6 +316,7 @@ impl OrgLink {
             in_flight: None,
             cycle: None,
             sign_in: None,
+            sign_in_seq: 0,
             pre_sign_in: None,
             search: None,
             catalog_loading: false,
@@ -353,10 +356,18 @@ impl OrgLink {
         true
     }
 
+    /// Cancels the running sign-in; its `Cancelled` result restores the state from before it.
     pub(crate) fn cancel_sign_in(&mut self) {
         if let Some(token) = self.sign_in.take() {
             token.cancel();
         }
+    }
+
+    /// Cancels the running sign-in and ignores its result: a newer sign-in, a sign-out, a
+    /// disable or an auth change replaced it.
+    pub(crate) fn abandon_sign_in(&mut self) {
+        self.cancel_sign_in();
+        self.sign_in_seq += 1;
     }
 
     pub(crate) fn abort_search(&mut self) {
@@ -388,6 +399,32 @@ fn entra_config(profile: &OrgProfile) -> Option<EntraConfig> {
         client_id,
         tenant: (!tenant.is_empty()).then(|| tenant.to_owned()),
     })
+}
+
+/// Configured orgs with an id, first profile per id. `normalize` keeps a later duplicate
+/// (disabled) for the user to fix; the runtime ignores it.
+pub(crate) fn org_profiles(config: &Config) -> impl Iterator<Item = (OrgId, &OrgProfile)> {
+    let mut seen = BTreeSet::new();
+    config.orgs.iter().filter_map(move |profile| {
+        let id = profile.org_id()?;
+        seen.insert(id.clone()).then(|| (id.clone(), profile))
+    })
+}
+
+/// Each configured org's data at startup; `saved` hands over what was persisted for an org.
+pub(crate) fn startup_orgs(
+    config: &Config,
+    mut saved: impl FnMut(&OrgId) -> Option<OrgPersisted>,
+    catalogs: &HashMap<OrgId, Catalog>,
+    now: Timestamp,
+) -> Vec<OrgData> {
+    let mut orgs = Vec::new();
+    for (id, profile) in org_profiles(config) {
+        let persisted = saved(&id);
+        let catalog = catalogs.get(&id).cloned();
+        orgs.push(OrgData::new(id, profile.clone(), persisted, catalog, now));
+    }
+    orgs
 }
 
 /// An org at run time.

@@ -44,13 +44,7 @@ pub struct ConfigChanges {
 
 /// Both configs must already be normalized (ids set).
 pub fn diff_configs(old: &Config, new: &Config) -> ConfigChanges {
-    let index = |cfg: &Config| -> BTreeMap<OrgId, OrgProfile> {
-        cfg.orgs
-            .iter()
-            .filter_map(|o| Some((o.org_id()?.clone(), o.clone())))
-            .collect()
-    };
-    let (old_orgs, new_orgs) = (index(old), index(new));
+    let (old_orgs, new_orgs) = (index_orgs(old), index_orgs(new));
     let mut changes = ConfigChanges {
         added: new_orgs
             .keys()
@@ -78,6 +72,18 @@ pub fn diff_configs(old: &Config, new: &Config) -> ConfigChanges {
         }
     }
     changes
+}
+
+/// Profiles by id. The first profile per id is the org; `normalize` disables later duplicates,
+/// and the service ignores them, so their changes must not be applied to the org.
+fn index_orgs(cfg: &Config) -> BTreeMap<OrgId, OrgProfile> {
+    let mut orgs = BTreeMap::new();
+    for profile in &cfg.orgs {
+        if let Some(id) = profile.org_id() {
+            orgs.entry(id.clone()).or_insert_with(|| profile.clone());
+        }
+    }
+    orgs
 }
 
 fn diff_org(old: &OrgProfile, new: &OrgProfile) -> OrgChanges {

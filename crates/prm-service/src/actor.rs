@@ -37,7 +37,7 @@ use crate::{
     event::{AppEvent, Notice},
     handle::{InitialData, ServiceDeps},
     jobs::{JobKind, JobOutput, JobTag, blocking},
-    org::{Connectors, OrgData, OrgLink, OrgLive, OrgRuntime},
+    org::{Connectors, OrgData, OrgLink, OrgLive, OrgRuntime, startup_orgs},
     ports::NotifierCapability,
     publish::{self, Composition, NoticeLog, OrgView},
     scheduler::{Moment, Policy},
@@ -184,7 +184,7 @@ impl Service {
                     ControlFlow::Continue(())
                 }
                 () = tokio::time::sleep_until(wake) => {
-                    self.on_wake();
+                    self.on_wake(wake);
                     ControlFlow::Continue(())
                 }
             };
@@ -215,6 +215,11 @@ impl Service {
         client_policy(&self.config)
     }
 
+    fn new_runtime(&self, data: OrgData) -> OrgRuntime {
+        let policy = self.connectors_policy();
+        runtime(data, &self.deps.connectors(&policy))
+    }
+
     /// Spawns a job and remembers what it is, for panic attribution.
     fn spawn<F>(&mut self, tag: JobTag, job: F) -> AbortHandle
     where
@@ -238,7 +243,6 @@ impl Service {
         let now = self.now();
         self.last_wake = Some(now);
         for org in &mut self.orgs {
-            org.live = OrgLive::initial(&org.data);
             if org.data.profile.enabled && !org.data.signed_out {
                 org.live.schedule.due_at(now, self.startup_delay);
             }
@@ -255,7 +259,7 @@ impl Service {
         for org in self.orgs.iter().filter(|o| o.link.in_flight.is_none()) {
             let schedule = &org.live.schedule;
             let next = match schedule.paused {
-                None => schedule.due,
+                None => schedule.due_mono(),
                 Some(PauseReason::Auth) => schedule.next_probe,
                 Some(PauseReason::SignedOut | PauseReason::RateLimited) => None,
             };
@@ -269,15 +273,20 @@ impl Service {
         deadlines.into_iter().flatten().fold(wake, Instant::min)
     }
 
-    fn on_wake(&mut self) {
+    /// The timer set for `deadline` fired.
+    fn on_wake(&mut self, deadline: Instant) {
         let now = self.now();
-        if let Some(previous) = self.last_wake
-            && crate::scheduler::detect_resume(previous, now)
-        {
-            self.settle_after_resume(now);
-        }
+        let resumed = self
+            .last_wake
+            .is_some_and(|previous| crate::scheduler::detect_resume(previous, now, deadline));
         self.last_wake = Some(now);
-        self.start_due_refreshes(now);
+        if resumed {
+            // why: the settle delay is within the coalesce window, so starting due refreshes
+            // on this wake would start the settled orgs at once.
+            self.settle_after_resume(now);
+        } else {
+            self.start_due_refreshes(now);
+        }
         self.start_due_probes(now);
         if self.paused_until.is_some_and(|until| until <= now.wall) {
             self.paused_until = None;
@@ -301,7 +310,7 @@ impl Service {
             Err(error) => {
                 let tag = self.tags.remove(&error.id());
                 if error.is_panic() {
-                    self.on_panic(tag);
+                    self.on_panic(error.id(), tag);
                 }
             }
         }
@@ -366,6 +375,14 @@ impl Service {
         self.deps.events.wake();
     }
 
+    fn spawn_capability_check(&mut self) {
+        let notifier = self.deps.notifier.clone();
+        self.spawn(JobTag::global(JobKind::Port), async move {
+            let capability = blocking(move || notifier.capability()).await;
+            JobOutput::Capability(capability.unwrap_or_default())
+        });
+    }
+
     fn notifications_status(&self) -> NotificationsStatus {
         NotificationsStatus {
             enabled: self.config.notifications.enabled,
@@ -378,6 +395,7 @@ impl Service {
     async fn shutdown(mut self) {
         tracing::info!("service stopping");
         self.root.cancel();
+        self.wait_for_save().await;
         self.jobs.abort_all();
         let state = self.build_persisted();
         let repo = self.deps.repo.clone();
@@ -397,30 +415,20 @@ fn client_policy(config: &Config) -> ClientPolicy {
     }
 }
 
-/// Runtimes for every configured org with an id, starting from what was persisted.
+/// Runtimes for every configured org with an id (first profile per id), starting from what
+/// was persisted.
 fn connect_orgs(
     deps: &ServiceDeps,
     config: &Config,
     persisted: &mut prm_config::PersistedState,
     catalogs: &HashMap<OrgId, prm_domain::model::Catalog>,
 ) -> Vec<OrgRuntime> {
-    let now = deps.clock.now();
     let policy = client_policy(config);
-    let connectors = Connectors {
-        auth: deps.auth.as_ref(),
-        ado: deps.ado.as_ref(),
-        policy: &policy,
-    };
-    config
-        .orgs
-        .iter()
-        .filter_map(|profile| {
-            let id = profile.org_id()?.clone();
-            let saved = persisted.orgs.remove(&id);
-            let catalog = catalogs.get(&id).cloned();
-            let data = OrgData::new(id, profile.clone(), saved, catalog, now);
-            Some(runtime(data, &connectors))
-        })
+    let connectors = deps.connectors(&policy);
+    let saved = |id: &OrgId| persisted.orgs.remove(id);
+    startup_orgs(config, saved, catalogs, deps.clock.now())
+        .into_iter()
+        .map(|data| runtime(data, &connectors))
         .collect()
 }
 
@@ -428,24 +436,4 @@ fn runtime(data: OrgData, connectors: &Connectors<'_>) -> OrgRuntime {
     let link = OrgLink::connect(&data, connectors);
     let live = OrgLive::initial(&data);
     OrgRuntime { data, live, link }
-}
-
-impl Service {
-    fn new_runtime(&self, data: OrgData) -> OrgRuntime {
-        let policy = self.connectors_policy();
-        let connectors = Connectors {
-            auth: self.deps.auth.as_ref(),
-            ado: self.deps.ado.as_ref(),
-            policy: &policy,
-        };
-        runtime(data, &connectors)
-    }
-
-    fn spawn_capability_check(&mut self) {
-        let notifier = self.deps.notifier.clone();
-        self.spawn(JobTag::global(JobKind::Port), async move {
-            let capability = blocking(move || notifier.capability()).await;
-            JobOutput::Capability(capability.unwrap_or_default())
-        });
-    }
 }

@@ -44,7 +44,7 @@ impl Service {
         tracing::info!("resume detected");
         for org in &mut self.orgs {
             let schedule = &mut org.live.schedule;
-            if schedule.due_wall.is_some_and(|due| due <= now.wall) {
+            if schedule.due_wall().is_some_and(|due| due <= now.wall) {
                 schedule.due_at(now, RESUME_SETTLE);
             }
         }
@@ -87,7 +87,12 @@ impl Service {
     pub(super) fn start_refresh(&mut self, idx: usize, cycle: u64) -> bool {
         let now = self.now();
         let org = &mut self.orgs[idx];
-        if org.link.in_flight.is_some() || !org.data.profile.enabled {
+        if !org.data.profile.enabled {
+            // why: a disabled org left due would be due again on every wake (a busy loop).
+            org.live.schedule.clear_due();
+            return false;
+        }
+        if org.link.in_flight.is_some() {
             return false;
         }
         let ctx = RefreshCtx {
@@ -107,8 +112,7 @@ impl Service {
             cancel: cancel.clone(),
         });
         org.link.cycle = Some(cycle);
-        org.live.schedule.due = None;
-        org.live.schedule.due_wall = None;
+        org.live.schedule.clear_due();
         org.live.health = OrgHealth::Refreshing { since: now.wall };
         let (id, generation) = (org.data.id.clone(), org.link.generation);
         self.apply_auth(idx, AuthInput::RefreshStarted);
@@ -205,12 +209,16 @@ impl Service {
         }
     }
 
+    /// A refresh failed to authenticate. A lasting problem pauses the org through the auth
+    /// machine; while it ignores the failure (a sign-in is running), the org retries later
+    /// like any failed refresh, so it is never left refreshing and unscheduled.
     fn refresh_auth_failed(&mut self, idx: usize, error: AuthError) {
         let transient = error.severity() == AuthSeverity::Transient;
         let ui = UiError::from(&error);
         self.orgs[idx].live.auth = self.orgs[idx].link.auth.snapshot();
         self.apply_auth(idx, AuthInput::AuthFailed(error));
-        if transient {
+        let paused = self.orgs[idx].live.schedule.paused.is_some();
+        if transient || !paused {
             self.refresh_failed(idx, FailureKind::Other, ui);
         } else {
             self.orgs[idx].live.last_error = Some(ui);
@@ -231,7 +239,7 @@ impl Service {
             FailureKind::Other => OrgHealth::Failed {
                 error: error.clone(),
                 since: now.wall,
-                retry_at: org.live.schedule.due_wall,
+                retry_at: org.live.schedule.due_wall(),
             },
         };
         org.live.last_error = Some(error);

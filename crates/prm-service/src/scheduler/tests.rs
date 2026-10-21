@@ -21,7 +21,9 @@ fn at(mono: Instant, wall_secs: i64) -> Moment {
 }
 
 fn delay(schedule: &Schedule, now: Moment) -> Duration {
-    schedule.due.map_or(Duration::MAX, |due| due - now.mono)
+    schedule
+        .due_mono()
+        .map_or(Duration::MAX, |due| due - now.mono)
 }
 
 #[test]
@@ -69,7 +71,7 @@ fn after_success_resets_failures_and_uses_interval() {
     after_success(policy(0), &mut schedule, now, None, &mut rng);
     assert_eq!(schedule.failures, 0);
     assert_eq!(delay(&schedule, now), 5 * MINUTE);
-    assert_eq!(schedule.due_wall, Some(ts(1_300)));
+    assert_eq!(schedule.due_wall(), Some(ts(1_300)));
 }
 
 #[test]
@@ -127,9 +129,10 @@ fn failure_kind_of_rate_limited() {
 #[test]
 fn due_orgs_coalesce_window() {
     let now = Instant::now();
-    let due_in = |secs: u64| Schedule {
-        due: Some(now + Duration::from_secs(secs)),
-        ..Schedule::default()
+    let due_in = |secs: u64| {
+        let mut schedule = Schedule::default();
+        schedule.due_at(at(now, 0), Duration::from_secs(secs));
+        schedule
     };
     let names = ["soon", "later", "paused", "busy", "unscheduled"].map(org);
     let soon = due_in(4);
@@ -162,10 +165,57 @@ fn due_orgs_coalesce_window() {
 fn detect_resume_threshold() {
     let start = Instant::now();
     let before = at(start, 0);
-    let after = |wall: i64| at(start + Duration::from_secs(60), wall);
-    assert!(!detect_resume(before, after(60 + 89)));
-    assert!(detect_resume(before, after(60 + 91)));
-    assert!(!detect_resume(before, after(60)));
+    let deadline = start + Duration::from_secs(60);
+    let after = |wall: i64| at(deadline, wall);
+    assert!(!detect_resume(before, after(60 + 89), deadline));
+    assert!(detect_resume(before, after(60 + 91), deadline));
+    assert!(!detect_resume(before, after(60), deadline));
+}
+
+/// Windows' monotonic clock keeps counting in suspend, so both clocks jump together; resume
+/// used to go unnoticed there and refreshes fired before the network was back.
+#[test]
+fn detect_resume_timer_fired_late() {
+    let start = Instant::now();
+    let before = at(start, 0);
+    let deadline = start + Duration::from_secs(60);
+    let late = |secs: u64| {
+        let mono = deadline + Duration::from_secs(secs);
+        let wall = i64::try_from((mono - start).as_secs()).unwrap();
+        at(mono, wall)
+    };
+    assert!(!detect_resume(before, late(89), deadline));
+    assert!(detect_resume(before, late(91), deadline));
+    assert!(detect_resume(before, late(2 * 3_600), deadline));
+}
+
+#[test]
+fn schedule_clear_due_clears_both_clocks() {
+    let now = at(Instant::now(), 0);
+    let mut schedule = Schedule::default();
+    schedule.due_at(now, Duration::from_secs(60));
+    schedule.clear_due();
+    assert_eq!(schedule.due_mono(), None);
+    assert_eq!(schedule.due_wall(), None);
+}
+
+#[test]
+fn policy_probe_interval_at_least_refresh_interval() {
+    assert_eq!(policy(0).probe_interval(), AUTH_PROBE_INTERVAL);
+    let slow = Policy {
+        interval: Duration::from_mins(30),
+        jitter_pct: 0,
+    };
+    assert_eq!(slow.probe_interval(), Duration::from_mins(30));
+}
+
+#[test]
+fn policy_from_config_minutes() {
+    let config = RefreshConfig {
+        interval_minutes: 7,
+        ..RefreshConfig::default()
+    };
+    assert_eq!(Policy::from_config(&config).interval, 7 * MINUTE);
 }
 
 #[test]

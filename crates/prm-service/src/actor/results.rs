@@ -5,6 +5,7 @@ use std::sync::Arc;
 use prm_ado::AdoError;
 use prm_config::Severity;
 use prm_domain::{OrgId, auth::AuthError, model::Catalog};
+use tokio::task::Id;
 
 use super::Service;
 use crate::{
@@ -27,7 +28,7 @@ impl Service {
                 generation,
                 result,
             } => self.on_probe(&org, generation, result),
-            JobOutput::SignIn { org, result } => self.on_sign_in(&org, result),
+            JobOutput::SignIn { org, seq, result } => self.on_sign_in(&org, seq, result),
             JobOutput::SignedOut { org, result } => self.on_signed_out(&org, result),
             JobOutput::SetPat { org, result } => self.on_set_pat(&org, result),
             JobOutput::Catalog {
@@ -148,7 +149,7 @@ impl Service {
         self.autostart.error = set_error.map(|e| e.message.clone()).or(read_error);
     }
 
-    pub(super) fn on_panic(&mut self, tag: Option<JobTag>) {
+    pub(super) fn on_panic(&mut self, job: Id, tag: Option<JobTag>) {
         let Some(tag) = tag else {
             return;
         };
@@ -158,12 +159,12 @@ impl Service {
             (JobKind::Refresh | JobKind::Probe, Some(idx)) => self.org_job_panicked(idx),
             (JobKind::SignIn, Some(idx)) => {
                 let org = self.orgs[idx].data.id.clone();
-                self.on_sign_in(&org, Err(AuthError::Other("sign-in task failed".into())));
+                let seq = self.orgs[idx].link.sign_in_seq;
+                let error = AuthError::Other("sign-in task failed".into());
+                self.on_sign_in(&org, seq, Err(error));
             }
             (JobKind::Catalog, Some(idx)) => self.orgs[idx].link.catalog_loading = false,
-            (JobKind::Save | JobKind::Flush, _) => {
-                self.on_state_saved(Err(UiError::internal("save task panicked")));
-            }
+            (JobKind::Save | JobKind::Flush, _) => self.on_save_panicked(job),
             (
                 JobKind::Refresh
                 | JobKind::Probe

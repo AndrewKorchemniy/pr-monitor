@@ -92,3 +92,26 @@ fn diff_configs_global_sections() {
     let changes = diff_configs(&old, &new);
     assert!(changes.ui && changes.autostart && !changes.refresh);
 }
+
+/// A duplicate entry used to stand in for the org (last one won), so the org was diffed
+/// against the disabled duplicate's profile.
+#[test]
+fn diff_configs_duplicate_uses_first_entry() {
+    let old = config(&[
+        "https://dev.azure.com/contoso",
+        "https://contoso.visualstudio.com",
+    ]);
+    let mut new = old.clone();
+    new.orgs[1].label = "Duplicate".into();
+    let changes = diff_configs(&old, &new);
+    assert!(changes.changed.is_empty(), "{changes:?}");
+
+    new.orgs[0].label = "Contoso".into();
+    assert_eq!(
+        only_change(&old, &new),
+        OrgChanges {
+            cosmetic: true,
+            ..OrgChanges::default()
+        }
+    );
+}

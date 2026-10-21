@@ -5,13 +5,12 @@ use std::sync::Arc;
 use prm_config::{Config, OrgChanges, OrgProfile, Severity, diff_configs, normalize};
 use prm_domain::OrgId;
 
-use super::{Service, persist::save_result};
+use super::Service;
 use crate::{
     auth_machine::AuthInput,
-    consts::NOTICE_TTL,
-    event::{AppEvent, Notice},
-    jobs::{JobKind, JobOutput, JobTag, Saved, blocking},
-    org::{Connectors, OrgData, OrgRuntime},
+    event::AppEvent,
+    jobs::{JobKind, JobTag, Saved},
+    org::{OrgData, OrgRuntime, org_profiles},
     scheduler::{Moment, jittered},
     text,
 };
@@ -35,13 +34,7 @@ impl Service {
             self.reschedule_all();
         }
         if changes.network {
-            self.notice(Notice {
-                severity: Severity::Info,
-                text: Arc::from(text::NETWORK_RESTART),
-                org: None,
-                action: None,
-                ttl: NOTICE_TTL,
-            });
+            self.global_notice(Severity::Info, text::NETWORK_RESTART);
         }
         if changes.autostart {
             self.spawn_autostart(Some(self.config.ui.launch_at_login));
@@ -51,14 +44,8 @@ impl Service {
 
     fn spawn_config_save(&mut self) {
         let config = (*self.config).clone();
-        let repo = self.deps.repo.clone();
-        self.spawn(JobTag::global(JobKind::Save), async move {
-            let result = blocking(move || repo.save_config(&config)).await;
-            JobOutput::Saved {
-                what: Saved::Config,
-                result: save_result(result),
-            }
-        });
+        let tag = JobTag::global(JobKind::Save);
+        self.spawn_save(tag, Saved::Config, move |repo| repo.save_config(&config));
     }
 
     /// The config save finished: tell the settings screen.
@@ -76,18 +63,15 @@ impl Service {
         };
         let link = &mut self.orgs[idx].link;
         link.cancel_in_flight();
-        link.cancel_sign_in();
+        link.abandon_sign_in();
         link.abort_search();
         self.leave_cycle(idx);
         self.progress.remove(org);
         self.seen.retain(|key, _| &key.org != org);
-        let (repo, id) = (self.deps.repo.clone(), org.clone());
-        self.spawn(JobTag::org(org, JobKind::Save), async move {
-            let result = blocking(move || repo.delete_org_data(&id)).await;
-            JobOutput::Saved {
-                what: Saved::OrgDataDeleted,
-                result: save_result(result),
-            }
+        let id = org.clone();
+        let tag = JobTag::org(org, JobKind::Save);
+        self.spawn_save(tag, Saved::OrgDataDeleted, move |repo| {
+            repo.delete_org_data(&id)
         });
     }
 
@@ -96,15 +80,9 @@ impl Service {
     fn rebuild_org_list(&mut self) {
         let now = self.now();
         let mut old = std::mem::take(&mut self.orgs);
-        let profiles = self.config.orgs.clone();
-        for profile in profiles {
-            let Some(id) = profile.org_id().cloned() else {
-                continue;
-            };
-            if self.index(&id).is_some() {
-                continue;
-            }
-            let runtime = self.reuse_or_create(&mut old, id, profile, now);
+        let config = self.config.clone();
+        for (id, profile) in org_profiles(&config) {
+            let runtime = self.reuse_or_create(&mut old, id, profile.clone(), now);
             self.orgs.push(runtime);
         }
     }
@@ -134,17 +112,15 @@ impl Service {
         let Some(idx) = self.index(org) else {
             return;
         };
-        let now = self.now();
+        if change.scope || change.authors {
+            // why: PRs that newly come into view are not news; the next refresh is silent.
+            self.orgs[idx].data.rebaseline_pending = true;
+        }
         if change.endpoint || change.auth {
-            self.restart_jobs(idx);
-            self.orgs[idx].link.cancel_sign_in();
-            self.reconnect(idx);
-            self.apply_auth(idx, AuthInput::Reset);
+            self.reset_auth(idx);
         } else if change.scope || change.authors {
             self.restart_jobs(idx);
-            let runtime = &mut self.orgs[idx];
-            runtime.data.rebaseline_pending = true;
-            runtime.live.schedule.due_now(now);
+            self.refresh_soon(idx);
         }
         if change.classify {
             self.orgs[idx].data.reclassify();
@@ -154,8 +130,29 @@ impl Service {
         }
     }
 
+    /// New auth settings: new clients, a fresh auth state, and a refresh (unless the org is
+    /// disabled or signed out).
+    fn reset_auth(&mut self, idx: usize) {
+        self.restart_jobs(idx);
+        self.abandon_sign_in(idx);
+        self.reconnect(idx);
+        // why: the new settings may sign in as someone else; the next refresh asks.
+        self.orgs[idx].data.me = None;
+        self.apply_auth(idx, AuthInput::Reset);
+        self.keep_signed_out(idx);
+    }
+
+    /// Refreshes the org now if it is enabled and not paused.
+    fn refresh_soon(&mut self, idx: usize) {
+        let now = self.now();
+        let runtime = &mut self.orgs[idx];
+        if runtime.data.profile.enabled && runtime.live.schedule.paused.is_none() {
+            runtime.live.schedule.due_now(now);
+        }
+    }
+
     /// Cancels the running refresh or probe; its result is ignored when it arrives.
-    fn restart_jobs(&mut self, idx: usize) {
+    pub(super) fn restart_jobs(&mut self, idx: usize) {
         if self.orgs[idx].link.cancel_in_flight() {
             let org = self.orgs[idx].data.id.clone();
             self.progress.remove(&org);
@@ -165,11 +162,7 @@ impl Service {
 
     fn reconnect(&mut self, idx: usize) {
         let policy = self.connectors_policy();
-        let connectors = Connectors {
-            auth: self.deps.auth.as_ref(),
-            ado: self.deps.ado.as_ref(),
-            policy: &policy,
-        };
+        let connectors = self.deps.connectors(&policy);
         let OrgRuntime { data, link, .. } = &mut self.orgs[idx];
         link.reconnect(data, &connectors);
     }
@@ -181,9 +174,7 @@ impl Service {
             return;
         }
         self.apply_auth(idx, AuthInput::Enabled);
-        if self.orgs[idx].data.signed_out {
-            self.apply_auth(idx, AuthInput::SignOutRequested);
-        }
+        self.keep_signed_out(idx);
     }
 
     /// The interval changed: no org waits longer than the new interval.

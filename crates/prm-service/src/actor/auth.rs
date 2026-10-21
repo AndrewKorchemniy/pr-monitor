@@ -13,11 +13,11 @@ use prm_domain::{
 use super::Service;
 use crate::{
     auth_machine::{AuthEffect, AuthInput, AuthState, transition},
-    consts::{AUTH_PROBE_INTERVAL, PROBE_ON_SHOW_DEBOUNCE},
+    consts::PROBE_ON_SHOW_DEBOUNCE,
     errors::UiError,
     event::AppEvent,
     jobs::{self, JobKind, JobOutput, JobTag},
-    org::InFlight,
+    org::{InFlight, OrgRuntime},
     scheduler::Moment,
     state::{OrgHealth, PauseReason},
 };
@@ -57,19 +57,34 @@ impl Service {
     fn apply_effect(&mut self, idx: usize, effect: AuthEffect, now: Moment) {
         match effect {
             AuthEffect::PauseRefresh => self.pause(idx, now),
-            AuthEffect::ResumeRefresh { immediate } => self.resume(idx, immediate, now),
+            AuthEffect::ResumeRefresh => self.resume(idx, now),
             AuthEffect::NotifyProblem => self.add_auth_problem(idx),
             AuthEffect::StartSignIn(method) => self.spawn_sign_in(idx, method),
-            AuthEffect::CancelSignIn => self.orgs[idx].link.cancel_sign_in(),
+            AuthEffect::CancelSignIn => self.abandon_sign_in(idx),
+        }
+    }
+
+    /// The running sign-in no longer matters (sign-out, disable, auth change): its result is
+    /// ignored and nothing is restored.
+    pub(super) fn abandon_sign_in(&mut self, idx: usize) {
+        let link = &mut self.orgs[idx].link;
+        link.abandon_sign_in();
+        link.pre_sign_in = None;
+    }
+
+    /// A signed-out org stays signed out across re-enabling and auth changes.
+    pub(super) fn keep_signed_out(&mut self, idx: usize) {
+        let data = &self.orgs[idx].data;
+        if data.profile.enabled && data.signed_out {
+            self.apply_auth(idx, AuthInput::SignOutRequested);
         }
     }
 
     fn pause(&mut self, idx: usize, now: Moment) {
-        let probe_every = self.policy().interval.max(AUTH_PROBE_INTERVAL);
+        let probe_every = self.policy().probe_interval();
         let live = &mut self.orgs[idx].live;
         let schedule = &mut live.schedule;
-        schedule.due = None;
-        schedule.due_wall = None;
+        schedule.clear_due();
         match pause_for(&live.auth_state) {
             Pause::Off => {
                 schedule.paused = None;
@@ -86,16 +101,11 @@ impl Service {
         self.rows.dirty = true;
     }
 
-    fn resume(&mut self, idx: usize, immediate: bool, now: Moment) {
-        let interval = self.policy().interval;
+    fn resume(&mut self, idx: usize, now: Moment) {
         let live = &mut self.orgs[idx].live;
         live.schedule.paused = None;
         live.schedule.next_probe = None;
-        if immediate {
-            live.schedule.due_now(now);
-        } else if live.schedule.due.is_none() {
-            live.schedule.due_at(now, interval);
-        }
+        live.schedule.due_now(now);
         if matches!(live.health, OrgHealth::Paused { .. } | OrgHealth::Disabled) {
             live.health = OrgHealth::Idle;
         }
@@ -114,35 +124,49 @@ impl Service {
         self.apply_auth(idx, AuthInput::SignInRequested(method));
     }
 
+    /// Starts a sign-in; one already running is replaced and its result ignored.
     fn spawn_sign_in(&mut self, idx: usize, method: SignInMethod) {
         let link = &mut self.orgs[idx].link;
-        link.cancel_sign_in();
+        link.abandon_sign_in();
         let token = self.root.child_token();
         link.sign_in = Some(token.clone());
-        let auth = link.auth.clone();
+        let (auth, seq) = (link.auth.clone(), link.sign_in_seq);
         let org = self.orgs[idx].data.id.clone();
         self.spawn(JobTag::org(&org, JobKind::SignIn), async move {
             let result = auth.sign_in(method, token).await;
-            JobOutput::SignIn { org, result }
+            JobOutput::SignIn { org, seq, result }
         });
     }
 
-    pub(super) fn on_sign_in(&mut self, org: &OrgId, result: Result<AuthMethod, AuthError>) {
+    /// A sign-in finished. Results of abandoned sign-ins (`seq` is not current) are ignored.
+    pub(super) fn on_sign_in(
+        &mut self,
+        org: &OrgId,
+        seq: u64,
+        result: Result<AuthMethod, AuthError>,
+    ) {
         let Some(idx) = self.index(org) else {
             return;
         };
-        self.orgs[idx].link.sign_in = None;
+        let link = &mut self.orgs[idx].link;
+        if link.sign_in_seq != seq {
+            return;
+        }
+        link.sign_in = None;
+        let pre_sign_in = link.pre_sign_in.take();
         self.orgs[idx].live.auth = self.orgs[idx].link.auth.snapshot();
         let event = result.clone().map_err(|e| UiError::from(&e));
         match result {
             Ok(_) => {
-                self.orgs[idx].data.signed_out = false;
+                let data = &mut self.orgs[idx].data;
+                data.signed_out = false;
+                // why: the user may have signed in as someone else; the next refresh asks.
+                data.me = None;
                 self.apply_auth(idx, AuthInput::SignInOk);
                 self.mark_persist();
             }
             Err(AuthError::Cancelled) => {
-                let restore = self.orgs[idx].link.pre_sign_in.take().unwrap_or_default();
-                let restore = Box::new(restore);
+                let restore = Box::new(pre_sign_in.unwrap_or_default());
                 self.apply_auth(idx, AuthInput::SignInCancelled { restore });
             }
             Err(error) => self.apply_auth(idx, AuthInput::SignInFailed(error)),
@@ -156,7 +180,7 @@ impl Service {
     /// A silent re-check of an org paused for sign-in.
     pub(super) fn start_probe(&mut self, idx: usize) {
         let now = self.now();
-        let probe_every = self.policy().interval.max(AUTH_PROBE_INTERVAL);
+        let probe_every = self.policy().probe_interval();
         let org = &mut self.orgs[idx];
         if org.link.in_flight.is_some() {
             return;
@@ -183,38 +207,35 @@ impl Service {
     }
 
     pub(super) fn start_due_probes(&mut self, now: Moment) {
-        let due: Vec<usize> = (0..self.orgs.len())
-            .filter(|&idx| {
-                let org = &self.orgs[idx];
-                org.live.schedule.paused == Some(PauseReason::Auth)
-                    && org.link.in_flight.is_none()
-                    && org
-                        .live
-                        .schedule
-                        .next_probe
-                        .is_some_and(|at| at <= now.mono)
-            })
-            .collect();
-        for idx in due {
-            self.start_probe(idx);
-        }
+        self.probe_where(|org| {
+            org.live
+                .schedule
+                .next_probe
+                .is_some_and(|at| at <= now.mono)
+        });
     }
 
     /// The window was shown: re-check paused orgs (debounced), so a fixed sign-in shows quickly.
     pub(super) fn probe_on_show(&mut self) {
         let now = self.now();
-        let due: Vec<usize> = (0..self.orgs.len())
+        self.probe_where(|org| {
+            org.link
+                .last_probe
+                .is_none_or(|at| now.mono >= at + PROBE_ON_SHOW_DEBOUNCE)
+        });
+    }
+
+    /// Probes every org paused for sign-in, with nothing running, for which `due` holds.
+    fn probe_where(&mut self, due: impl Fn(&OrgRuntime) -> bool) {
+        let probe: Vec<usize> = (0..self.orgs.len())
             .filter(|&idx| {
                 let org = &self.orgs[idx];
                 org.live.schedule.paused == Some(PauseReason::Auth)
                     && org.link.in_flight.is_none()
-                    && org
-                        .link
-                        .last_probe
-                        .is_none_or(|at| now.mono >= at + PROBE_ON_SHOW_DEBOUNCE)
+                    && due(org)
             })
             .collect();
-        for idx in due {
+        for idx in probe {
             self.start_probe(idx);
         }
     }
@@ -245,11 +266,7 @@ impl Service {
         let Some(idx) = self.index(org) else {
             return;
         };
-        let runtime = &mut self.orgs[idx];
-        if runtime.link.cancel_in_flight() {
-            self.progress.remove(org);
-            self.leave_cycle(idx);
-        }
+        self.restart_jobs(idx);
         let runtime = &mut self.orgs[idx];
         runtime.data.signed_out = true;
         runtime.data.me = None;
