@@ -17,7 +17,11 @@ use prm_domain::{
 };
 use prm_service::{AppEvent, SearchPhase, UiError};
 
-use crate::{copy, frame::FrameCx, widgets};
+use crate::{
+    copy,
+    frame::FrameCx,
+    widgets::{self, controls},
+};
 
 mod combobox;
 mod pills;
@@ -300,15 +304,21 @@ pub(crate) fn people_picker(
     people: &mut Vec<Person>,
 ) {
     let theme = cx.theme.clone();
-    match org {
-        Some(org) => combobox::search(ui, cx, picker, org, people),
-        None => {
-            widgets::muted(ui, &theme, copy::SAVE_ORG_FIRST);
-        }
-    }
+    let dropdown = if let Some(org) = org {
+        combobox::search(ui, cx, picker, org, people)
+    } else {
+        widgets::muted(ui, &theme, copy::SAVE_ORG_FIRST);
+        None
+    };
     if !people.is_empty() {
         ui.add_space(theme.tokens.metrics.space.sm);
         chips(ui, &theme, people);
+    }
+    // why: the open dropdown floats over what follows; room under it keeps a dialog's action
+    // bar below it rather than under it.
+    if let Some(bottom) = dropdown {
+        let short = bottom + controls::MENU_GAP - ui.cursor().top();
+        ui.add_space(short.max(0.0));
     }
 }
 

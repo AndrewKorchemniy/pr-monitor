@@ -12,19 +12,22 @@ use crate::{
     theme::{Tone, UiTheme},
     widgets::{
         controls::{self, MenuMark},
+        dialog,
         fields::{self, Field},
+        fit,
     },
 };
 
 /// The combobox: its keys act first (so the field never sees them), then the field and its
-/// dropdown are drawn. A pick keeps keyboard focus in the field for the next name.
+/// dropdown are drawn. A pick keeps keyboard focus in the field for the next name. Returns the
+/// open dropdown's bottom edge, so the caller can make room for it.
 pub(super) fn search(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
     picker: &mut PeoplePicker,
     org: &OrgId,
     people: &mut Vec<Person>,
-) {
+) -> Option<f32> {
     let theme = cx.theme.clone();
     let field_id = egui::Id::unique(("people", picker.id));
     let popup_id = field_id.with("matches");
@@ -51,10 +54,12 @@ pub(super) fn search(
         vec2(width, response.rect.height()),
     );
     let popup = (popup_id, anchor, &response);
-    if let Some(candidate) = dropdown(ui, &theme, picker, popup, people) {
+    let (picked, bottom) = dropdown(ui, &theme, picker, popup, people);
+    if let Some(candidate) = picked {
         add(cx, picker, (org, people), &candidate);
         ui.memory_mut(|m| m.request_focus(field_id));
     }
+    bottom
 }
 
 /// Draws the field so that pressing on its open dropdown does not take the field's focus (as
@@ -147,7 +152,7 @@ fn dropdown(
     picker: &mut PeoplePicker,
     (id, anchor, field): (egui::Id, Rect, &egui::Response),
     people: &[Person],
-) -> Option<PersonCandidate> {
+) -> (Option<PersonCandidate>, Option<f32>) {
     if !picker.has_rows() {
         picker.close();
     }
@@ -155,6 +160,7 @@ fn dropdown(
     // why: the frame's border sits outside the content, so the content is narrower than the
     // field by it and the dropdown's outer edges line up with the field's.
     let width = anchor.width() - frame.total_margin().sum().x;
+    let tallest = list_room(ui, theme, anchor) - frame.total_margin().sum().y;
     let shown = egui::Popup::new(id, ui.ctx().clone(), anchor, field.layer_id)
         .open_memory(Some(egui::SetOpenCommand::Bool(picker.open)))
         .close_behavior(egui::PopupCloseBehavior::IgnoreClicks)
@@ -165,13 +171,29 @@ fn dropdown(
         .show(|ui| {
             ui.set_width(width);
             ui.spacing_mut().item_spacing.y = 0.0;
-            rows(ui, theme, picker, people)
-        })?;
+            egui::ScrollArea::vertical()
+                .max_height(tallest)
+                .show(ui, |ui| rows(ui, theme, picker, people))
+                .inner
+        });
+    let Some(shown) = shown else {
+        return (None, None);
+    };
     // why: egui closes the popup itself on Esc when the field does not have the key.
     if shown.response.clicked_elsewhere() || !egui::Popup::is_id_open(ui.ctx(), id) {
         picker.close();
     }
-    shown.inner
+    (shown.inner, Some(shown.response.rect.bottom()))
+}
+
+/// The tallest the dropdown may get: down to where a dialog's action bar sits when the dialog
+/// fills the window, and never less than two rows.
+fn list_room(ui: &egui::Ui, theme: &UiTheme, anchor: Rect) -> f32 {
+    let window = ui.ctx().content_rect();
+    let bar = theme.control_height() + 2.0 * dialog::INSET + 1.0;
+    let margin = fit::window_margin(window.height());
+    let room = window.bottom() - margin - bar - anchor.bottom() - controls::MENU_GAP;
+    room.max(2.0 * theme.control_height())
 }
 
 /// The dropdown's lines: "Adding…" or why a pick failed, then the hint, the matches and how

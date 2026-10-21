@@ -121,8 +121,12 @@ pub fn derive_palette(file: &ThemeFile) -> Palette {
         TEXT,
     );
     let muted = ensure(
-        b.base_ink(b.contrast.mul_add(0.16, 0.56)),
-        b.row_hover,
+        ensure(
+            b.base_ink(b.contrast.mul_add(0.16, 0.56)),
+            b.row_hover,
+            NON_TEXT,
+        ),
+        b.row_selected,
         NON_TEXT,
     );
     let accent_text = ensure(b.accent, b.sunken, TEXT);

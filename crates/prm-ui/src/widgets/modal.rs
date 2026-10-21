@@ -93,8 +93,7 @@ fn bar_height(ui: &egui::Ui, theme: &UiTheme, spec: &ModalSpec<'_>, bar: egui::I
     if spec.buttons.is_empty() {
         return 0.0;
     }
-    let spacing = ui.spacing().item_spacing.y;
-    let single = theme.control_height() + 2.0 * dialog::INSET + 2.0 * spacing + 1.0;
+    let single = theme.control_height() + 2.0 * dialog::INSET + 1.0;
     ui.data(|d| d.get_temp(bar)).unwrap_or(single)
 }
 

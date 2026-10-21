@@ -25,17 +25,29 @@ const REMOVE_GLYPH: f32 = 9.0;
 pub(crate) fn chips(ui: &mut egui::Ui, theme: &UiTheme, people: &mut Vec<Person>) {
     let gap = theme.tokens.metrics.space.xs;
     let mut remove = None;
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(gap, gap);
-        for (index, person) in people.iter().enumerate() {
-            if pill(ui, theme, person) {
-                remove = Some(index);
-            }
-        }
+    ui.scope(|ui| {
+        // why: a wrapped layout starts each line at the interact height; pill lines would
+        // otherwise sit a full control height apart.
+        ui.spacing_mut().interact_size.y = PILL_HEIGHT;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(gap, gap);
+            remove = pill_line(ui, theme, people);
+        });
     });
     if let Some(index) = remove {
         people.remove(index);
     }
+}
+
+/// Each person's pill in order; the index of the one whose remove button was clicked.
+fn pill_line(ui: &mut egui::Ui, theme: &UiTheme, people: &[Person]) -> Option<usize> {
+    let mut remove = None;
+    for (index, person) in people.iter().enumerate() {
+        if pill(ui, theme, person) {
+            remove = Some(index);
+        }
+    }
+    remove
 }
 
 /// One person: the name (and a muted group tag), then a remove button flush to the pill's

@@ -288,6 +288,14 @@ fn body(
         show_org: cx.state.show_org_column,
         focused: window_focused,
     };
+    // why: egui_extras fills selected rows with the text-selection colour, which is too heavy
+    // for the muted and tone text on a row; the list uses the row tokens the theme guards.
+    let c = &cx.theme.colors;
+    ui.visuals_mut().selection.bg_fill = if window_focused {
+        c.row_selected
+    } else {
+        c.row_selected_inactive
+    };
     let out = match mode {
         ListMode::Table => pr_table(ui, cx, &mut d.view, &input),
         ListMode::Cards => pr_cards(ui, cx, &mut d.view, &input),

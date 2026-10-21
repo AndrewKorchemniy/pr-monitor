@@ -35,9 +35,13 @@ fn pad(theme: &UiTheme) -> Margin {
 }
 
 /// A hairline across the whole card at the cursor.
+/// It takes no stack spacing on either side, so `INSET` alone pads the parts it separates.
 pub(crate) fn divider(ui: &mut egui::Ui, theme: &UiTheme) {
+    let gap = ui.spacing().item_spacing.y;
+    ui.add_space(-gap);
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.add_space(-gap);
     let stroke = Stroke::new(
         theme.tokens.metrics.stroke.hairline,
         theme.colors.border_default,
@@ -52,7 +56,8 @@ pub(crate) fn header(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) 
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             if head.close {
-                with_close(ui, theme, false, |ui| title(ui, theme, head))
+                let line = ui.fonts_mut(|f| f.row_height(&title_font(theme, head)));
+                with_close(ui, theme, Some(line), |ui| title(ui, theme, head))
             } else {
                 title(ui, theme, head);
                 false
@@ -63,52 +68,56 @@ pub(crate) fn header(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) 
     closed
 }
 
-/// `add` (a title) in the `Ui`'s width short of a close button at its right, then the button,
-/// at the top or, when `centered`, halfway down the `Ui`'s rect with the title centred beside
-/// it. The title wraps or is cut short instead of pushing the button out, and it comes before
+/// `add` (a title) in the `Ui`'s width short of a close button at its right, then the button:
+/// centred on the title's `first_line` (its height), or with none, halfway down the `Ui`'s rect
+/// with the title centred beside it. The title wraps or is cut short instead of pushing the button out, and it comes before
 /// the button in reading and Tab order. Returns true when the close button was clicked.
 pub(crate) fn with_close(
     ui: &mut egui::Ui,
     theme: &UiTheme,
-    centered: bool,
+    first_line: Option<f32>,
     add: impl FnOnce(&mut egui::Ui),
 ) -> bool {
     let side = controls::close_side(theme);
     let full = ui.available_rect_before_wrap();
-    let top = if centered {
-        full.center().y - side / 2.0
-    } else {
-        full.top()
+    let top = match first_line {
+        Some(line) => full.top() + (line - side) / 2.0,
+        None => full.center().y - side / 2.0,
     };
     let close = Rect::from_min_size(pos2(full.right() - side, top), Vec2::splat(side));
     let room = full.with_max_x(close.left() - ui.spacing().item_spacing.x);
     let layout = egui::Layout::top_down(egui::Align::Min);
     ui.scope_builder(UiBuilder::new().max_rect(room).layout(layout), |ui| {
-        if centered {
-            ui.horizontal_centered(add);
-        } else {
+        if first_line.is_some() {
             add(ui);
+        } else {
+            ui.horizontal_centered(add);
         }
     });
-    ui.expand_to_include_rect(close);
+    // why: centred on the first line the button may overhang the top inset; only its foot
+    // may grow the header.
+    ui.expand_to_include_y(close.bottom());
     let mut slot = ui.new_child(UiBuilder::new().max_rect(close));
     controls::close_button(&mut slot, theme, crate::copy::CLOSE).clicked()
 }
 
 fn title(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) {
     ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
-    let font = if head.display {
-        theme.fonts.display.clone()
-    } else {
-        widgets::page_title_font(theme)
-    };
     ui.label(
         RichText::new(head.title)
-            .font(font)
+            .font(title_font(theme, head))
             .color(theme.colors.text_primary),
     );
     if let Some(subtitle) = head.subtitle {
         widgets::muted(ui, theme, subtitle);
+    }
+}
+
+fn title_font(theme: &UiTheme, head: &DialogHead<'_>) -> egui::FontId {
+    if head.display {
+        theme.fonts.display.clone()
+    } else {
+        widgets::page_title_font(theme)
     }
 }
 

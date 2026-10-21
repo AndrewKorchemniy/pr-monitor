@@ -245,7 +245,7 @@ fn page_column(
 /// long the title gets.
 fn page_header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState, nav: Nav) {
     let theme = cx.theme.clone();
-    if dialog::with_close(ui, &theme, true, |ui| page_title(ui, &theme, st, nav)) {
+    if dialog::with_close(ui, &theme, None, |ui| page_title(ui, &theme, st, nav)) {
         cx.push(UiAction::LeaveSettings);
     }
 }
