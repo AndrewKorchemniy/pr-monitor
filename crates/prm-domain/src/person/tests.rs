@@ -64,6 +64,33 @@ fn people_evict_lru() {
 }
 
 #[test]
+fn candidate_is_person_by_id_descriptor_or_unique_name() {
+    let mut jane = p(1, "Jane", "jane@x");
+    jane.descriptor = Some("aad.1".into());
+    let directory = |descriptor: &str, unique: &str| PersonCandidate {
+        id: None,
+        descriptor: Some(descriptor.into()),
+        name: "Jane D".into(),
+        unique_name: Some(unique.into()),
+        group: false,
+        source: CandidateSource::Directory,
+    };
+    let cases = [
+        (jane.to_candidate(CandidateSource::Configured), true),
+        (directory("aad.1", "other@x"), true),
+        (directory("aad.9", "JANE@X"), true),
+        (directory("aad.9", "bob@x"), false),
+        (
+            p(2, "Jane", " ").to_candidate(CandidateSource::Harvested),
+            false,
+        ),
+    ];
+    for (candidate, expected) in cases {
+        assert_eq!(candidate.is_person(&jane), expected, "{candidate:?}");
+    }
+}
+
+#[test]
 fn merge_candidates_dedupe() {
     let local = vec![p(1, "Jane", "jane@x").to_candidate(CandidateSource::Configured)];
     let remote = vec![

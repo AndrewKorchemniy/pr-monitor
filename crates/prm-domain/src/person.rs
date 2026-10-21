@@ -102,6 +102,45 @@ impl PersonCandidate {
             descriptor: self.descriptor.clone(),
         })
     }
+
+    /// This candidate is `person`: the same id, else descriptor, else unique name (ignoring
+    /// case). The picker hides people already chosen, directory entries without an id included.
+    pub fn is_person(&self, person: &Person) -> bool {
+        let theirs = Identity {
+            id: Some(person.id),
+            descriptor: person.descriptor.as_deref(),
+            unique_name: person.unique_name.as_deref(),
+        };
+        self.identity().same_as(&theirs)
+    }
+
+    fn identity(&self) -> Identity<'_> {
+        Identity {
+            id: self.id,
+            descriptor: self.descriptor.as_deref(),
+            unique_name: self.unique_name.as_deref(),
+        }
+    }
+}
+
+/// What a person or candidate is matched on.
+struct Identity<'a> {
+    id: Option<Vsid>,
+    descriptor: Option<&'a str>,
+    unique_name: Option<&'a str>,
+}
+
+impl Identity<'_> {
+    /// The ids match, else the descriptors, else the unique names (ignoring case). The one
+    /// rule for deduping candidates and for "already chosen".
+    fn same_as(&self, other: &Identity<'_>) -> bool {
+        (self.id.is_some() && self.id == other.id)
+            || (self.descriptor.is_some() && self.descriptor == other.descriptor)
+            || match (self.unique_name, other.unique_name) {
+                (Some(a), Some(b)) => non_blank(a) && a.eq_ignore_ascii_case(b),
+                _ => false,
+            }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -265,14 +304,7 @@ pub fn merge_candidates(
 ) -> Vec<PersonCandidate> {
     let mut out: Vec<PersonCandidate> = Vec::with_capacity(local.len() + remote.len());
     for c in local.into_iter().chain(remote) {
-        let dup = out.iter().any(|o| {
-            (o.id.is_some() && o.id == c.id)
-                || (o.descriptor.is_some() && o.descriptor == c.descriptor)
-                || match (&o.unique_name, &c.unique_name) {
-                    (Some(a), Some(b)) => non_blank(a) && a.eq_ignore_ascii_case(b),
-                    _ => false,
-                }
-        });
+        let dup = out.iter().any(|o| o.identity().same_as(&c.identity()));
         if !dup {
             out.push(c);
         }
