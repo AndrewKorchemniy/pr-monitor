@@ -70,11 +70,11 @@ fn window_offscreen_start_moves_back_to_the_saved_position_on_first_show() {
         "an off-screen window is not cloaked"
     );
     let commands = pass(&ctx, ViewportInfo::default(), |ctx| {
-        show_now(&mut window, ctx)
+        show_now(&mut window, ctx);
     });
     assert_eq!(moves(&commands), [pos2(150.0, 100.0)], "zoomed points");
     let again = pass(&ctx, ViewportInfo::default(), |ctx| {
-        show_now(&mut window, ctx)
+        show_now(&mut window, ctx);
     });
     assert_eq!(moves(&again), [], "only the first show moves it");
 }

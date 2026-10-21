@@ -1,5 +1,5 @@
 //! Screenshot gallery: every screen with the fictional demo data, in a dark and a light theme,
-//! rendered on the GPU (or WARP) to PNGs for design review. Ignored by default:
+//! rendered on the GPU (or WARP) to PNG files for design review. Ignored by default:
 //! `cargo test -p prm-ui gallery -- --ignored`, output in `$PRM_GALLERY_DIR` or
 //! `target/gallery`.
 
@@ -143,7 +143,7 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path) {
 }
 
 #[test]
-#[ignore = "renders on the GPU and writes PNGs; run on demand for design review"]
+#[ignore = "renders on the GPU and writes PNG files; run on demand for design review"]
 fn gallery() {
     let dir = out_dir();
     std::fs::create_dir_all(&dir).expect("gallery dir");
