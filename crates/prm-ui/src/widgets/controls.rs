@@ -1,14 +1,16 @@
 //! Shared controls: bordered and ghost (borderless) icon buttons, menus (`menu`), settings rows
-//! (`rows`: switches, segmented options), check boxes and radio buttons.
+//! (`rows`: switches), segmented options (`segmented`), check boxes and radio buttons.
 
 mod menu;
 mod rows;
+mod segmented;
 
 use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
 pub(crate) use self::{
     menu::{MENU_GAP, MenuMark, menu_button, menu_check, menu_frame, menu_item, menu_item_detail},
-    rows::{disclosure, row_divider, segmented, setting_row, toggle_row},
+    rows::{disclosure, row_divider, setting_row, toggle_row},
+    segmented::segmented,
 };
 use crate::theme::{
     UiTheme,
@@ -217,7 +219,20 @@ pub(crate) fn radio<T: PartialEq>(
     response
 }
 
-/// Lays out a 16 pt mark and a label as one clickable row; `paint` draws the mark.
+/// The side of a check box or radio mark, in points.
+const MARK: f32 = 16.0;
+
+/// The width a `check`, `checkbox` or `radio` row labelled `label` takes, for laying several
+/// out on a line.
+pub(crate) fn check_width(ui: &egui::Ui, theme: &UiTheme, label: &str) -> f32 {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font, theme.colors.text_primary);
+    MARK + theme.tokens.metrics.space.sm + galley.size().x
+}
+
+/// Lays out a `MARK` and a label as one clickable row; `paint` draws the mark.
 fn mark_row(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -232,15 +247,14 @@ fn mark_row(
         f32::INFINITY,
         egui::TextStyle::Body,
     );
-    let mark = 16.0;
     let size = vec2(
-        mark + m.space.sm + galley.size().x,
+        MARK + m.space.sm + galley.size().x,
         galley.size().y.max(m.row.control_height - 6.0),
     );
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let mark_rect = Rect::from_center_size(
-        pos2(rect.left() + mark / 2.0, rect.center().y),
-        vec2(mark, mark),
+        pos2(rect.left() + MARK / 2.0, rect.center().y),
+        vec2(MARK, MARK),
     );
     paint(ui, mark_rect, &response);
     let text = galley.text().to_owned();

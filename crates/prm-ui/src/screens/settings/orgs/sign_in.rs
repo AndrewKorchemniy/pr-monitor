@@ -14,6 +14,7 @@ use crate::{
     widgets::{
         self, controls,
         fields::{self, Field},
+        fit,
     },
 };
 
@@ -40,14 +41,7 @@ pub(super) fn section(
         widgets::muted(ui, &theme, copy::SAVE_ORG_FIRST);
         return;
     };
-    ui.horizontal(|ui| {
-        state_line(ui, &theme, &status);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if matches!(status.auth.state, AuthStateView::SignedIn) {
-                signed_in_buttons(ui, cx, &status);
-            }
-        });
-    });
+    headline(ui, cx, &status);
     if let Some(detail) = detail(&status) {
         widgets::muted(ui, &theme, &detail);
     }
@@ -63,6 +57,28 @@ pub(super) fn section(
     if open {
         advanced(ui, cx, org, &status);
     }
+}
+
+/// The state line with, once signed in, Sign out and Change sign-in on its right; in a narrow
+/// page the buttons go on the line below.
+fn headline(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
+    let theme = cx.theme.clone();
+    let signed_in = matches!(status.auth.state, AuthStateView::SignedIn);
+    if fit::row_stacks(ui.available_width()) {
+        ui.horizontal_wrapped(|ui| state_line(ui, &theme, status));
+        if signed_in {
+            ui.horizontal_wrapped(|ui| signed_in_buttons(ui, cx, status));
+        }
+        return;
+    }
+    ui.horizontal(|ui| {
+        state_line(ui, &theme, status);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if signed_in {
+                signed_in_buttons(ui, cx, status);
+            }
+        });
+    });
 }
 
 /// The sign-in method, the tenant, and (only for the organization's app) its client ID and
@@ -98,7 +114,9 @@ fn advanced(
 fn field_row(ui: &mut egui::Ui, theme: &UiTheme, text: (&str, Option<&str>), value: &mut String) {
     controls::setting_row(ui, theme, text, |ui| {
         let id = ui.make_persistent_id(("auth_field", text.0));
-        fields::text_field(ui, theme, value, &Field::new(id, "").width(280.0));
+        // why: the hint is also the field's accessible name.
+        let field = Field::new(id, text.0).width(fit::CONTROL_WIDTH);
+        fields::text_field(ui, theme, value, &field);
     });
 }
 

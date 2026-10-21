@@ -3,13 +3,17 @@
 
 use eframe::egui::{self, Rect, RichText, UiBuilder, pos2, vec2};
 
-use crate::theme::{
-    UiTheme, adapter,
-    icons::{self, Icon},
+use crate::{
+    theme::{
+        UiTheme, adapter,
+        icons::{self, Icon},
+    },
+    widgets::fit,
 };
 
 /// A bordered card of at most `width`, centered horizontally with its top at a fixed share of
 /// the window height (so steps of different heights don't jump), scrolling when it doesn't fit.
+/// In a narrow window it keeps the same even margin as a dialog (`fit::room`).
 pub(crate) fn anchored_card(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -18,13 +22,16 @@ pub(crate) fn anchored_card(
     add: impl FnOnce(&mut egui::Ui),
 ) {
     let m = &theme.tokens.metrics;
-    let top = (ui.available_height() * 0.16).max(m.space.xxl);
+    let window = ui.available_size();
+    let top = (window.y * 0.16).max(m.space.xxl);
+    let width = width.min(fit::room(window).x);
+    // why: an overlay scrollbar, so a card that scrolls stays centred between even margins.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
     egui::ScrollArea::vertical()
         .id_salt(("anchored_card", salt))
         .auto_shrink(false)
         .show(ui, |ui| {
             ui.add_space(top);
-            let width = width.min(ui.available_width() - 2.0 * m.space.xl);
             let left = ui.max_rect().center().x - width / 2.0;
             let rect =
                 Rect::from_min_size(pos2(left, ui.cursor().top()), vec2(width, f32::INFINITY));
@@ -65,7 +72,7 @@ pub(crate) fn section<R>(
 }
 
 /// "Organizations › contoso": muted ancestors, then the current crumb. Lays out inline, so call
-/// it inside a horizontal layout.
+/// it inside a horizontal layout; a crumb too long for the room left is cut short.
 pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, crumbs: &[&str]) {
     let last = crumbs.len().saturating_sub(1);
     for (index, crumb) in crumbs.iter().enumerate() {
@@ -74,11 +81,10 @@ pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, crumbs: &[&str]) {
         } else {
             theme.colors.text_muted
         };
-        ui.label(
-            RichText::new(*crumb)
-                .font(crate::widgets::page_title_font(theme))
-                .color(color),
-        );
+        let text = RichText::new(*crumb)
+            .font(crate::widgets::page_title_font(theme))
+            .color(color);
+        ui.add(egui::Label::new(text).truncate());
         if index != last {
             icons::show(ui, Icon::ChevronRight, 9.0, theme.colors.text_muted);
         }

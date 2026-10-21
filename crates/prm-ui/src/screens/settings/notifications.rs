@@ -18,6 +18,7 @@ use crate::{
         self,
         card::section,
         controls::{self, setting_row, toggle_row},
+        fit,
         slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
 };
@@ -84,15 +85,25 @@ pub(crate) fn page(
     });
 }
 
-/// The event toggles in two columns.
+/// The most event toggles on a line.
+const EVENT_COLUMNS: usize = 2;
+/// The space between the two columns of event toggles, in points.
+const EVENT_GAP: f32 = 24.0;
+
+/// The event toggles in two columns, or one when the page is too narrow for two.
 fn events(ui: &mut egui::Ui, theme: &UiTheme, events: &mut EventToggles) {
+    let widest = toggles(events)
+        .iter()
+        .map(|(_, label)| controls::check_width(ui, theme, label))
+        .fold(0.0, f32::max);
+    let per_line = fit::per_line(ui.available_width(), (widest, EVENT_GAP), EVENT_COLUMNS);
     egui::Grid::new("notify_events")
-        .num_columns(2)
-        .spacing([24.0, 6.0])
+        .num_columns(per_line)
+        .spacing([EVENT_GAP, theme.tokens.metrics.space.sm])
         .show(ui, |ui| {
             for (index, (value, label)) in toggles(events).into_iter().enumerate() {
                 controls::checkbox(ui, theme, value, label);
-                if index % 2 == 1 {
+                if (index + 1) % per_line == 0 {
                     ui.end_row();
                 }
             }
@@ -135,38 +146,72 @@ fn delivery(ui: &mut egui::Ui, theme: &UiTheme, prefs: &mut NotificationPrefs) {
     });
 }
 
-/// A test notification with its result, and pausing or resuming notifications for an hour.
+/// A test notification with its result, and pausing or resuming notifications for an hour. The
+/// result sits beside the buttons when it fits there, else on its own lines under them.
 fn try_out(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, test: &mut TestResult) {
     let theme = cx.theme.clone();
-    ui.horizontal(|ui| {
+    let paused = cx.state.notifications.paused_until.is_some();
+    let (label, command) = if paused {
+        (copy::RESUME, CommandId::NotificationsResume)
+    } else {
+        (copy::PAUSE_HOUR, CommandId::NotificationsPause)
+    };
+    let beside = result_fits_beside(ui, &theme, test.as_ref(), label);
+    ui.horizontal_wrapped(|ui| {
         if ui.button(copy::SEND_TEST).clicked() {
             *test = None;
             cx.push(UiAction::Send(Command::TestNotification));
         }
-        let paused = cx.state.notifications.paused_until.is_some();
-        let (label, command) = if paused {
-            (copy::RESUME, CommandId::NotificationsResume)
-        } else {
-            (copy::PAUSE_HOUR, CommandId::NotificationsPause)
-        };
         if ui.button(label).clicked() {
             cx.run(command);
         }
-        match test {
-            Some(Ok(())) => {
-                widgets::muted(ui, &theme, copy::TEST_SENT);
-            }
-            Some(Err(message)) => {
-                widgets::error_text(ui, &theme, message);
-            }
-            None => {}
+        if beside {
+            test_result(ui, &theme, test.as_ref());
         }
     });
+    if !beside {
+        test_result(ui, &theme, test.as_ref());
+    }
     if let Some(until) = cx.state.notifications.paused_until {
         widgets::muted(
             ui,
             &theme,
             &copy::paused_until(&crate::format::clock(until, cx.offset)),
         );
+    }
+}
+
+/// The result fits on one line after the two buttons (`pause` names the second).
+fn result_fits_beside(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    test: Option<&Result<(), Arc<str>>>,
+    pause: &str,
+) -> bool {
+    let text = match test {
+        Some(Ok(())) => copy::TEST_SENT,
+        Some(Err(message)) => message.as_ref(),
+        None => return true,
+    };
+    let font = theme.fonts.small.clone();
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, theme.colors.text_secondary);
+    let gap = ui.spacing().item_spacing.x;
+    let buttons =
+        widgets::button_width(ui, theme, copy::SEND_TEST) + widgets::button_width(ui, theme, pause);
+    buttons + 2.0 * gap + galley.size().x <= ui.available_width()
+}
+
+/// "Sent", or why Windows did not show the test.
+fn test_result(ui: &mut egui::Ui, theme: &UiTheme, test: Option<&Result<(), Arc<str>>>) {
+    match test {
+        Some(Ok(())) => {
+            widgets::muted(ui, theme, copy::TEST_SENT);
+        }
+        Some(Err(message)) => {
+            widgets::error_text(ui, theme, message);
+        }
+        None => {}
     }
 }

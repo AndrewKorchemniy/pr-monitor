@@ -1,8 +1,10 @@
 //! Organizations: a breadcrumb and tabs for the selected org, its connection, details,
 //! repositories and people in sections, and dialogs for adding an org and editing its lists.
 
+mod dialogs;
 mod sign_in;
 
+pub(crate) use dialogs::editor;
 use eframe::egui::{self, RichText};
 use prm_config::OrgProfile;
 use prm_domain::{
@@ -16,15 +18,14 @@ use crate::{
     copy,
     frame::FrameCx,
     route::ModalKind,
-    screens::settings::{Editor, SettingsEnv, SettingsState},
+    screens::settings::{Editor, SettingsState},
     theme::{Tone, UiTheme, icons::Icon},
     widgets::{
         self, card,
         controls::{self, setting_row, toggle_row},
         fields::{self, Field},
-        modal::{self, ModalOutcome, ModalSpec},
-        people_picker::{self, people_picker},
-        scope_picker::{self, CatalogState, scope_picker},
+        fit, people_picker,
+        scope_picker::{self, CatalogState},
     },
 };
 
@@ -160,9 +161,13 @@ fn org_tab(
     } else {
         (c.text_secondary, theme.fonts.body.clone())
     };
-    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, text);
     let pad = m.space.lg;
-    let width = pad + 7.0 + m.space.sm + galley.size().x + pad;
+    let chrome = pad + 7.0 + m.space.sm + pad;
+    // why: a long org name is cut short rather than running out of a narrow page.
+    let mut job = egui::text::LayoutJob::simple_singleline(label.to_owned(), font, text);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(ui.max_rect().width() - chrome);
+    let galley = ui.painter().layout_job(job);
+    let width = chrome + galley.size().x;
     let size = egui::vec2(width, theme.control_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     if response.hovered() && !selected {
@@ -254,7 +259,8 @@ fn add_org(st: &mut SettingsState, cx: &mut FrameCx<'_>) -> bool {
 fn details(ui: &mut egui::Ui, theme: &UiTheme, org: &mut OrgProfile) {
     setting_row(ui, theme, (copy::NAME, Some(&org.url)), |ui| {
         // why: the hint is also the field's accessible name.
-        let field = Field::new(ui.make_persistent_id("org_name"), copy::NAME).width(280.0);
+        let field =
+            Field::new(ui.make_persistent_id("org_name"), copy::NAME).width(fit::CONTROL_WIDTH);
         fields::text_field(ui, theme, &mut org.label, &field);
     });
     controls::row_divider(ui, theme);
@@ -298,15 +304,19 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState)
 }
 
 /// A title (and an optional muted line) on the left, a button on the right; true when clicked.
+/// The text wraps short of the button, so the button keeps its place in a narrow page.
 fn row_with_button(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     (title, detail): (&str, Option<&str>),
     button: &str,
 ) -> bool {
+    let room = ui.available_width() - widgets::button_width(ui, theme, button);
+    let text_width = room - ui.spacing().item_spacing.x;
     let mut clicked = false;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
+            ui.set_max_width(text_width);
             ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
             if let Some(detail) = detail.filter(|d| !d.is_empty()) {
                 widgets::muted(ui, theme, detail);
@@ -397,170 +407,4 @@ fn people_list(org: &mut OrgProfile, editor: Editor) -> &mut Vec<Person> {
             &mut people.tracked_authors
         }
     }
-}
-
-/// The open dialog over the page, if any: add an org, choose repositories, or edit people.
-pub(crate) fn editor(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-    env: &SettingsEnv<'_>,
-) {
-    let Some(editor) = st.editing else {
-        return;
-    };
-    let outcome = match editor {
-        Editor::AddOrg => add_org_dialog(ctx, cx, st),
-        Editor::Licenses => licenses_dialog(ctx, &cx.theme.clone(), env),
-        Editor::Repositories => repositories_dialog(ctx, cx, st),
-        Editor::Tracked | Editor::Reviewers | Editor::Ignored => people_dialog(ctx, cx, st, editor),
-    };
-    if outcome != ModalOutcome::Open {
-        st.editing = None;
-    }
-}
-
-/// Third-party licenses and the bundled fonts' licenses, in a scrolling dialog.
-fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) -> ModalOutcome {
-    let spec = ModalSpec {
-        id: "licenses",
-        title: copy::LICENSES,
-        subtitle: None,
-        buttons: &[copy::CLOSE],
-        danger: false,
-        width: 640.0,
-    };
-    modal::modal(ctx, theme, &spec, |ui| {
-        egui::ScrollArea::vertical()
-            .max_height(420.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for text in [
-                    env.licenses,
-                    crate::theme::fonts::OFL_NEXT,
-                    crate::theme::fonts::OFL_MONO,
-                ] {
-                    ui.label(
-                        RichText::new(text)
-                            .font(theme.fonts.mono.clone())
-                            .color(theme.colors.text_secondary),
-                    );
-                    controls::row_divider(ui, theme);
-                }
-            });
-    })
-}
-
-fn add_org_dialog(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-) -> ModalOutcome {
-    let theme = &cx.theme.clone();
-    let spec = ModalSpec {
-        id: "add_org",
-        title: copy::ADD_ORG,
-        subtitle: None,
-        buttons: &[],
-        danger: false,
-        width: modal::WIDTH,
-    };
-    let mut added = false;
-    let outcome = modal::modal(ctx, theme, &spec, |ui| {
-        widgets::field_label(ui, theme, copy::ORG_URL_LABEL);
-        ui.add_space(theme.tokens.metrics.space.xs);
-        let mut field = Field::new(egui::Id::unique("add_org_url"), copy::ORG_URL_HINT);
-        field.error = st.url_error;
-        let action = (&field, copy::ADD_ORG, Icon::ArrowRight);
-        if fields::action_field(ui, theme, &mut st.new_org_url, action)
-            && !st.new_org_url.trim().is_empty()
-        {
-            added = add_org(st, cx);
-        }
-        if st.url_error {
-            widgets::error_text(ui, theme, copy::BAD_ORG_URL);
-        }
-    });
-    if added {
-        ModalOutcome::Button(0)
-    } else {
-        outcome
-    }
-}
-
-fn repositories_dialog(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-) -> ModalOutcome {
-    let theme = cx.theme.clone();
-    let org_label = st
-        .draft
-        .orgs
-        .get(st.org)
-        .map(|o| o.display_label().to_string());
-    let spec = ModalSpec {
-        id: "choose_repositories",
-        title: copy::STEP_REPOS,
-        subtitle: org_label.as_deref(),
-        buttons: &[copy::DONE],
-        danger: false,
-        width: 560.0,
-    };
-    let Some(org) = st.draft.orgs.get_mut(st.org) else {
-        return ModalOutcome::Dismissed;
-    };
-    let id = org.org_id().cloned();
-    let state = cx.state;
-    let catalog = CatalogState::of(id.as_ref().and_then(|id| state.org(id)));
-    let filter = &mut st.scope_filter;
-    let mut reload = false;
-    let outcome = modal::modal(ctx, &theme, &spec, |ui| {
-        reload = scope_picker(ui, &theme, filter, catalog, &mut org.scope);
-    });
-    if reload && let Some(id) = id {
-        cx.push(UiAction::Send(Command::LoadCatalog {
-            org: id,
-            force: true,
-        }));
-    }
-    outcome
-}
-
-fn people_dialog(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-    editor: Editor,
-) -> ModalOutcome {
-    let theme = cx.theme.clone();
-    let saved = saved(st);
-    let Some(org) = st.draft.orgs.get_mut(st.org) else {
-        return ModalOutcome::Dismissed;
-    };
-    let id = saved.then(|| org.org_id().cloned()).flatten();
-    let (title, picker) = match editor {
-        Editor::Reviewers => (copy::REVIEWERS_COUNT, &mut st.pickers.reviewers),
-        Editor::Ignored => (copy::IGNORE_FROM, &mut st.pickers.ignored),
-        Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
-            (copy::TRACK_FROM, &mut st.pickers.tracked)
-        }
-    };
-    let org_label = org.display_label().to_string();
-    let spec = ModalSpec {
-        id: "edit_people",
-        title,
-        subtitle: Some(&org_label),
-        buttons: &[copy::DONE],
-        danger: false,
-        width: 480.0,
-    };
-    let list = people_list(org, editor);
-    let outcome = modal::modal(ctx, &theme, &spec, |ui| {
-        people_picker(ui, cx, picker, id.as_ref(), list);
-    });
-    if outcome != ModalOutcome::Open {
-        picker.reset();
-    }
-    outcome
 }

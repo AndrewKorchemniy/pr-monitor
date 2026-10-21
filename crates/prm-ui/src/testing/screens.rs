@@ -1,6 +1,8 @@
 //! One harness for every screen: the state a screen draws from, the theme, and the action
 //! queue. Shared by the kittest tests and the screenshot gallery.
 
+use std::sync::Arc;
+
 use eframe::egui;
 use egui_kittest::Harness;
 use prm_config::UiState;
@@ -21,6 +23,7 @@ use crate::{
         first_run::{FirstRun, first_run},
         settings::{SettingsEnv, SettingsState, settings_modal},
         shortcuts::shortcuts,
+        token::token_dialog,
     },
     theme::{ThemeRuntime, fonts},
     ui_state::PeekLayout,
@@ -40,6 +43,8 @@ pub(crate) enum Shown {
     FirstRun,
     Palette,
     Shortcuts,
+    /// The personal access token dialog over the dashboard.
+    Token,
 }
 
 pub(crate) struct Fixture {
@@ -50,6 +55,8 @@ pub(crate) struct Fixture {
     pub first_run: FirstRun,
     pub palette: PaletteState,
     pub palette_outcome: Option<PaletteItem>,
+    /// The token dialog's text and its last error.
+    pub token: (String, Option<Arc<str>>),
     pub keymap: Keymap,
     pub changes: ChangeLog,
     pub actions: Actions,
@@ -80,6 +87,7 @@ impl Fixture {
             first_run: FirstRun::new(state.config.clone()),
             palette: PaletteState::default(),
             palette_outcome: None,
+            token: (String::new(), None),
             keymap: Keymap::defaults(),
             changes: ChangeLog::default(),
             actions: Actions::default(),
@@ -132,6 +140,11 @@ impl Fixture {
             Shown::Shortcuts => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let _ = shortcuts(&ctx, &cx);
+            }
+            Shown::Token => {
+                dashboard(ui, &mut cx, &mut self.dash, false);
+                let (input, error) = &mut self.token;
+                let _ = token_dialog(&ctx, &cx.theme, "contoso", (input, error.as_deref()));
             }
         }
     }

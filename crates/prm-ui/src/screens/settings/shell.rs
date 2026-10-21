@@ -1,22 +1,56 @@
 //! The settings window: a large modal over the dashboard with a darker sidebar of pages on the
-//! left and the selected page on the right. Unsaved changes show a Save bar at the bottom.
+//! left and the selected page on the right. In a narrow window it fills the window, the sidebar
+//! folds into a page menu in the header and the about links end the General page. Unsaved
+//! changes show a Save bar at the bottom.
+
+mod about;
+mod save_bar;
 
 use eframe::egui::{self, Margin, Rect, RichText, Sense, Stroke, UiBuilder, pos2, vec2};
+use prm_domain::auth::SettingsSection;
 
-use super::{
-    Editor, PAGES, Page, SettingsEnv, SettingsState, appearance, general, notifications, orgs,
-};
+use super::{PAGES, Page, SettingsEnv, SettingsState, appearance, general, notifications, orgs};
 use crate::{
     actions::UiAction,
     copy,
     frame::FrameCx,
     theme::{UiTheme, adapter, icons},
-    widgets::{self, controls},
+    widgets::{self, card, controls, fit},
 };
 
 const NAV_WIDTH: f32 = 232.0;
 /// Left and right padding of the page column, the same inset as dialogs.
 const PAGE_PAD: i8 = 20;
+/// `PAGE_PAD` in points.
+const PAGE_INSET: f32 = 20.0;
+/// The largest the window gets, in points.
+const MAX_SIZE: egui::Vec2 = vec2(1040.0, 780.0);
+/// The sidebar shows once the settings window is this wide (points). Narrower, it would leave the
+/// page less than a settings row needs to keep its control beside its label
+/// (`fit::ROW_STACK_BELOW`), so it folds into a page menu and the page gets the whole width.
+const SIDEBAR_FROM: f32 = NAV_WIDTH + 2.0 * PAGE_INSET + fit::ROW_STACK_BELOW;
+/// The width of the page menu.
+const PAGE_MENU_WIDTH: f32 = 200.0;
+
+/// How the pages are reached.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Nav {
+    /// A sidebar of pages, with the about links at its foot.
+    Sidebar,
+    /// A page menu in the header; the about links end the General page.
+    Menu,
+}
+
+impl Nav {
+    /// The navigation for a settings window `width` points wide.
+    fn for_width(width: f32) -> Self {
+        if width < SIDEBAR_FROM {
+            Self::Menu
+        } else {
+            Self::Sidebar
+        }
+    }
+}
 
 pub(crate) fn settings_modal(
     ctx: &egui::Context,
@@ -25,32 +59,48 @@ pub(crate) fn settings_modal(
     env: &SettingsEnv<'_>,
 ) {
     let theme = cx.theme.clone();
-    let screen = ctx.content_rect().size();
-    let size = vec2(
-        (screen.x - 64.0).clamp(560.0, 1040.0),
-        (screen.y - 64.0).clamp(420.0, 780.0),
-    );
     let frame = adapter::frame_dialog(&theme, theme.policy).inner_margin(Margin::ZERO);
+    let chrome = frame.total_margin().sum();
+    let size = fit::fit(MAX_SIZE + chrome, ctx.content_rect().size()) - chrome;
+    let nav = Nav::for_width(size.x);
     let modal = egui::Modal::new(egui::Id::unique("settings"))
         .frame(frame)
         .show(ctx, |ui| {
-            let sidebar_fill = ui.painter().add(egui::Shape::Noop);
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-            let nav = Rect::from_min_size(rect.min, vec2(NAV_WIDTH, rect.height()));
-            let page = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
-            let inner = nav.shrink2(vec2(12.0, 16.0));
-            let builder = UiBuilder::new().id_salt("settings_nav").max_rect(inner);
-            ui.scope_builder(builder, |ui| sidebar(ui, cx, st, env));
-            let builder = UiBuilder::new().id_salt("settings_page").max_rect(page);
-            ui.scope_builder(builder, |ui| page_column(ui, cx, st, env));
-            // why: painted last, from the window's final height, so it always reaches the bottom.
-            let full = Rect::from_min_max(nav.min, pos2(nav.right(), ui.min_rect().bottom()));
-            ui.painter().set(sidebar_fill, sidebar_shape(&theme, full));
+            match nav {
+                Nav::Sidebar => with_sidebar(ui, cx, st, env, rect),
+                Nav::Menu => {
+                    let builder = UiBuilder::new().id_salt("settings_page").max_rect(rect);
+                    ui.scope_builder(builder, |ui| page_column(ui, cx, st, env, nav));
+                }
+            }
         });
     if modal.backdrop_response.clicked() && !busy(cx, st) {
         cx.push(UiAction::LeaveSettings);
     }
     orgs::editor(ctx, cx, st, env);
+}
+
+/// The sidebar in `rect`'s left edge and the page beside it.
+fn with_sidebar(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    st: &mut SettingsState,
+    env: &SettingsEnv<'_>,
+    rect: Rect,
+) {
+    let theme = cx.theme.clone();
+    let sidebar_fill = ui.painter().add(egui::Shape::Noop);
+    let nav = Rect::from_min_size(rect.min, vec2(NAV_WIDTH, rect.height()));
+    let page = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
+    let inner = nav.shrink2(vec2(12.0, 16.0));
+    let builder = UiBuilder::new().id_salt("settings_nav").max_rect(inner);
+    ui.scope_builder(builder, |ui| sidebar(ui, cx, st, env));
+    let builder = UiBuilder::new().id_salt("settings_page").max_rect(page);
+    ui.scope_builder(builder, |ui| page_column(ui, cx, st, env, Nav::Sidebar));
+    // why: painted last, from the window's final height, so it always reaches the bottom.
+    let full = Rect::from_min_max(nav.min, pos2(nav.right(), ui.min_rect().bottom()));
+    ui.painter().set(sidebar_fill, sidebar_shape(&theme, full));
 }
 
 /// Something is in progress that a stray click outside settings must not interrupt: a sign-in
@@ -98,7 +148,7 @@ fn sidebar(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState, env:
         }
     }
     ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-        about_footer(ui, cx, st, env);
+        about::footer(ui, cx, st, env);
     });
 }
 
@@ -137,67 +187,32 @@ fn nav_item(ui: &mut egui::Ui, theme: &UiTheme, page: Page, selected: bool) -> e
     response
 }
 
-/// Bottom of the sidebar: the version, and links to the source, problems and licenses.
-fn about_footer(
-    ui: &mut egui::Ui,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-    env: &SettingsEnv<'_>,
-) {
-    let theme = cx.theme.clone();
-    let small = |text: &str| RichText::new(text).font(theme.fonts.small.clone());
-    let mut opened = None;
-    // why: bottom-up layout, so the last link added sits highest.
-    for (label, url) in [
-        (
-            copy::REPORT_PROBLEM,
-            prm_domain::app::DocLink::ReportProblem.url(),
-        ),
-        (copy::SOURCE_CODE, prm_domain::app::REPO_URL),
-    ] {
-        if ui.link(small(label)).clicked() {
-            opened = url::Url::parse(url).ok();
-        }
-    }
-    if ui.link(small(copy::LICENSES_SHORT)).clicked() {
-        st.editing = Some(Editor::Licenses);
-    }
-    ui.add_space(theme.tokens.metrics.space.xs);
-    let build = format!("{} · {}", env.build.git_sha, env.build.target);
-    let version = format!("{} {}", copy::APP_NAME, env.build.version);
-    widgets::muted(ui, &theme, &version).on_hover_text(build);
-    if let Some(url) = opened {
-        cx.push(UiAction::Send(prm_service::Command::OpenUrl(url)));
-    }
-}
-
 /// The page title and close button, the scrolling page, and the Save bar when dirty.
 fn page_column(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
     st: &mut SettingsState,
     env: &SettingsEnv<'_>,
+    nav: Nav,
 ) {
     let theme = cx.theme.clone();
     let area = ui.max_rect();
-    let inset = f32::from(PAGE_PAD);
     let header = Rect::from_min_size(
         area.min,
-        vec2(area.width(), theme.control_height() + 2.0 * inset),
+        vec2(area.width(), theme.control_height() + 2.0 * PAGE_INSET),
     );
-    let bar = if st.save_bar_shown() {
-        theme.control_height() + 2.0 * inset + 1.0
-    } else {
-        0.0
-    };
+    let bar = st
+        .save_bar_shown()
+        .then(|| save_bar::layout(ui, &theme, st, area.width() - 2.0 * PAGE_INSET));
+    let bar_height = bar.as_ref().map_or(0.0, |b| b.height(&theme, PAGE_INSET));
     let body = Rect::from_min_max(
         pos2(area.left(), header.bottom()),
-        pos2(area.right(), area.bottom() - bar),
+        pos2(area.right(), area.bottom() - bar_height),
     );
     let builder = UiBuilder::new()
         .id_salt("settings_header")
-        .max_rect(header.shrink2(vec2(inset, 0.0)));
-    ui.scope_builder(builder, |ui| page_header(ui, cx, st));
+        .max_rect(header.shrink2(vec2(PAGE_INSET, 0.0)));
+    ui.scope_builder(builder, |ui| page_header(ui, cx, st, nav));
     let builder = UiBuilder::new().id_salt("settings_body").max_rect(body);
     ui.scope_builder(builder, |ui| {
         // why: an overlay scrollbar, so rows keep their width when the page starts to scroll
@@ -209,30 +224,57 @@ fn page_column(
             .show(ui, |ui| {
                 egui::Frame::NONE
                     .inner_margin(Margin::symmetric(PAGE_PAD, 0))
-                    .show(ui, |ui| page_body(ui, cx, st, env));
+                    .show(ui, |ui| page_body(ui, cx, st, env, nav));
             });
     });
-    if bar > 0.0 {
+    if let Some(bar) = bar {
         let rect = Rect::from_min_max(pos2(area.left(), body.bottom()), area.max);
         let builder = UiBuilder::new().id_salt("settings_save_bar").max_rect(rect);
-        ui.scope_builder(builder, |ui| save_bar(ui, cx, st));
+        ui.scope_builder(builder, |ui| save_bar::show(ui, cx, st, (&bar, PAGE_INSET)));
     }
 }
 
-fn page_header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &SettingsState) {
+/// The page's title and the close button, which keeps its place however long the title gets.
+fn page_header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState, nav: Nav) {
     let theme = cx.theme.clone();
     ui.horizontal_centered(|ui| {
-        if st.page == Page::Organizations {
-            orgs::breadcrumb(ui, &theme, st);
-        } else {
-            widgets::page_title(ui, &theme, st.page.title());
-        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if controls::close_button(ui, &theme, copy::CLOSE).clicked() {
                 cx.push(UiAction::LeaveSettings);
             }
+            let left = egui::Layout::left_to_right(egui::Align::Center);
+            ui.with_layout(left, |ui| page_title(ui, &theme, st, nav));
         });
     });
+}
+
+/// The page's title, its breadcrumb on Organizations, or the page menu in a narrow window.
+fn page_title(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState, nav: Nav) {
+    match nav {
+        Nav::Menu => page_menu(ui, theme, st),
+        Nav::Sidebar if st.page == Page::Organizations => orgs::breadcrumb(ui, theme, st),
+        Nav::Sidebar => {
+            widgets::page_title(ui, theme, st.page.title());
+        }
+    }
+}
+
+/// The sidebar folded into a ghost menu button: "Settings  General ⌄", then a menu of pages.
+fn page_menu(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
+    let response = controls::menu_button(ui, theme, copy::SETTINGS, st.page.title());
+    egui::Popup::menu(&response)
+        .frame(controls::menu_frame(theme))
+        .gap(controls::MENU_GAP)
+        .width(PAGE_MENU_WIDTH)
+        .show(|ui| {
+            ui.set_width(PAGE_MENU_WIDTH);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for page in PAGES {
+                if controls::menu_item(ui, theme, page.title(), st.page == page).clicked() {
+                    st.page = page;
+                }
+            }
+        });
 }
 
 fn page_body(
@@ -240,7 +282,9 @@ fn page_body(
     cx: &mut FrameCx<'_>,
     st: &mut SettingsState,
     env: &SettingsEnv<'_>,
+    nav: Nav,
 ) {
+    let theme = cx.theme.clone();
     ui.set_width(ui.available_width());
     match st.page {
         Page::General => general::page(ui, cx, &mut st.draft, env.columns),
@@ -251,41 +295,14 @@ fn page_body(
         }
         Page::Appearance => appearance::page(ui, cx, &mut st.draft, env),
     }
-    ui.add_space(cx.theme.tokens.metrics.space.xxl);
-}
-
-/// Save (which also retries a save that could not be written), and Discard while dirty.
-fn save_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, dirty: bool) {
-    let theme = cx.theme.clone();
-    if widgets::primary_button(ui, &theme, copy::SAVE_CHANGES).clicked() {
-        cx.push(UiAction::SaveSettings);
-    }
-    if dirty && ui.button(copy::DISCARD).clicked() {
-        cx.push(UiAction::DiscardSettings);
-    }
-}
-
-/// "You have unsaved changes" (or why the last save was not written) with Discard and Save,
-/// under a divider; it fills its rect exactly.
-fn save_bar(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &SettingsState) {
-    let theme = cx.theme.clone();
-    let rect = ui.max_rect();
-    let stroke = Stroke::new(
-        theme.tokens.metrics.stroke.hairline,
-        theme.colors.border_default,
-    );
-    ui.painter().hline(rect.x_range(), rect.top(), stroke);
-    let row = rect.shrink(f32::from(PAGE_PAD));
-    let layout = egui::Layout::left_to_right(egui::Align::Center);
-    ui.scope_builder(UiBuilder::new().max_rect(row).layout(layout), |ui| {
-        match &st.save_error {
-            Some(error) => widgets::error_text(ui, &theme, error),
-            None => widgets::muted(ui, &theme, copy::UNSAVED),
-        };
-        let right = egui::Layout::right_to_left(egui::Align::Center);
-        let dirty = st.dirty();
-        ui.with_layout(right, |ui| {
-            ui.add_enabled_ui(!st.saving, |ui| save_buttons(ui, cx, dirty));
+    if nav == Nav::Menu && st.page == Page::General {
+        let title = copy::settings_section(SettingsSection::About);
+        card::section(ui, &theme, title, None, |ui| {
+            about::section(ui, cx, st, env);
         });
-    });
+    }
+    ui.add_space(theme.tokens.metrics.space.xxl);
 }
+
+#[cfg(test)]
+mod tests;

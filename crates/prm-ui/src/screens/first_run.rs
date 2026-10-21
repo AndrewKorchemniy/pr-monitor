@@ -1,5 +1,6 @@
 //! First run: connect an organization, choose repositories, choose people. Each step edits a
-//! draft config that is applied when the user finishes (or skips).
+//! draft config that is applied when the user finishes (or skips). The card keeps even margins
+//! in a narrow window, and its footer's buttons wrap when they do not fit beside Back.
 
 use std::sync::Arc;
 
@@ -218,11 +219,13 @@ fn group_label(ui: &mut egui::Ui, theme: &UiTheme, title: &str, help: Option<&st
     ui.add_space(theme.tokens.metrics.space.sm);
 }
 
-/// The action bar: Back on the left, the step's buttons right-aligned; true on Back.
+/// The action bar: Back on the left, the step's buttons right-aligned (wrapping onto more lines
+/// when they do not fit beside it); true on Back.
 fn footer(ui: &mut egui::Ui, theme: &UiTheme, add: impl FnOnce(&mut egui::Ui)) -> bool {
     dialog::actions(ui, theme, |ui| {
         let went_back = ui.button(copy::PREVIOUS).clicked();
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
+        let right = egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true);
+        ui.with_layout(right, add);
         went_back
     })
 }

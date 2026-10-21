@@ -27,6 +27,7 @@ use crate::{
 
 mod gallery;
 mod people;
+mod small_windows;
 mod status_bar;
 
 fn signed_out() -> AppState {

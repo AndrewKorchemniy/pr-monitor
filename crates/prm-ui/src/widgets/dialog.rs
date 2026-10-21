@@ -1,6 +1,8 @@
 //! The shared shape of every card and dialog: a header (title, optional subtitle, optional close
 //! button), the body, and an optional action bar, separated by full-width hairlines. The frame
-//! around them has no inner margin; each part pads itself so the dividers reach both edges.
+//! around them has no inner margin; each part pads itself so the dividers reach both edges. The
+//! title wraps beside the close button, and the action bar's buttons wrap onto more lines when
+//! the dialog is narrow.
 
 use eframe::egui::{self, Margin, RichText, Stroke};
 
@@ -45,26 +47,29 @@ pub(crate) fn divider(ui: &mut egui::Ui, theme: &UiTheme) {
 
 /// The title row, then a divider. Returns true when the close button was clicked.
 pub(crate) fn header(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) -> bool {
-    let mut closed = false;
-    egui::Frame::NONE.inner_margin(pad(theme)).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| title(ui, theme, head));
-            if head.close {
-                closed = close_column(ui, theme);
+    let closed = egui::Frame::NONE
+        .inner_margin(pad(theme))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if !head.close {
+                title(ui, theme, head);
+                return false;
             }
-        });
-    });
+            // why: the close button is placed first, so a long title wraps beside it instead
+            // of pushing it out of the dialog.
+            let right = egui::Layout::right_to_left(egui::Align::Min);
+            ui.with_layout(right, |ui| {
+                let closed = controls::close_button(ui, theme, crate::copy::CLOSE).clicked();
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    title(ui, theme, head);
+                });
+                closed
+            })
+            .inner
+        })
+        .inner;
     divider(ui, theme);
     closed
-}
-
-/// The close button, right-aligned at the top of the header.
-fn close_column(ui: &mut egui::Ui, theme: &UiTheme) -> bool {
-    let right = egui::Layout::right_to_left(egui::Align::Min);
-    ui.with_layout(right, |ui| {
-        controls::close_button(ui, theme, crate::copy::CLOSE).clicked()
-    })
-    .inner
 }
 
 fn title(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) {
@@ -100,7 +105,8 @@ pub(crate) fn body<R>(
 }
 
 /// A divider, then the action bar: a row at control height; lay buttons out with
-/// `right_to_left` for the usual right-aligned actions.
+/// `right_to_left` (and `with_main_wrap`, so they wrap when the dialog is narrow) for the usual
+/// right-aligned actions.
 pub(crate) fn actions<R>(
     ui: &mut egui::Ui,
     theme: &UiTheme,

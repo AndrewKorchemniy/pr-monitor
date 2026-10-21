@@ -22,7 +22,8 @@ use crate::{
     widgets::{people_picker::PeoplePicker, scope_picker::ScopeFilter},
 };
 
-/// The pages in the sidebar (org sub-sections all open Organizations).
+/// The pages in the sidebar, or the page menu in a narrow window (org sub-sections all open
+/// Organizations).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Page {
     General,
@@ -41,7 +42,8 @@ pub(crate) const PAGES: [Page; 4] = [
 impl Page {
     pub(crate) const fn from_section(section: SettingsSection) -> Self {
         match section {
-            // why: version, links and licenses live in the sidebar footer, not on a page.
+            // why: version, links and licenses live in the sidebar footer (at the end of General
+            // when the sidebar is folded away), not on a page of their own.
             SettingsSection::General | SettingsSection::About => Self::General,
             SettingsSection::Organizations
             | SettingsSection::Auth
@@ -79,7 +81,7 @@ impl Page {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Editor {
     AddOrg,
-    /// Third-party licenses, from the sidebar footer.
+    /// Third-party licenses, from the about links.
     Licenses,
     Repositories,
     Tracked,
