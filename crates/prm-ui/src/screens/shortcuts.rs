@@ -8,6 +8,7 @@ use crate::{
     commands::{COMMANDS, Category},
     copy,
     frame::FrameCx,
+    theme::UiTheme,
     widgets::{
         self,
         modal::{ModalOutcome, ModalSpec, modal},
@@ -33,6 +34,7 @@ pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
         buttons: &[copy::CLOSE],
         danger: false,
         width: 560.0,
+        nested: false,
     };
     // why: the dialog's body scrolls, so the list needs no scroll area of its own.
     let outcome = modal(ctx, &theme, &spec, |ui| {
@@ -52,6 +54,16 @@ const KEYS: f32 = 200.0;
 /// The space between the grid's columns, in points.
 const GAP: f32 = 24.0;
 
+/// A category's heading; `spaced` puts room above it, so sections read as groups.
+fn heading(ui: &mut egui::Ui, theme: &UiTheme, title: &str, spaced: bool) {
+    ui.vertical(|ui| {
+        if spaced {
+            ui.add_space(theme.tokens.metrics.space.lg);
+        }
+        ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
+    });
+}
+
 /// Every category in one grid, so all key caps line up in one column.
 fn key_grid(ui: &mut egui::Ui, cx: &FrameCx<'_>) {
     let theme = &cx.theme;
@@ -61,8 +73,8 @@ fn key_grid(ui: &mut egui::Ui, cx: &FrameCx<'_>) {
         .min_row_height(0.0)
         .spacing([GAP, theme.tokens.metrics.space.sm]);
     grid.show(ui, |ui| {
-        for (category, title) in CATEGORIES {
-            ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
+        for (index, (category, title)) in CATEGORIES.into_iter().enumerate() {
+            heading(ui, theme, title, index > 0);
             ui.end_row();
             for (command, chords) in bound(cx, category) {
                 ui.label(command);

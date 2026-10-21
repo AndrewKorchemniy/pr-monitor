@@ -99,39 +99,53 @@ fn show(
                 state.selected = 0;
                 state.revealed = None;
             }
-            ui.separator();
+            rule(ui, theme);
             if items.is_empty() {
                 widgets::muted(ui, theme, copy::PALETTE_EMPTY);
             }
-            ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
-            clicked = list(ui, theme, state, items, rows);
-            ui.separator();
+            let margin = frame.inner_margin.left.into();
+            clicked = list(ui, theme, state, items, (rows, margin));
+            rule(ui, theme);
             widgets::muted(ui, theme, copy::PALETTE_FOOTER);
         });
     let close = clicked.is_none() && modal.should_close();
     (clicked, close)
 }
 
+/// A hairline with the same space above and below it.
+fn rule(ui: &mut egui::Ui, theme: &UiTheme) {
+    let space = theme.tokens.metrics.space.sm;
+    ui.add_space(space);
+    widgets::dialog::divider(ui, theme);
+    ui.add_space(space);
+}
+
 /// The results, `rows` high at most, scrolling (by wheel or bar) for the rest; the highlighted
-/// row is scrolled into view each time it moves. Returns a clicked item.
+/// row is scrolled into view each time it moves. The rows reach `margin` past the content on
+/// each side, so highlights run edge to edge like the menus'. Returns a clicked item.
 fn list(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     state: &mut PaletteState,
     items: &[(PaletteItem, String)],
-    rows: usize,
+    (rows, margin): (usize, f32),
 ) -> Option<PaletteItem> {
     let mut clicked = None;
+    let wide = ui
+        .available_rect_before_wrap()
+        .expand2(egui::vec2(margin, 0.0));
+    let mut list = ui.new_child(egui::UiBuilder::new().max_rect(wide));
+    list.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
     // why: an overlay scrollbar, so the rows keep their width once the list scrolls.
-    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+    list.spacing_mut().scroll = egui::style::ScrollStyle::floating();
     egui::ScrollArea::vertical()
         .id_salt("palette_rows")
-        .max_height(list_height(theme, rows))
+        .max_height(list_height(theme, rows, items.len()))
         .auto_shrink([false, true])
-        .show(ui, |ui| {
+        .show(&mut list, |ui| {
             for (index, (item, title)) in items.iter().enumerate() {
                 let selected = index == state.selected;
-                let response = row(ui, theme, title, selected);
+                let response = row(ui, theme, title, (selected, margin));
                 if selected && state.revealed != Some(index) {
                     response.scroll_to_me(None);
                     state.revealed = Some(index);
@@ -141,15 +155,23 @@ fn list(
                 }
             }
         });
+    // why: a child `Ui` does not move its parent's cursor; the part past the margins is the
+    // frame's, so it must not widen the palette.
+    ui.advance_cursor_after_rect(list.min_rect().shrink2(egui::vec2(margin, 0.0)));
     clicked
 }
 
-/// The height of `rows` result rows and the gaps between them, in points.
-fn list_height(theme: &UiTheme, rows: usize) -> f32 {
+/// The height of `rows` result rows and the gaps between them, in points. When there are more
+/// than `rows` of `total`, half of the next row shows, so the list reads as scrollable.
+fn list_height(theme: &UiTheme, rows: usize, total: usize) -> f32 {
     let gap = theme.tokens.metrics.space.xxs;
     #[expect(clippy::cast_precision_loss, reason = "a dozen rows")]
-    let rows = rows as f32;
-    rows * (theme.control_height() + gap) - gap
+    let shown = if total > rows {
+        rows as f32 - 0.5
+    } else {
+        rows as f32
+    };
+    shown * (theme.control_height() + gap) - gap
 }
 
 /// How many result rows fit in `height` points below the palette's top, besides its field,
@@ -168,8 +190,14 @@ fn rows_that_fit(theme: &UiTheme, height: f32) -> usize {
     fits.clamp(MIN_ROWS, MAX_ROWS)
 }
 
-/// One result: left-aligned, highlighted with the accent tint when selected.
-fn row(ui: &mut egui::Ui, theme: &UiTheme, title: &str, selected: bool) -> egui::Response {
+/// One result, highlighted edge to edge with the accent bar when selected, like a menu row;
+/// its text sits `margin` in, under the query's.
+fn row(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    title: &str,
+    (selected, margin): (bool, f32),
+) -> egui::Response {
     let m = &theme.tokens.metrics;
     let size = egui::vec2(ui.available_width(), theme.control_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -181,26 +209,21 @@ fn row(ui: &mut egui::Ui, theme: &UiTheme, title: &str, selected: bool) -> egui:
         None
     };
     if let Some(fill) = fill {
-        ui.painter().rect_filled(rect, m.radius.md, fill);
+        ui.painter().rect_filled(rect, 0.0, fill);
     }
     if selected {
-        let bar = egui::Rect::from_min_size(
-            rect.left_top() + egui::vec2(0.0, 6.0),
-            egui::vec2(2.0, rect.height() - 12.0),
-        );
-        ui.painter().rect_filled(bar, 1.0, theme.colors.accent_base);
+        let bar = egui::Rect::from_min_size(rect.left_top(), egui::vec2(2.0, rect.height()));
+        ui.painter().rect_filled(bar, 0.0, theme.colors.accent_base);
     }
     let mut job = egui::text::LayoutJob::simple_singleline(
         title.to_owned(),
         theme.fonts.body.clone(),
         theme.colors.text_primary,
     );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 2.0 * m.space.md);
+    let inset = margin + m.space.md;
+    job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 2.0 * inset);
     let galley = ui.painter().layout_job(job);
-    let at = egui::pos2(
-        rect.left() + m.space.md,
-        rect.center().y - galley.size().y / 2.0,
-    );
+    let at = egui::pos2(rect.left() + inset, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(at, galley, theme.colors.text_primary);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, title));
     response

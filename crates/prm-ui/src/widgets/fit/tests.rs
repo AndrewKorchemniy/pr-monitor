@@ -51,9 +51,9 @@ fn a_card_starts_a_share_down_unless_that_would_cut_it_off() {
         (900.0, None, 144.0),
         (900.0, Some(400.0), 144.0),
         (640.0, Some(300.0), 102.4),
-        // Too tall for that: centred between even margins.
-        (640.0, Some(570.0), 35.0),
-        (720.0, Some(560.0), 80.0),
+        // Too tall for that: only as high as keeps its foot inside the margin.
+        (640.0, Some(570.0), 54.0),
+        (720.0, Some(560.0), 115.2),
         // Taller than the window: at the margin, and the page scrolls.
         (640.0, Some(900.0), 16.0),
         (420.0, Some(900.0), 8.0),

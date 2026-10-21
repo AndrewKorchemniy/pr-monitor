@@ -45,14 +45,14 @@ pub(crate) fn room(window: Vec2) -> Vec2 {
 }
 
 /// Where a card `card` points tall starts in a window `window` points tall: a fixed share of the
-/// way down (at least `floor`), so steps of different heights don't jump; higher, centred, when
-/// it would not fit there; at the window's margin when it is taller than the window. `card` is
-/// `None` before the card's height is known.
+/// way down (at least `floor`), so steps of different heights don't jump; higher, just enough to
+/// keep its foot inside the margin, when it would not fit there; at the window's margin when it
+/// is taller than the window. `card` is `None` before the card's height is known.
 pub(crate) fn card_top(window: f32, card: Option<f32>, floor: f32) -> f32 {
     let margin = window_margin(window);
     let anchored = (window * CARD_TOP_SHARE).max(floor).max(margin);
     card.map_or(anchored, |card| {
-        ((window - card) / 2.0).max(margin).min(anchored)
+        anchored.min(window - card - margin).max(margin)
     })
 }
 

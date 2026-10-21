@@ -95,6 +95,7 @@ impl PrMonitorApp {
                     buttons: &[copy::DISCARD, copy::KEEP_EDITING],
                     danger: true,
                     width: widgets::modal::WIDTH,
+                    nested: false,
                 };
                 let outcome = modal(ctx, &theme, &spec, |ui| {
                     ui.label(copy::DISCARD_BODY);
@@ -114,6 +115,7 @@ impl PrMonitorApp {
                     buttons: &[copy::COPY_MESSAGE, copy::CLOSE],
                     danger: false,
                     width: widgets::modal::WIDTH,
+                    nested: false,
                 };
                 let outcome = modal(ctx, &theme, &spec, |ui| {
                     ui.add(
@@ -151,6 +153,7 @@ impl PrMonitorApp {
             buttons: &[copy::REMOVE, copy::CANCEL],
             danger: true,
             width: widgets::modal::WIDTH,
+            nested: false,
         };
         let outcome = modal(ctx, &theme, &spec, |ui| {
             ui.add(egui::Label::new(copy::REMOVE_ORG_BODY).wrap());
@@ -202,6 +205,7 @@ impl PrMonitorApp {
             buttons: &[copy::CLOSE],
             danger: false,
             width: widgets::modal::WIDTH,
+            nested: false,
         };
         let orgs: Vec<_> = self
             .state

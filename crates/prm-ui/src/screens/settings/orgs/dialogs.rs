@@ -50,6 +50,7 @@ fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) 
         buttons: &[copy::CLOSE],
         danger: false,
         width: 640.0,
+        nested: true,
     };
     // why: the dialog's body scrolls, so the long text needs no scroll area of its own.
     modal::modal(ctx, theme, &spec, |ui| {
@@ -58,14 +59,90 @@ fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) 
             crate::theme::fonts::OFL_NEXT,
             crate::theme::fonts::OFL_MONO,
         ] {
-            ui.label(
-                RichText::new(text)
-                    .font(theme.fonts.mono.clone())
-                    .color(theme.colors.text_secondary),
-            );
+            license(ui, theme, text);
             controls::row_divider(ui, theme);
         }
     })
+}
+
+/// One license text, re-flowed to the dialog's width.
+fn license(ui: &mut egui::Ui, theme: &UiTheme, text: &str) {
+    for block in reflow(text) {
+        match block {
+            Block::Text(text) => {
+                ui.label(
+                    RichText::new(text)
+                        .font(theme.fonts.mono.clone())
+                        .color(theme.colors.text_secondary),
+                );
+            }
+            Block::Rule => controls::row_divider(ui, theme),
+        }
+    }
+}
+
+/// A piece of a license text laid out for the dialog's width.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Block {
+    /// A paragraph, its hard-wrapped lines joined so the dialog wraps it; lines that start a
+    /// list item or are indented keep their own line.
+    Text(String),
+    /// A line of only dashes or equals signs.
+    Rule,
+}
+
+/// Splits `text` into paragraphs and rules. License files are hard-wrapped near 76 columns,
+/// which re-wrapped at another width left ragged short lines.
+fn reflow(text: &str) -> Vec<Block> {
+    let mut blocks = Vec::new();
+    let mut para = String::new();
+    let flush = |para: &mut String, blocks: &mut Vec<Block>| {
+        if !para.is_empty() {
+            blocks.push(Block::Text(std::mem::take(para)));
+        }
+    };
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            flush(&mut para, &mut blocks);
+        } else if is_rule(trimmed) {
+            flush(&mut para, &mut blocks);
+            blocks.push(Block::Rule);
+        } else {
+            let separator = if para.is_empty() {
+                ""
+            } else if keeps_line(line) {
+                "
+"
+            } else {
+                " "
+            };
+            para.push_str(separator);
+            para.push_str(if keeps_line(line) {
+                line.trim_end()
+            } else {
+                trimmed
+            });
+        }
+    }
+    flush(&mut para, &mut blocks);
+    blocks
+}
+
+fn is_rule(line: &str) -> bool {
+    line.len() >= 3 && (line.chars().all(|c| c == '-') || line.chars().all(|c| c == '='))
+}
+
+/// A line that starts its own line: indented, or a list item ("- ", "* ", "1)", "1.").
+fn keeps_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let numbered = trimmed
+        .split_once([')', '.'])
+        .is_some_and(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+    line.starts_with(char::is_whitespace)
+        || trimmed.starts_with("- ")
+        || trimmed.starts_with("* ")
+        || numbered
 }
 
 fn add_org_dialog(
@@ -81,6 +158,7 @@ fn add_org_dialog(
         buttons: &[],
         danger: false,
         width: modal::WIDTH,
+        nested: true,
     };
     let mut added = false;
     let outcome = modal::modal(ctx, theme, &spec, |ui| {
@@ -123,6 +201,7 @@ fn repositories_dialog(
         buttons: &[copy::DONE],
         danger: false,
         width: 560.0,
+        nested: true,
     };
     let Some(org) = st.draft.orgs.get_mut(st.org) else {
         return ModalOutcome::Dismissed;
@@ -172,6 +251,7 @@ fn people_dialog(
         buttons: &[copy::DONE],
         danger: false,
         width: 480.0,
+        nested: true,
     };
     let list = people_list(org, editor);
     let outcome = modal::modal(ctx, &theme, &spec, |ui| {
@@ -186,3 +266,6 @@ fn people_dialog(
     }
     outcome
 }
+
+#[cfg(test)]
+mod tests;

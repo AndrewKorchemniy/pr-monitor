@@ -32,8 +32,13 @@ pub(crate) struct ModalSpec<'a> {
     pub danger: bool,
     /// The width in a roomy window, in points; less when the window is narrower.
     pub width: f32,
+    /// Opens over the settings sheet: kept further in from the window's edges so it reads as
+    /// a dialog on the sheet rather than lining up with it.
+    pub nested: bool,
 }
 
+/// How much further in from the window a dialog over the settings sheet sits (points).
+const NESTED_INSET: f32 = 14.0;
 /// The usual dialog width.
 pub(crate) const WIDTH: f32 = 420.0;
 /// The tallest a dialog's body gets before it scrolls, however tall the window (points).
@@ -50,7 +55,12 @@ pub(crate) fn modal(
     let mut outcome = ModalOutcome::Open;
     let frame = adapter::frame_dialog(theme, theme.policy).inner_margin(egui::Margin::ZERO);
     let chrome = frame.total_margin().sum();
-    let room = fit::room(ctx.content_rect().size()) - chrome;
+    let nested = if spec.nested {
+        egui::Vec2::splat(2.0 * NESTED_INSET)
+    } else {
+        egui::Vec2::ZERO
+    };
+    let room = (fit::room(ctx.content_rect().size()) - chrome - nested).max(egui::Vec2::ZERO);
     let id = egui::Id::unique(spec.id);
     let response = egui::Modal::new(id).frame(frame).show(ctx, |ui| {
         ui.set_width(spec.width.min(room.x));

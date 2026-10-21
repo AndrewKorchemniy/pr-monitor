@@ -231,6 +231,7 @@ pub(crate) const TRAY_REFRESH: &str = "Refresh now";
 pub(crate) const REFRESHING: &str = "Refreshing…";
 pub(crate) const COLUMN_NO_ROOM: &str = "No room";
 pub(crate) const STOPPED: &str = "Stopped";
+pub(crate) const PAT_TITLE: &str = "Personal access token";
 pub(crate) const TRAY_PAUSE: &str = "Pause notifications for 1 hour";
 pub(crate) const TRAY_RESUME: &str = "Resume notifications";
 pub(crate) const TRAY_SIGN_IN: &str = "Sign in…";
@@ -409,10 +410,6 @@ pub(crate) fn blocked(title: &str) -> String {
     format!("Blocked: {title}")
 }
 
-pub(crate) fn pat_title(org: &str) -> String {
-    format!("Use a personal access token for {org}")
-}
-
 pub(crate) fn remove_org_title(org: &str) -> String {
     format!("Remove {org}?")
 }
@@ -569,6 +566,7 @@ pub(crate) const ALL: &[&str] = &[
     REFRESHING,
     COLUMN_NO_ROOM,
     STOPPED,
+    PAT_TITLE,
     REMOVE_ORG_BODY,
     REVIEWERS_HELP,
     TRACK_FROM_HELP,

@@ -8,6 +8,7 @@ use crate::{
     theme::{Tone, UiTheme},
     widgets::{
         self,
+        fields::{self, Field},
         modal::{ModalOutcome, ModalSpec, modal},
     },
 };
@@ -20,24 +21,21 @@ pub(crate) fn token_dialog(
     org: &str,
     (input, error): (&mut String, Option<&str>),
 ) -> (ModalOutcome, bool) {
-    let title = copy::pat_title(org);
     let spec = ModalSpec {
         id: "pat",
-        title: &title,
-        subtitle: None,
+        title: copy::PAT_TITLE,
+        subtitle: Some(org),
         buttons: &[copy::SAVE_TOKEN, copy::CANCEL],
         danger: false,
         width: widgets::modal::WIDTH,
+        nested: false,
     };
     let mut docs = false;
     let outcome = modal(ctx, theme, &spec, |ui| {
         let label = widgets::field_label(ui, theme, copy::PAT_LABEL);
-        ui.add(
-            egui::TextEdit::singleline(input)
-                .password(true)
-                .desired_width(f32::INFINITY),
-        )
-        .labelled_by(label.id);
+        let mut field = Field::new(egui::Id::unique("pat_token"), "").password(true);
+        field.error = error.is_some();
+        fields::text_field(ui, theme, input, &field).labelled_by(label.id);
         widgets::muted(ui, theme, copy::PAT_HELP);
         docs = ui.link(copy::HOW_TO_CREATE_TOKEN).clicked();
         if let Some(error) = error {

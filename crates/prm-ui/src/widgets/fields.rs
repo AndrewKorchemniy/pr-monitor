@@ -27,6 +27,8 @@ pub(crate) struct Field<'a> {
     pub width: Option<f32>,
     /// Esc stays with the field (a combobox closing its dropdown) instead of taking its focus.
     pub keeps_escape: bool,
+    /// Shows dots instead of the text (a token).
+    pub password: bool,
 }
 
 impl<'a> Field<'a> {
@@ -37,6 +39,7 @@ impl<'a> Field<'a> {
             error: false,
             width: None,
             keeps_escape: false,
+            password: false,
         }
     }
 
@@ -47,6 +50,11 @@ impl<'a> Field<'a> {
 
     pub(crate) const fn keeps_escape(mut self, keeps: bool) -> Self {
         self.keeps_escape = keeps;
+        self
+    }
+
+    pub(crate) const fn password(mut self, on: bool) -> Self {
+        self.password = on;
         self
     }
 }
@@ -93,6 +101,7 @@ fn edit<'t>(theme: &UiTheme, text: &'t mut String, field: &Field<'_>) -> TextEdi
         .frame(egui::Frame::NONE)
         .font(theme.fonts.body.clone())
         .align(egui::Align2::LEFT_CENTER)
+        .password(field.password)
         .desired_width(f32::INFINITY);
     let filter = edit.get_event_filter();
     edit.event_filter(EventFilter {
