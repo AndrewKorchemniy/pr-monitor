@@ -93,7 +93,7 @@ fn show(
         .show(ctx, |ui| {
             ui.set_width(width);
             let field = (egui::Id::unique("palette_query"), copy::PALETTE_HINT);
-            let response = fields::search_field(ui, theme, &mut state.query, field, width);
+            let response = fields::search_field(ui, theme, &mut state.query, field, (width, width));
             response.request_focus();
             if response.changed() {
                 state.selected = 0;

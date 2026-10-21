@@ -86,7 +86,7 @@ pub(crate) fn toolbar(
         ui.add_space((below - frame_left - fields::SEARCH_GLYPH_INSET).max(0.0));
         let fit = Fit::of(ui, &theme, inputs);
         let id = (filter_id(), copy::FILTER_HINT);
-        let response = fields::search_field(ui, &theme, filter, id, fit.search);
+        let response = fields::search_field(ui, &theme, filter, id, (0.0, fit.search));
         if response.changed() {
             cx.push(UiAction::SetFilterText(filter.clone()));
         }
@@ -96,7 +96,9 @@ pub(crate) fn toolbar(
         });
     });
     if let Some(fraction) = cx.state.refresh_fraction() {
-        widgets::progress_line(ui, rect, fraction, theme.colors.accent_base);
+        // why: edge to edge like the divider it sits on, not inside the toolbar's margin.
+        let full = rect.expand2(egui::vec2(theme.tokens.metrics.space.md, 0.0));
+        widgets::progress_line(ui, full, fraction, theme.colors.accent_base);
     }
     focused
 }

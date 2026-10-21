@@ -442,7 +442,8 @@ fn the_focus_ring_stays_inside_the_list() {
                 ring.left() >= clip.left() && ring.right() <= clip.right(),
                 "{case}"
             );
-            assert!(ring.right() >= end - 1.5, "{case} stops short of {end}");
+            // The ring keeps an even inset (half a row gap) inside the fill.
+            assert!(ring.right() >= end - 4.0, "{case} stops short of {end}");
             assert!(
                 ring.right() <= dashboard_right(&h),
                 "{case} passes the window"

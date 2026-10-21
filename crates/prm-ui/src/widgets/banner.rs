@@ -166,7 +166,7 @@ impl Fit {
         });
         let text = title + detail;
         let actions = item.action.is_some() || item.secondary.is_some();
-        let row = if actions {
+        let row = if actions || item.dismissible {
             text.max(ui.spacing().interact_size.y)
         } else {
             text
@@ -230,7 +230,7 @@ fn close_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, item: &Banner) -> Optio
     if !item.dismissible {
         return None;
     }
-    let response = ui.small_button(copy::CLOSE);
+    let response = ui.button(copy::CLOSE);
     if response.clicked() {
         cx.push(UiAction::DismissBanner(item.id.clone()));
     }

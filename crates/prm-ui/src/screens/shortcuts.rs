@@ -58,6 +58,7 @@ fn key_grid(ui: &mut egui::Ui, cx: &FrameCx<'_>) {
     let grid = egui::Grid::new("keys")
         .num_columns(2)
         .min_col_width(COLUMN)
+        .min_row_height(0.0)
         .spacing([GAP, theme.tokens.metrics.space.sm]);
     grid.show(ui, |ui| {
         for (category, title) in CATEGORIES {

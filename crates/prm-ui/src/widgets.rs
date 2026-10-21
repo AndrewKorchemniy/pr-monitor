@@ -103,10 +103,14 @@ pub(crate) fn kbd(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Respo
 
 /// Several key caps in a row ("F5  Ctrl+R").
 pub(crate) fn kbd_row(ui: &mut egui::Ui, theme: &UiTheme, chords: &[String]) {
-    ui.horizontal(|ui| {
-        for chord in chords {
-            kbd(ui, theme, chord);
-        }
+    ui.scope(|ui| {
+        // why: a horizontal row is at least the interact height; caps hug their label.
+        ui.spacing_mut().interact_size.y = 0.0;
+        ui.horizontal(|ui| {
+            for chord in chords {
+                kbd(ui, theme, chord);
+            }
+        });
     });
 }
 

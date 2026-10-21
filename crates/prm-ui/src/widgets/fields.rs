@@ -189,13 +189,13 @@ fn action_frame(
 }
 
 /// A seamless filter field: a search glyph and borderless text, underlined only while focused.
-/// It is as wide as its hint (or its text, when longer), up to `max_width`.
+/// It is as wide as its hint (or its text, when longer), between `min_width` and `max_width`.
 pub(crate) fn search_field(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     text: &mut String,
     (id, hint): (egui::Id, &str),
-    max_width: f32,
+    (min_width, max_width): (f32, f32),
 ) -> egui::Response {
     let m = &theme.tokens.metrics;
     let font = theme.fonts.body.clone();
@@ -206,7 +206,8 @@ pub(crate) fn search_field(
             .x
     };
     let content = measure(hint).max(measure(text) + m.space.md);
-    let width = (GLYPH + 2.0 + m.space.md + content + 24.0).min(max_width);
+    let width =
+        (GLYPH + 2.0 + m.space.md + content + 24.0).clamp(min_width.min(max_width), max_width);
     let (rect, area) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
     let glyph = Rect::from_center_size(
         pos2(

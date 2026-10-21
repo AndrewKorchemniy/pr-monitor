@@ -150,12 +150,22 @@ pub(crate) fn answer_row(
     response.context_menu(|ui| context_menu(ui, pr, pending));
 }
 
-/// The ring round the selected row, cut to the list's width and clipped to the list.
+/// The ring round the selected row: an even inset inside the row's selection fill, starting
+/// after the change bar, cut to the list's width and clipped to the list.
 fn focus_ring(response: &Response, theme: &UiTheme, list: Rect) {
     // why: a row's response takes in what its cells' contents allocate, which can reach past
     // the list's right edge; there the ring ran off the window and had no right side.
     let x = response.rect.x_range().intersection(list.x_range());
-    let ring = Rect::from_x_y_ranges(x, response.rect.y_range()).shrink(1.0);
+    // why: the fill reaches half a gap past the cells on each side; inset from that, not the
+    // cells, so the ring keeps clear of the text and the bar.
+    let gap = response.ctx.global_style().spacing.item_spacing;
+    let fill = Rect::from_x_y_ranges(x, response.rect.y_range()).expand2(gap * 0.5);
+    let inset = gap.y * 0.5;
+    let after_bar = list.left() + 1.0 + theme.tokens.metrics.row.revision_bar + inset;
+    let ring = fill
+        .intersect(list.expand2(egui::vec2(0.0, gap.y * 0.5)))
+        .shrink(inset)
+        .with_min_x(after_bar);
     let stroke = Stroke::new(theme.tokens.metrics.stroke.focus, theme.colors.border_focus);
     response
         .ctx

@@ -123,12 +123,12 @@ fn header(
         + controls::check_width(ui, theme, copy::WATCH_ALL_PROJECTS)
         + measure(&line)
         + theme.control_height()
-        + 3.0 * spacing;
+        + 4.0 * spacing;
     let below = needed > ui.available_width();
     let mut reload = false;
     ui.horizontal(|ui| {
-        // why: line the box up with the project boxes, which sit after a chevron.
-        ui.add_space(CHEVRON);
+        // why: line the box up with the project boxes, which sit after a chevron and a gap.
+        ui.add_space(CHEVRON + spacing);
         controls::checkbox(ui, theme, &mut scope.all_projects, copy::WATCH_ALL_PROJECTS);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             reload = controls::icon_button(ui, theme, Icon::Refresh, copy::REFRESH_LIST)
@@ -141,7 +141,7 @@ fn header(
     });
     if below {
         ui.horizontal(|ui| {
-            ui.add_space(CHEVRON);
+            ui.add_space(CHEVRON + spacing);
             summary_line(ui, theme, catalog, &line);
         });
     }
