@@ -99,7 +99,9 @@ fn events(ui: &mut egui::Ui, theme: &UiTheme, events: &mut EventToggles) {
     let per_line = fit::per_line(ui.available_width(), (widest, EVENT_GAP), EVENT_COLUMNS);
     egui::Grid::new("notify_events")
         .num_columns(per_line)
-        .spacing([EVENT_GAP, theme.tokens.metrics.space.sm])
+        // why: rows as tall as a check and as far apart as a radio list's, so the two match.
+        .min_row_height(0.0)
+        .spacing([EVENT_GAP, ui.spacing().item_spacing.y])
         .show(ui, |ui| {
             for (index, (value, label)) in toggles(events).into_iter().enumerate() {
                 controls::checkbox(ui, theme, value, label);

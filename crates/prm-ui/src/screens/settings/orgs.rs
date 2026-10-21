@@ -20,7 +20,7 @@ use crate::{
     frame::FrameCx,
     route::ModalKind,
     screens::settings::{Editor, SettingsState},
-    theme::UiTheme,
+    theme::{Tone, UiTheme},
     widgets::{
         self, card,
         controls::{self, setting_row, toggle_row},
@@ -63,7 +63,11 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsSta
     });
     super::reveal(ui, st, &[SettingsSection::People]);
     card::section(ui, &theme, copy::PEOPLE, None, |ui| people(ui, &theme, st));
-    if ui.button(copy::REMOVE_ORG).clicked() {
+    // why: set apart from the people lists above and in the danger tone, like its confirmation.
+    ui.add_space(theme.tokens.metrics.space.xl);
+    let danger = theme.colors.tone(Tone::Danger).fg;
+    let remove = egui::Button::new(RichText::new(copy::REMOVE_ORG).color(danger));
+    if ui.add(remove).clicked() {
         cx.push(UiAction::Modal(ModalKind::RemoveOrg(st.org)));
     }
 }
@@ -168,6 +172,8 @@ fn row_with_button(
     text: (&str, Option<&str>),
     button: &str,
 ) -> bool {
+    let space = theme.tokens.metrics.space.sm;
+    ui.add_space(space);
     let mut clicked = false;
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -176,6 +182,7 @@ fn row_with_button(
             ui.with_layout(column, |ui| title_and_detail(ui, theme, text));
         });
     });
+    ui.add_space(space);
     clicked
 }
 
@@ -226,7 +233,7 @@ fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
         let when_empty = empty_list_meaning(editor, org.include_me);
         let list = people_list(org, editor);
         if list.is_empty() {
-            widgets::muted(ui, theme, when_empty);
+            people_picker::placeholder(ui, theme, when_empty);
         } else {
             people_picker::chips(ui, theme, list);
         }

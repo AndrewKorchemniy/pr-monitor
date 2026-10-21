@@ -263,6 +263,9 @@ fn page_title(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState, nav: N
 
 /// The sidebar folded into a ghost menu button: "Settings  General ⌄", then a menu of pages.
 fn page_menu(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
+    // why: a ghost button's text sits its padding in from its edge; start the button that far
+    // into the margin so the text lines up with the page below and the fill hangs outside.
+    ui.add_space(-theme.tokens.metrics.space.lg);
     let response = controls::menu_button(ui, theme, copy::SETTINGS, st.page.title());
     egui::Popup::menu(&response)
         .frame(controls::menu_frame(theme))

@@ -146,14 +146,15 @@ fn strip(
     let room = ui.available_width() - add_room(ui, theme, compact);
     let row = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = m.space.xs;
-        let picked = egui::ScrollArea::horizontal()
+        let shown = egui::ScrollArea::horizontal()
             .id_salt("org_tabs")
             .max_width(room)
             .auto_shrink([true, true])
             .show(ui, |ui| {
                 ui.horizontal(|ui| line(ui, theme, tabs, selected)).inner
-            })
-            .inner;
+            });
+        edge_fades(ui, &shown);
+        let picked = shown.inner;
         ui.add_space(m.space.sm);
         (picked, add_tab(ui, theme, compact).clicked())
     });
@@ -162,6 +163,36 @@ fn strip(
     ui.painter()
         .hline(rect.left()..=ui.max_rect().right(), rect.bottom(), stroke);
     row.inner
+}
+
+/// How far a fade reaches in from a scrolled strip's edge (points).
+const FADE: f32 = 24.0;
+
+/// Fades the strip's ends where tabs are scrolled out of sight, so it reads as scrollable.
+fn edge_fades<R>(ui: &egui::Ui, shown: &egui::scroll_area::ScrollAreaOutput<R>) {
+    let view = shown.inner_rect;
+    let hidden_left = shown.state.clamped_offset().x > 0.5;
+    let hidden_right = shown.state.clamped_offset().x + view.width() < shown.content_size.x - 0.5;
+    let solid = ui.visuals().window_fill;
+    let clear = solid.gamma_multiply(0.0);
+    let fade = |rect: Rect, (left, right): (egui::Color32, egui::Color32)| {
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(rect.left_top(), left);
+        mesh.colored_vertex(rect.right_top(), right);
+        mesh.colored_vertex(rect.right_bottom(), right);
+        mesh.colored_vertex(rect.left_bottom(), left);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        ui.painter().add(mesh);
+    };
+    if hidden_left {
+        let rect = Rect::from_min_size(view.min, vec2(FADE, view.height()));
+        fade(rect, (solid, clear));
+    }
+    if hidden_right {
+        let rect = Rect::from_min_max(pos2(view.right() - FADE, view.top()), view.max);
+        fade(rect, (clear, solid));
+    }
 }
 
 /// The tabs, left to right. Returns the clicked one.

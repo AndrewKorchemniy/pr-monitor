@@ -26,7 +26,7 @@ use crate::{
 mod combobox;
 mod pills;
 
-pub(crate) use pills::chips;
+pub(crate) use pills::{chips, placeholder};
 
 /// Directory searches start at this many characters.
 const MIN_QUERY: usize = 3;

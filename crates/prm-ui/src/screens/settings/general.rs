@@ -104,7 +104,9 @@ fn column_checklist(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, choices: Choices<'_
     egui::Grid::new("settings_columns")
         .num_columns(per_line)
         .min_col_width(column_width)
-        .spacing(egui::vec2(gap, m.space.xs))
+        // why: rows as tall as a check and as far apart as a radio list's, so the two match.
+        .min_row_height(0.0)
+        .spacing(egui::vec2(gap, ui.spacing().item_spacing.y))
         .show(ui, |ui| {
             for (index, column) in columns::listed().enumerate() {
                 let check = choices.check(&column);

@@ -75,8 +75,12 @@ pub(super) fn section(
     }
 }
 
+/// A link's text: small, in the link colour, which the theme's text-colour override would
+/// otherwise replace.
 fn small(theme: &UiTheme, text: &str) -> RichText {
-    RichText::new(text).font(theme.fonts.small.clone())
+    RichText::new(text)
+        .font(theme.fonts.small.clone())
+        .color(theme.colors.text_link)
 }
 
 /// "PR Monitor 0.2.0", with the commit and target on hover.

@@ -86,6 +86,28 @@ fn pill(ui: &mut egui::Ui, theme: &UiTheme, person: &Person) -> bool {
     button.clicked()
 }
 
+/// What an empty list means ("Everyone", "Nobody yet"), shown where its pills would be: a
+/// pill's shape with only an outline, so it reads as the list's value rather than as help.
+pub(crate) fn placeholder(ui: &mut egui::Ui, theme: &UiTheme, text: &str) {
+    let m = &theme.tokens.metrics;
+    let c = &theme.colors;
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), theme.fonts.label.clone(), c.text_secondary);
+    let size = vec2(2.0 * PILL_PAD + galley.size().x, PILL_HEIGHT);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    let border = Stroke::new(m.stroke.hairline, c.border_default);
+    let radius = CornerRadius::same(m.radius.sm);
+    ui.painter()
+        .rect_stroke(rect, radius, border, StrokeKind::Inside);
+    let at = pos2(
+        rect.left() + PILL_PAD,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(at, galley, c.text_secondary);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
+}
+
 /// The pill's fill and border, and the remove button's ghost hover fill, rounded only where
 /// it meets the pill's right corners. The divider between name and button is left unpainted.
 fn paint_pill(

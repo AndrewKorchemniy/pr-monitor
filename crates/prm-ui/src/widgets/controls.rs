@@ -141,7 +141,7 @@ pub(crate) fn ghost_chrome(
     let m = &theme.tokens.metrics;
     if open {
         ui.painter()
-            .rect_filled(rect, m.radius.md, theme.colors.control_hover);
+            .rect_filled(rect, m.radius.md, ghost_overlay(theme));
     } else {
         ghost_fill(ui, theme, rect, response);
     }
@@ -176,6 +176,16 @@ pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> eg
     response.on_hover_text(name)
 }
 
+/// A ghost button's hover and open fill: a wash of the text colour, so it shows the same on
+/// the canvas, the settings sheet and dialogs. An opaque surface tone vanished on the raised
+/// and overlay surfaces in the dark themes.
+fn ghost_overlay(theme: &UiTheme) -> egui::Color32 {
+    theme.colors.text_primary.gamma_multiply(GHOST_WASH)
+}
+
+/// How strongly `ghost_overlay` tints what is under it.
+const GHOST_WASH: f32 = 0.09;
+
 /// The hover fill of a borderless (ghost) button, faded in and out rather than switched.
 pub(crate) fn ghost_fill(ui: &egui::Ui, theme: &UiTheme, rect: Rect, response: &egui::Response) {
     let corners = CornerRadius::same(theme.tokens.metrics.radius.md);
@@ -195,7 +205,7 @@ pub(crate) fn ghost_fill_corners(
         theme.tokens.metrics.motion.quick,
     );
     if t > 0.0 {
-        let fill = theme.colors.control_hover.gamma_multiply(t);
+        let fill = ghost_overlay(theme).gamma_multiply(t);
         ui.painter().rect_filled(rect, corners, fill);
     }
 }

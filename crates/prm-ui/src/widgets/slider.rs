@@ -197,7 +197,7 @@ fn fraction_of(v: f64, (lo, hi): (f64, f64)) -> f32 {
     }
 }
 
-/// The field, the rail with its accent fill, and the knob (its color follows the value).
+/// The field, the rail with its accent fill, and the accent knob.
 fn paint(
     ui: &egui::Ui,
     theme: &UiTheme,
@@ -228,18 +228,13 @@ fn paint(
         painter.rect_filled(shape, 2.0, color);
     };
     bar(rail.left(), rail.right(), colors.border_default);
-    bar(rail.left(), knob_x, colors.accent_base);
+    // why: under the knob a short fill read as a stray dot beside it.
+    if knob_x - rail.left() >= KNOB {
+        bar(rail.left(), knob_x, colors.accent_base);
+    }
     let active = response.hovered() || response.dragged();
     let size = if active { KNOB + 1.0 } else { KNOB };
-    let knob = colors
-        .text_secondary
-        .lerp_to_gamma(colors.accent_base, fraction);
-    painter.circle(
-        pos2(knob_x, mid),
-        size,
-        knob,
-        Stroke::new(2.0, colors.control_bg),
-    );
+    painter.circle_filled(pos2(knob_x, mid), size, colors.accent_base);
 }
 
 fn paint_value(ui: &egui::Ui, theme: &UiTheme, rect: Rect, text: &str) {

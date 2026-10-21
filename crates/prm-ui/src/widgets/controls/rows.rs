@@ -32,7 +32,9 @@ pub(crate) fn setting_row<R>(
     }
     let wrap = (width * 0.55).min(width - fit::CONTROL_WIDTH - fit::ROW_GAP);
     let block = TextBlock::new(ui, theme, text, wrap);
-    let height = (block.height + 2.0 * m.space.sm).max(theme.control_height());
+    // why: a full-height control (field, slider, segmented) gets the same air above and below
+    // as the text does, rather than touching the row's hairlines.
+    let height = (block.height + 2.0 * m.space.sm).max(theme.control_height() + 2.0 * m.space.sm);
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let top = rect.center().y - block.height / 2.0;
     block.paint(ui, pos2(rect.left(), top));
