@@ -33,6 +33,12 @@ fn pass(
         .unwrap_or_default()
 }
 
+/// A show as the app does it: requested, then sent from the same frame's logic.
+fn show_now(window: &mut WindowController, ctx: &egui::Context) {
+    window.show(ctx);
+    window.take_show(ctx);
+}
+
 fn moves(commands: &[ViewportCommand]) -> Vec<Pos2> {
     commands
         .iter()
@@ -63,9 +69,13 @@ fn window_offscreen_start_moves_back_to_the_saved_position_on_first_show() {
         !window.take_uncloak(),
         "an off-screen window is not cloaked"
     );
-    let commands = pass(&ctx, ViewportInfo::default(), |ctx| window.show(ctx));
+    let commands = pass(&ctx, ViewportInfo::default(), |ctx| {
+        show_now(&mut window, ctx)
+    });
     assert_eq!(moves(&commands), [pos2(150.0, 100.0)], "zoomed points");
-    let again = pass(&ctx, ViewportInfo::default(), |ctx| window.show(ctx));
+    let again = pass(&ctx, ViewportInfo::default(), |ctx| {
+        show_now(&mut window, ctx)
+    });
     assert_eq!(moves(&again), [], "only the first show moves it");
 }
 
@@ -82,20 +92,27 @@ fn window_offscreen_start_without_a_saved_position_centers_on_the_monitor() {
     pass(&ctx, info.clone(), |ctx| {
         window.begin_frame(ctx, &link, ts(0), true);
     });
-    let commands = pass(&ctx, info, |ctx| window.show(ctx));
+    let commands = pass(&ctx, info, |ctx| show_now(&mut window, ctx));
     assert_eq!(moves(&commands), [pos2(320.0, 160.0)]);
 }
 
+/// A cloaked start-hidden window stays cloaked while hidden, and its first show asks for the
+/// cloak again so nothing is composed before a themed frame is presented.
 #[test]
-fn window_cloaked_start_uncloaks_and_never_moves() {
+fn window_cloaked_start_stays_cloaked_until_shown_and_never_moves() {
     let ctx = egui::Context::default();
     let (link, _ends) = link(AppState::default());
     let mut window = WindowController::new(launch(false, None), &UiPrefs::default());
     pass(&ctx, ViewportInfo::default(), |ctx| {
         window.begin_frame(ctx, &link, ts(0), true);
     });
-    assert!(window.take_uncloak());
-    let commands = pass(&ctx, ViewportInfo::default(), |ctx| window.show(ctx));
+    assert!(!window.take_uncloak(), "hidden windows stay cloaked");
+    let mut cloak = false;
+    let commands = pass(&ctx, ViewportInfo::default(), |ctx| {
+        window.show(ctx);
+        cloak = window.take_show(ctx);
+    });
+    assert!(cloak, "showing from hidden re-cloaks first");
     assert_eq!(moves(&commands), []);
 }
 
