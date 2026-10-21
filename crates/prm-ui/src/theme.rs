@@ -19,7 +19,7 @@ use prm_theme::{
 
 use crate::{deps::ChromeColors, render::policy::RenderPolicy};
 
-/// The semantic tones status pills, banners and chips use.
+/// The semantic tones status pills, banners and the status bar use.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Tone {
     NeedsReview,

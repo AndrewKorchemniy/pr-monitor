@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use egui_kittest::Harness;
+use prm_domain::view::StatusFilter;
 use prm_service::AppState;
 
 use crate::{
@@ -77,6 +78,14 @@ fn scenes() -> Vec<Scene> {
             f.dash.filter = "token".to_owned();
             f.dash.view.set_text("token");
         }),
+        scene(
+            "dashboard-status-filter",
+            Shown::Dashboard,
+            demo_state,
+            |f| {
+                f.dash.view.set_status(StatusFilter::ActiveComments);
+            },
+        ),
         scene("dashboard-empty", Shown::Dashboard, empty_state, nothing),
         scene("palette", Shown::Palette, demo_state, |f| {
             f.palette.query = "sign".to_owned();
