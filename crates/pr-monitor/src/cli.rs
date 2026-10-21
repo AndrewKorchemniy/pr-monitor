@@ -3,7 +3,7 @@
 use std::{ffi::OsString, path::PathBuf};
 
 use prm_config::schema::RendererPref;
-use prm_domain::app::URI_SCHEME;
+use prm_domain::app::{APP_DISPLAY_NAME, APP_ID, DATA_DIR_NAME, URI_SCHEME};
 use prm_ui::RendererKind;
 
 /// More arguments than this is a mistake (or an attack through the protocol handler).
@@ -51,10 +51,31 @@ pub(crate) enum ArgError {
     TooMany,
 }
 
+/// A flag that picks a mode other than Run.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ModeFlag {
+    SelfTest,
+    Unregister,
+    Version,
+    Help,
+}
+
+impl ModeFlag {
+    /// The canonical spelling, for error messages.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::SelfTest => "--self-test",
+            Self::Unregister => "--unregister",
+            Self::Version => "--version",
+            Self::Help => "--help",
+        }
+    }
+}
+
 /// The parser's working state: which mode flags were seen.
 #[derive(Default)]
 struct Seen {
-    modes: Vec<&'static str>,
+    modes: Vec<ModeFlag>,
     purge: bool,
 }
 
@@ -97,9 +118,10 @@ fn apply(
         "--minimized" => set_once(&mut args.minimized, "--minimized")?,
         "--debug" => set_once(&mut args.debug, "--debug")?,
         "--purge" => seen.purge = true,
-        "--self-test" | "--unregister" | "--version" | "--help" | "-h" | "-V" => {
-            seen.modes.push(mode_name(flag));
-        }
+        "--self-test" => seen.modes.push(ModeFlag::SelfTest),
+        "--unregister" => seen.modes.push(ModeFlag::Unregister),
+        "--version" | "-V" => seen.modes.push(ModeFlag::Version),
+        "--help" | "-h" => seen.modes.push(ModeFlag::Help),
         "--activate" => put_once(&mut args.activate, value("--activate")?, "--activate")?,
         "--home" => put_once(&mut args.home, PathBuf::from(value("--home")?), "--home")?,
         "--renderer" => put_once(
@@ -127,28 +149,25 @@ fn apply(
     Ok(())
 }
 
-fn mode_name(flag: &str) -> &'static str {
-    match flag {
-        "--self-test" => "--self-test",
-        "--unregister" => "--unregister",
-        "--version" | "-V" => "--version",
-        _ => "--help",
-    }
-}
-
 fn finish(mut args: Args, seen: &Seen) -> Result<Args, ArgError> {
     if let [first, second, ..] = seen.modes.as_slice() {
         return Err(if first == second {
-            ArgError::Duplicate(first)
+            ArgError::Duplicate(first.name())
         } else {
-            ArgError::Conflict(first, second)
+            ArgError::Conflict(first.name(), second.name())
         });
     }
-    args.mode = match seen.modes.first().copied() {
-        Some("--self-test") => Mode::SelfTest,
-        Some("--unregister") => Mode::Unregister { purge: seen.purge },
-        Some("--version") => Mode::Version,
-        Some(_) => Mode::Help,
+    let flag = seen.modes.first().copied();
+    // why: the protocol handler passes the link as `--activate "%1"`; a launcher that does not
+    // encode quotes could smuggle a mode flag (say `--unregister --purge`) in with it.
+    if let (Some(flag), Some(_)) = (flag, &args.activate) {
+        return Err(ArgError::Conflict("--activate", flag.name()));
+    }
+    args.mode = match flag {
+        Some(ModeFlag::SelfTest) => Mode::SelfTest,
+        Some(ModeFlag::Unregister) => Mode::Unregister { purge: seen.purge },
+        Some(ModeFlag::Version) => Mode::Version,
+        Some(ModeFlag::Help) => Mode::Help,
         None => Mode::Run,
     };
     if seen.purge && !matches!(args.mode, Mode::Unregister { .. }) {
@@ -183,19 +202,21 @@ fn renderer(value: &str) -> Result<RendererPref, ArgError> {
     }
 }
 
-pub(crate) const fn usage() -> &'static str {
-    "Usage: pr-monitor [options]
+pub(crate) fn usage() -> String {
+    format!(
+        "Usage: {APP_ID} [options]
 
   --minimized               Start hidden in the tray
-  --activate <uri>          Open a prmonitor:// link (also accepted bare)
+  --activate <uri>          Open a {URI_SCHEME}:// link (also accepted bare)
   --renderer <auto|glow|wgpu>
                             Choose the graphics backend
-  --home <dir>              Keep data in <dir> instead of %LOCALAPPDATA%\\PRMonitor
+  --home <dir>              Keep data in <dir> instead of %LOCALAPPDATA%\\{DATA_DIR_NAME}
   --debug                   Log to the console at debug level
   --self-test               Run built-in checks and exit
-  --unregister [--purge]    Remove PR Monitor's system registrations (and data)
+  --unregister [--purge]    Remove {APP_DISPLAY_NAME}'s system registrations (and data)
   --version                 Print the version
   --help                    Print this help"
+    )
 }
 
 /// The fallback relaunch keeps the user's flags, switches the renderer and names the parent.

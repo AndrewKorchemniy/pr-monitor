@@ -61,16 +61,16 @@ impl ActivationRouter {
 
     /// Connects the service and replays what was buffered.
     pub(crate) fn attach(&self, sink: Arc<dyn CommandSink>) {
-        let buffered = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            match std::mem::replace(&mut *state, RouterState::Attached(Arc::clone(&sink))) {
-                RouterState::Buffering(items) => items,
-                RouterState::Attached(_) => Vec::new(),
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        // why: replay under the lock, so an activation arriving meanwhile waits and cannot
+        // overtake older buffered ones. Dispatch never blocks (an unbounded channel and a
+        // repaint request) and never calls back into the router.
+        if let RouterState::Buffering(items) = &mut *state {
+            for request in std::mem::take(items) {
+                self.dispatch(sink.as_ref(), request);
             }
-        };
-        for request in buffered {
-            self.dispatch(sink.as_ref(), request);
         }
+        *state = RouterState::Attached(sink);
     }
 
     /// `--activate <uri>` from our own command line; invalid links are logged and ignored.
@@ -115,7 +115,7 @@ impl ActivationSink for ActivationRouter {
                 RouterState::Buffering(items) => return buffer(items, request),
             }
         };
-        // why: never call into the service while holding the lock.
+        // why: once attached, no lock is needed to keep the order (only `attach` replays).
         self.dispatch(sink.as_ref(), request);
     }
 }

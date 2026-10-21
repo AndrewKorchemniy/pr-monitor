@@ -14,7 +14,10 @@ use prm_platform::shared::{
     toast_xml::{spec_from, toast_xml},
 };
 
-use crate::{build_info, cli, logging::redact::redact};
+use crate::{build_info, cli, logging::redact::redact, report::print_results};
+
+/// A real 256 px PNG icon is far larger than this; anything smaller is a placeholder.
+const MIN_ICON_BYTES: usize = 1_000;
 
 /// A link to one PR, as a toast button would carry.
 fn sample_uri() -> AppUri {
@@ -74,7 +77,7 @@ fn themes() -> Result<(), String> {
 
 fn icon() -> Result<(), String> {
     let png = crate::assets::ICON_256_PNG;
-    (png.starts_with(b"\x89PNG") && png.len() > 1_000)
+    (png.starts_with(b"\x89PNG") && png.len() > MIN_ICON_BYTES)
         .then_some(())
         .ok_or_else(|| "the icon is not a PNG".to_owned())
 }
@@ -141,15 +144,12 @@ pub(crate) fn checks() -> Vec<Check> {
 pub(crate) fn run() -> ExitCode {
     let results = checks();
     let mut out = prm_platform::console::console_out();
-    for c in &results {
-        let line = if c.ok {
-            format!("ok   {}", c.name)
-        } else {
-            format!("FAIL {}: {}", c.name, c.detail)
-        };
-        let _ = writeln!(out, "{line}");
-    }
-    let ok = results.iter().all(|c| c.ok);
+    let ok = print_results(
+        &mut out,
+        results
+            .iter()
+            .map(|c| (c.name, if c.ok { Ok(()) } else { Err(c.detail.as_str()) })),
+    );
     let summary = serde_json::json!({
         "self_test": if ok { "ok" } else { "fail" },
         "version": build_info::VERSION,

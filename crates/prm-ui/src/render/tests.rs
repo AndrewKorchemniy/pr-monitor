@@ -10,7 +10,6 @@ fn spec() -> LaunchSpec {
         start_hidden: false,
         hide_offscreen: false,
         window: None,
-        rect_on_screen: false,
         icon: Arc::new(egui::IconData::default()),
     }
 }
@@ -44,7 +43,7 @@ fn a_fresh_window_is_centered_at_the_default_size() {
 }
 
 #[test]
-fn a_saved_rect_is_restored_only_when_on_screen() {
+fn a_saved_rect_is_restored() {
     let rect = WindowRect {
         x: 10.0,
         y: 20.0,
@@ -54,18 +53,11 @@ fn a_saved_rect_is_restored_only_when_on_screen() {
     };
     let restored = native_options(&LaunchSpec {
         window: Some(rect),
-        rect_on_screen: true,
         ..spec()
     });
     assert!(!restored.centered);
     assert_eq!(restored.viewport.position, Some(egui::pos2(10.0, 20.0)));
     assert_eq!(restored.viewport.maximized, Some(true));
-    let off_screen = native_options(&LaunchSpec {
-        window: Some(rect),
-        rect_on_screen: false,
-        ..spec()
-    });
-    assert!(off_screen.centered);
 }
 
 #[test]

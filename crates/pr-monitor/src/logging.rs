@@ -1,5 +1,5 @@
-//! Logging: daily files (8 kept, 32 MiB a day at most) in the data folder, redacted; a console
-//! layer with `--debug`.
+//! Logging: daily files (`LOG_FILES_KEPT` kept, `MAX_DAY_BYTES` a day at most) in the data
+//! folder, redacted; a console layer with `--debug`.
 //! `PRMONITOR_LOG` overrides the level filter.
 
 pub(crate) mod redact;
@@ -13,6 +13,9 @@ use tracing_subscriber::{
 };
 
 use self::writer::{DayBudget, MAX_DAY_BYTES, RedactingMakeWriter};
+
+/// Daily log files kept; older ones are deleted on rotation.
+const LOG_FILES_KEPT: usize = 8;
 
 /// Third-party targets kept at warn or quieter.
 const NOISY: [&str; 19] = [
@@ -76,9 +79,9 @@ pub(crate) fn init(logs: &Path, debug: bool, env: Option<String>) -> LogHandle {
     let (filter, reload) = reload::Layer::new(log_targets(env.as_deref(), "info", debug));
     let appender = tracing_appender::rolling::Builder::new()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
-        .filename_prefix("pr-monitor")
+        .filename_prefix(prm_domain::app::APP_ID)
         .filename_suffix("log")
-        .max_log_files(8)
+        .max_log_files(LOG_FILES_KEPT)
         .build(logs)
         .ok();
     let file_ok = appender.is_some();

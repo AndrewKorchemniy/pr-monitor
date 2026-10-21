@@ -23,6 +23,9 @@ use crate::{
 const MAX_COORDINATE: f32 = 16_384.0;
 /// Only Windows can cloak a start-hidden window; elsewhere it waits off-screen.
 const HIDE_OFFSCREEN: bool = !cfg!(windows);
+/// A saved window narrower or shorter than this (logical points) is degenerate, not a choice.
+const MIN_RESTORE_WIDTH: f32 = 200.0;
+const MIN_RESTORE_HEIGHT: f32 = 150.0;
 
 /// Everything `run` needs from startup.
 pub(crate) struct LaunchCtx<'a> {
@@ -45,8 +48,10 @@ pub(crate) struct LaunchCtx<'a> {
 /// A saved window rect worth restoring (sane size, not parked far off-screen).
 pub(crate) fn rect_plausible(rect: &WindowRect) -> bool {
     let coords_ok = rect.x.abs() < MAX_COORDINATE && rect.y.abs() < MAX_COORDINATE;
-    let size_ok =
-        rect.w >= 200.0 && rect.h >= 150.0 && rect.w < MAX_COORDINATE && rect.h < MAX_COORDINATE;
+    let size_ok = rect.w >= MIN_RESTORE_WIDTH
+        && rect.h >= MIN_RESTORE_HEIGHT
+        && rect.w < MAX_COORDINATE
+        && rect.h < MAX_COORDINATE;
     coords_ok && size_ok
 }
 
@@ -67,8 +72,7 @@ pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
         renderer: ctx.choice.kind,
         start_hidden: ctx.start_hidden,
         hide_offscreen: HIDE_OFFSCREEN,
-        window: ctx.window,
-        rect_on_screen: on_screen.is_some(),
+        window: on_screen,
         icon: Arc::new(prm_ui::window_icon()),
     };
     let marker = Arc::clone(&ctx.marker);
@@ -92,7 +96,8 @@ pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
         quit_requested: ctx.quit,
         hover_bands: Arc::new(HoverBands::default()),
         on_first_frame: Box::new(move || {
-            marker.mark_ok();
+            // why: best effort; the writer thread is detached.
+            drop(marker.mark_ok());
             init_phase.store(false, Ordering::Relaxed);
         }),
         build: build_info::BUILD,

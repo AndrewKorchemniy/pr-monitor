@@ -4,8 +4,12 @@ use super::*;
 
 #[test]
 fn clean_text_is_borrowed_unchanged() {
-    let text = "refresh done in 120 ms for contoso (repo 1f0e6c1a-2b3c-4d5e-8f90-0123456789ab)";
-    assert!(matches!(redact(text), Cow::Borrowed(_)));
+    for text in [
+        "refresh done in 120 ms for contoso (repo 1f0e6c1a-2b3c-4d5e-8f90-0123456789ab)",
+        "Bearer short, code: 404, eyJ.not.long",
+    ] {
+        assert!(matches!(redact(text), Cow::Borrowed(_)), "{text}");
+    }
 }
 
 #[test]
@@ -47,6 +51,52 @@ fn jwts_and_pats_are_hidden() {
     assert_eq!(redact(&format!("pat {pat}.")), "pat ***PAT***.");
     let long = format!("{}AZDO{}", "b".repeat(76), "c".repeat(4));
     assert_eq!(redact(&long), "***PAT***");
+}
+
+/// Regression: a JWT at the end of a sentence (`… sig.`) or before another dotted word was
+/// written to the log whole.
+#[test]
+fn jwts_followed_by_punctuation_are_hidden() {
+    let jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhIn0.c2ln";
+    assert_eq!(
+        redact(&format!("token rejected for {jwt}.")),
+        "token rejected for eyJ***."
+    );
+    assert_eq!(
+        redact(&format!("{jwt}.next.word")),
+        "eyJ***.next.word",
+        "only the three segments"
+    );
+    assert_eq!(
+        redact("eyJhbGciOiJSUzI1NiJ9.only"),
+        "eyJhbGciOiJSUzI1NiJ9.only"
+    );
+}
+
+/// Regression: `Debug` output (`refresh_token: "…"`), quoted values and upper-case keys kept
+/// their secrets.
+#[test]
+fn secret_keys_in_debug_output_and_any_case_are_hidden() {
+    let cases = [
+        (
+            r#"Token { refresh_token: "0.AXoA" }"#,
+            r#"Token { refresh_token: "***" }"#,
+        ),
+        (r#"password="hunter2""#, r#"password="***""#),
+        (
+            r#"{"access_token" : "t0k3n"}"#,
+            r#"{"access_token" : "***"}"#,
+        ),
+        (
+            "PASSWORD=hunter2 ACCESS_TOKEN=abc",
+            "PASSWORD=*** ACCESS_TOKEN=***",
+        ),
+        (r#"{"accessToken":"t0k3n"}"#, r#"{"accessToken":"***"}"#),
+        ("status code: 404", "status code: 404"),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(redact(input), expected, "{input}");
+    }
 }
 
 #[test]

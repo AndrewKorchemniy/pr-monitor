@@ -53,6 +53,14 @@ impl Config {
     pub fn org(&self, id: &OrgId) -> Option<&OrgProfile> {
         self.orgs.iter().find(|o| o.org_id() == Some(id))
     }
+
+    /// Every org whose URL was understood, enabled or not (catalog caches, secret cleanup).
+    pub fn org_ids(&self) -> Vec<OrgId> {
+        self.orgs
+            .iter()
+            .filter_map(|o| o.org_id().cloned())
+            .collect()
+    }
 }
 
 /// Numbers saturate into their type when read, so `normalize` can clamp and report an

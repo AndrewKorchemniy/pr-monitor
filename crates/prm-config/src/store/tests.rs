@@ -45,6 +45,30 @@ fn load_missing_creates_defaults() {
 }
 
 #[test]
+fn read_config_lists_orgs_without_writing() {
+    let (dir, paths) = temp_paths();
+    assert_eq!(read_config(&paths), None, "missing");
+    let full = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/config_full.toml"
+    ));
+    std::fs::write(&paths.config, full).unwrap();
+    let before = files_in(dir.path());
+    let ids: Vec<String> = read_config(&paths)
+        .unwrap()
+        .org_ids()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(ids, ["contoso", "fabrikam"]);
+    assert_eq!(files_in(dir.path()), before, "nothing written");
+    assert_eq!(std::fs::read_to_string(&paths.config).unwrap(), full);
+    std::fs::write(&paths.config, CORRUPT).unwrap();
+    assert_eq!(read_config(&paths), None, "unreadable");
+    assert!(paths.config.exists(), "an unreadable file is left alone");
+}
+
+#[test]
 fn load_corrupt_renames_and_defaults() {
     let (_dir, paths) = temp_paths();
     std::fs::write(&paths.config, CORRUPT).unwrap();

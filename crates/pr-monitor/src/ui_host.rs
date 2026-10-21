@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use prm_platform::{DesktopShell, Rgb, TitleBarColors};
+use prm_theme::{Rgba8, contrast::is_dark};
 use prm_ui::{ChromeColors, UiHost};
 use raw_window_handle::HasWindowHandle;
 
@@ -12,12 +13,12 @@ const fn rgb([r, g, b]: [u8; 3]) -> Rgb {
     Rgb { r, g, b }
 }
 
-/// Dark captions get light system glyphs (the min/max/close buttons).
-pub(crate) const fn title_bar(colors: ChromeColors) -> TitleBarColors {
+/// Dark captions get light system glyphs (the min/max/close buttons), by the theme's own
+/// definition of a dark background.
+pub(crate) fn title_bar(colors: ChromeColors) -> TitleBarColors {
     let [r, g, b] = colors.caption;
-    let luma = r as u32 * 299 + g as u32 * 587 + b as u32 * 114;
     TitleBarColors {
-        dark: luma < 128_000,
+        dark: is_dark(Rgba8::rgb(r, g, b)),
         caption: Some(rgb(colors.caption)),
         text: Some(rgb(colors.text)),
         border: Some(rgb(colors.border)),

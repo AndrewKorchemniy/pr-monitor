@@ -12,6 +12,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use prm_domain::app::{APP_DISPLAY_NAME, APP_EXE_NAME, APP_ID};
+
 #[path = "build/icon_gen.rs"]
 mod icon_gen;
 
@@ -114,11 +116,11 @@ fn resources(assets: &Path, ico: &Path) -> Result<(), Box<dyn Error>> {
                 .to_str()
                 .ok_or("non-UTF-8 path")?,
         )
-        .set("ProductName", "PR Monitor")
-        .set("FileDescription", "PR Monitor")
+        .set("ProductName", APP_DISPLAY_NAME)
+        .set("FileDescription", APP_DISPLAY_NAME)
         .set("CompanyName", "Andrew Korchemniy")
-        .set("OriginalFilename", "pr-monitor.exe")
-        .set("InternalName", "pr-monitor")
+        .set("OriginalFilename", APP_EXE_NAME)
+        .set("InternalName", APP_ID)
         .set(
             "LegalCopyright",
             "Copyright (c) Andrew Korchemniy. MIT OR Apache-2.0",
