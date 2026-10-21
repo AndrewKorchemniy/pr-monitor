@@ -6,6 +6,7 @@ pub(crate) mod controls;
 pub(crate) mod dialog;
 pub(crate) mod empty_state;
 pub(crate) mod fields;
+pub(crate) mod fit;
 pub(crate) mod modal;
 pub(crate) mod palette_view;
 pub(crate) mod peek;
@@ -70,6 +71,17 @@ pub(crate) fn primary_button(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> 
         .font(theme.fonts.button.clone())
         .color(theme.colors.text_on_accent);
     ui.add(egui::Button::new(label).fill(theme.colors.accent_base))
+}
+
+/// The width a button labelled `text` takes (`primary_button` or `ui.button`), for laying out
+/// a row of buttons before drawing it.
+pub(crate) fn button_width(ui: &egui::Ui, theme: &UiTheme, text: &str) -> f32 {
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        theme.fonts.button.clone(),
+        theme.colors.text_primary,
+    );
+    galley.size().x + 2.0 * ui.spacing().button_padding.x
 }
 
 /// A key cap ("Ctrl+K").

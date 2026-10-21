@@ -35,6 +35,7 @@ use crate::{
 };
 
 mod responsive;
+mod small;
 
 /// What the pointer does once a scene has settled (hover a control, open a menu).
 type Pointer = fn(&mut Harness<'_, Fixture>);
@@ -89,6 +90,7 @@ fn pointer_scenes() -> Vec<(Scene, Pointer)> {
     ];
     all.extend(small_window_scenes());
     all.extend(responsive::pointer_scenes());
+    all.extend(small::pointer_scenes());
     all
 }
 
@@ -216,7 +218,7 @@ fn status_bar_scenes() -> [Scene; 3] {
 }
 
 /// Fictional matches for "pri": one person seen in pull requests, two from the directory.
-fn matches() -> [PersonCandidate; 3] {
+pub(super) fn matches() -> [PersonCandidate; 3] {
     let directory = |descriptor: &str, name: &str, unique: &str| PersonCandidate {
         id: None,
         descriptor: Some(Arc::from(descriptor)),
@@ -384,6 +386,7 @@ fn scenes() -> Vec<Scene> {
     all.extend(banner_scenes());
     all.extend(settings_scenes());
     all.extend(tracking_scenes());
+    all.extend(small::scenes());
     all
 }
 

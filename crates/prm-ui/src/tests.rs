@@ -29,6 +29,7 @@ mod cards;
 mod dashboard;
 mod gallery;
 mod people;
+mod small_windows;
 mod status_bar;
 mod tracking;
 

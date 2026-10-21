@@ -104,8 +104,7 @@ impl PrMonitorApp {
                 self.link.send(Command::MarkAllSeen);
             }
             C::PaletteOpen => {
-                self.palette.query.clear();
-                self.palette.selected = 0;
+                self.palette.reopen();
                 self.overlay = Overlay::Palette;
             }
             C::RefreshNow => self.link.send(Command::RefreshNow),

@@ -11,6 +11,7 @@ pub(crate) use shell::settings_modal;
 
 use std::{path::PathBuf, sync::Arc};
 
+use eframe::egui;
 use prm_config::Config;
 use prm_domain::auth::SettingsSection;
 use prm_service::AppEvent;
@@ -22,7 +23,8 @@ use crate::{
     widgets::{people_picker::PeoplePicker, scope_picker::ScopeFilter},
 };
 
-/// The pages in the sidebar (org sub-sections all open Organizations).
+/// The pages in the sidebar, or the page menu in a narrow window (org sub-sections all open
+/// Organizations).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Page {
     General,
@@ -41,7 +43,8 @@ pub(crate) const PAGES: [Page; 4] = [
 impl Page {
     pub(crate) const fn from_section(section: SettingsSection) -> Self {
         match section {
-            // why: version, links and licenses live in the sidebar footer, not on a page.
+            // why: version, links and licenses live in the sidebar footer (at the end of General
+            // when the sidebar is folded away), not on a page of their own.
             SettingsSection::General | SettingsSection::About => Self::General,
             SettingsSection::Organizations
             | SettingsSection::Auth
@@ -79,7 +82,7 @@ impl Page {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Editor {
     AddOrg,
-    /// Third-party licenses, from the sidebar footer.
+    /// Third-party licenses, from the about links.
     Licenses,
     Repositories,
     Tracked,
@@ -203,4 +206,12 @@ pub(crate) struct SettingsEnv<'a> {
     /// The table's column choices, live: they are layout (`UiState`), applied right away
     /// rather than through the draft.
     pub columns: crate::view::columns::Choices<'a>,
+}
+
+/// Scrolls the section starting here into view when settings opened for it.
+fn reveal(ui: &mut egui::Ui, st: &mut SettingsState, sections: &[SettingsSection]) {
+    if st.scroll_to.is_some_and(|s| sections.contains(&s)) {
+        ui.scroll_to_cursor(Some(egui::Align::TOP));
+        st.scroll_to = None;
+    }
 }

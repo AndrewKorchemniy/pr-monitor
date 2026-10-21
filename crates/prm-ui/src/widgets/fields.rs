@@ -22,7 +22,8 @@ pub(crate) struct Field<'a> {
     pub hint: &'a str,
     /// Draws the border in the danger tone.
     pub error: bool,
-    /// `None` fills the available width.
+    /// The widest the field gets (narrower when there is less room, and the full width of a
+    /// justified layout); `None` fills the available width.
     pub width: Option<f32>,
     /// Esc stays with the field (a combobox closing its dropdown) instead of taking its focus.
     pub keeps_escape: bool,
@@ -50,6 +51,15 @@ impl<'a> Field<'a> {
     }
 }
 
+/// How wide `field` is in `ui`: its own width when there is room for it, else what there is.
+fn field_width(ui: &egui::Ui, field: &Field<'_>) -> f32 {
+    let room = ui.available_width();
+    match field.width {
+        Some(width) if !ui.layout().horizontal_justify() => width.min(room),
+        Some(_) | None => room,
+    }
+}
+
 /// The app's standard single-line input: sunken fill, hairline border, accent border on focus.
 pub(crate) fn text_field(
     ui: &mut egui::Ui,
@@ -57,7 +67,7 @@ pub(crate) fn text_field(
     text: &mut String,
     field: &Field<'_>,
 ) -> egui::Response {
-    let width = field.width.unwrap_or_else(|| ui.available_width());
+    let width = field_width(ui, field);
     let (rect, _) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::hover());
     let background = ui.painter().add(Shape::Noop);
     let response = ui.put(
@@ -120,7 +130,7 @@ pub(crate) fn action_field(
     (field, action, icon): (&Field<'_>, &str, Icon),
 ) -> bool {
     let height = theme.control_height();
-    let width = field.width.unwrap_or_else(|| ui.available_width());
+    let width = field_width(ui, field);
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let background = ui.painter().add(Shape::Noop);
     let button_rect = Rect::from_min_max(pos2(rect.right() - height - 4.0, rect.top()), rect.max);

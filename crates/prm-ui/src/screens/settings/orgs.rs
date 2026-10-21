@@ -1,30 +1,32 @@
 //! Organizations: a breadcrumb and tabs for the selected org, its connection, details,
 //! repositories and people in sections, and dialogs for adding an org and editing its lists.
 
+mod dialogs;
 mod sign_in;
+mod tabs;
 
+pub(crate) use dialogs::editor;
 use eframe::egui::{self, RichText};
 use prm_config::OrgProfile;
 use prm_domain::{
     OrgId, Person, auth::SettingsSection, classify::EmptyReviewerPolicy, ids::parse_org_input,
     plan::DraftPolicy,
 };
-use prm_service::{AuthStateView, Command};
+use prm_service::Command;
 
 use crate::{
     actions::UiAction,
     copy,
     frame::FrameCx,
     route::ModalKind,
-    screens::settings::{Editor, SettingsEnv, SettingsState},
-    theme::{Tone, UiTheme, icons::Icon},
+    screens::settings::{Editor, SettingsState},
+    theme::UiTheme,
     widgets::{
         self, card,
         controls::{self, setting_row, toggle_row},
         fields::{self, Field},
-        modal::{self, ModalOutcome, ModalSpec},
-        people_picker::{self, people_picker},
-        scope_picker::{self, CatalogState, scope_picker},
+        fit, people_picker,
+        scope_picker::{self, CatalogState},
     },
 };
 
@@ -41,36 +43,28 @@ pub(crate) fn new_profile(input: &str) -> Option<OrgProfile> {
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
-    org_tabs(ui, cx, st);
+    tabs::org_tabs(ui, cx, st);
     ui.add_space(theme.tokens.metrics.space.xl);
     if st.org >= st.draft.orgs.len() {
         widgets::muted(ui, &theme, copy::NO_ORGS);
         return;
     }
     let saved = saved(st);
-    reveal(ui, st, &[SettingsSection::Auth]);
+    super::reveal(ui, st, &[SettingsSection::Auth]);
     card::section(ui, &theme, copy::CONNECTION, None, |ui| {
         sign_in::section(ui, cx, st, saved);
     });
     card::section(ui, &theme, copy::ORGANIZATION, None, |ui| {
         details(ui, &theme, &mut st.draft.orgs[st.org]);
     });
-    reveal(ui, st, &[SettingsSection::Scope]);
+    super::reveal(ui, st, &[SettingsSection::Scope]);
     card::section(ui, &theme, copy::REPOSITORIES, None, |ui| {
         repositories(ui, cx, st);
     });
-    reveal(ui, st, &[SettingsSection::People]);
+    super::reveal(ui, st, &[SettingsSection::People]);
     card::section(ui, &theme, copy::PEOPLE, None, |ui| people(ui, &theme, st));
     if ui.button(copy::REMOVE_ORG).clicked() {
         cx.push(UiAction::Modal(ModalKind::RemoveOrg(st.org)));
-    }
-}
-
-/// Scrolls the section starting here into view when settings opened for it.
-fn reveal(ui: &mut egui::Ui, st: &mut SettingsState, sections: &[SettingsSection]) {
-    if st.scroll_to.is_some_and(|s| sections.contains(&s)) {
-        ui.scroll_to_cursor(Some(egui::Align::TOP));
-        st.scroll_to = None;
     }
 }
 
@@ -92,138 +86,6 @@ pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, st: &SettingsState)
     }
     ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
     card::breadcrumb(ui, theme, &crumbs);
-}
-
-/// One tab per org with its sign-in state as a dot, then Add organization, over a baseline.
-fn org_tabs(ui: &mut egui::Ui, cx: &FrameCx<'_>, st: &mut SettingsState) {
-    let theme = cx.theme.clone();
-    let mut picked = None;
-    let mut add = false;
-    let row = ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.xs;
-        for (index, org) in st.draft.orgs.iter().enumerate() {
-            let state = org
-                .org_id()
-                .and_then(|id| cx.state.org(id))
-                .map(|o| &o.auth.state);
-            let label = org.display_label();
-            if org_tab(ui, &theme, (&label, state), st.org == index).clicked() {
-                picked = Some(index);
-            }
-        }
-        ui.add_space(theme.tokens.metrics.space.sm);
-        add = add_tab(ui, &theme).clicked();
-    });
-    let line = row.response.rect;
-    let stroke = egui::Stroke::new(
-        theme.tokens.metrics.stroke.hairline,
-        theme.colors.border_default,
-    );
-    ui.painter()
-        .hline(line.left()..=ui.max_rect().right(), line.bottom(), stroke);
-    if add {
-        st.new_org_url.clear();
-        st.url_error = false;
-        st.editing = Some(Editor::AddOrg);
-    }
-    if let Some(index) = picked
-        && index != st.org
-    {
-        st.org = index;
-        st.pickers = super::Pickers::default();
-    }
-}
-
-const fn auth_tone(state: &AuthStateView) -> Tone {
-    match state {
-        AuthStateView::SignedIn => Tone::Success,
-        AuthStateView::NeedsSignIn { .. } => Tone::Warning,
-        AuthStateView::Blocked { .. } => Tone::Danger,
-        AuthStateView::Unknown
-        | AuthStateView::Checking
-        | AuthStateView::SigningIn { .. }
-        | AuthStateView::SignedOut
-        | AuthStateView::Disabled => Tone::Neutral,
-    }
-}
-
-fn org_tab(
-    ui: &mut egui::Ui,
-    theme: &UiTheme,
-    (label, state): (&str, Option<&AuthStateView>),
-    selected: bool,
-) -> egui::Response {
-    let m = &theme.tokens.metrics;
-    let c = &theme.colors;
-    let (text, font) = if selected {
-        (c.text_primary, theme.fonts.body_strong.clone())
-    } else {
-        (c.text_secondary, theme.fonts.body.clone())
-    };
-    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, text);
-    let pad = m.space.lg;
-    let width = pad + 7.0 + m.space.sm + galley.size().x + pad;
-    let size = egui::vec2(width, theme.control_height());
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    if response.hovered() && !selected {
-        let top = egui::CornerRadius {
-            nw: m.radius.md,
-            ne: m.radius.md,
-            sw: 0,
-            se: 0,
-        };
-        ui.painter().rect_filled(rect, top, c.control_hover);
-    }
-    if selected {
-        let bar = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max);
-        ui.painter().rect_filled(bar, 1.0, c.accent_base);
-    }
-    let tone = state.map_or(Tone::Neutral, auth_tone);
-    let dot = egui::pos2(rect.left() + pad + 3.5, rect.center().y);
-    ui.painter().circle_filled(dot, 3.5, c.tone(tone).solid);
-    let at = egui::pos2(
-        dot.x + 3.5 + m.space.sm,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter().galley(at, galley, text);
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, label));
-    match state.map(copy::auth_state_short) {
-        Some(tip) => response.on_hover_text(tip),
-        None => response,
-    }
-}
-
-/// "+ Add organization" drawn like a tab, so the strip reads as one control.
-fn add_tab(ui: &mut egui::Ui, theme: &UiTheme) -> egui::Response {
-    let m = &theme.tokens.metrics;
-    let galley = ui.painter().layout_no_wrap(
-        copy::ADD_ORG.to_owned(),
-        theme.fonts.body.clone(),
-        theme.colors.text_secondary,
-    );
-    let pad = m.space.lg;
-    let width = pad + 12.0 + m.space.sm + galley.size().x + pad;
-    let size = egui::vec2(width, theme.control_height());
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    controls::ghost_fill(ui, theme, rect, &response);
-    let color = if response.hovered() {
-        theme.colors.text_primary
-    } else {
-        theme.colors.text_secondary
-    };
-    let glyph = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + pad + 6.0, rect.center().y),
-        egui::vec2(12.0, 12.0),
-    );
-    crate::theme::icons::paint(ui.painter(), glyph, Icon::Plus, color);
-    let at = egui::pos2(
-        glyph.right() + m.space.sm,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter().galley(at, galley, color);
-    let name = copy::ADD_ORG;
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-    response
 }
 
 /// Adds (or selects) the org typed in the field. A new org is applied to the service right away
@@ -254,7 +116,8 @@ fn add_org(st: &mut SettingsState, cx: &mut FrameCx<'_>) -> bool {
 fn details(ui: &mut egui::Ui, theme: &UiTheme, org: &mut OrgProfile) {
     setting_row(ui, theme, (copy::NAME, Some(&org.url)), |ui| {
         // why: the hint is also the field's accessible name.
-        let field = Field::new(ui.make_persistent_id("org_name"), copy::NAME).width(280.0);
+        let field =
+            Field::new(ui.make_persistent_id("org_name"), copy::NAME).width(fit::CONTROL_WIDTH);
         fields::text_field(ui, theme, &mut org.label, &field);
     });
     controls::row_divider(ui, theme);
@@ -419,175 +282,4 @@ fn people_list(org: &mut OrgProfile, editor: Editor) -> &mut Vec<Person> {
             &mut people.tracked_authors
         }
     }
-}
-
-/// The open dialog over the page, if any: add an org, choose repositories, or edit people.
-pub(crate) fn editor(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-    env: &SettingsEnv<'_>,
-) {
-    let Some(editor) = st.editing else {
-        return;
-    };
-    let outcome = match editor {
-        Editor::AddOrg => add_org_dialog(ctx, cx, st),
-        Editor::Licenses => licenses_dialog(ctx, &cx.theme.clone(), env),
-        Editor::Repositories => repositories_dialog(ctx, cx, st),
-        Editor::Tracked | Editor::Reviewers | Editor::Ignored => people_dialog(ctx, cx, st, editor),
-    };
-    if outcome != ModalOutcome::Open {
-        st.editing = None;
-    }
-}
-
-/// Third-party licenses and the bundled fonts' licenses, in a scrolling dialog.
-fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) -> ModalOutcome {
-    let spec = ModalSpec {
-        id: "licenses",
-        title: copy::LICENSES,
-        subtitle: None,
-        buttons: &[copy::CLOSE],
-        danger: false,
-        width: 640.0,
-    };
-    modal::modal(ctx, theme, &spec, |ui| {
-        egui::ScrollArea::vertical()
-            .max_height(420.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for text in [
-                    env.licenses,
-                    crate::theme::fonts::OFL_NEXT,
-                    crate::theme::fonts::OFL_MONO,
-                ] {
-                    ui.label(
-                        RichText::new(text)
-                            .font(theme.fonts.mono.clone())
-                            .color(theme.colors.text_secondary),
-                    );
-                    controls::row_divider(ui, theme);
-                }
-            });
-    })
-}
-
-fn add_org_dialog(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-) -> ModalOutcome {
-    let theme = &cx.theme.clone();
-    let spec = ModalSpec {
-        id: "add_org",
-        title: copy::ADD_ORG,
-        subtitle: None,
-        buttons: &[],
-        danger: false,
-        width: modal::WIDTH,
-    };
-    let mut added = false;
-    let outcome = modal::modal(ctx, theme, &spec, |ui| {
-        widgets::field_label(ui, theme, copy::ORG_URL_LABEL);
-        ui.add_space(theme.tokens.metrics.space.xs);
-        let mut field = Field::new(egui::Id::unique("add_org_url"), copy::ORG_URL_HINT);
-        field.error = st.url_error;
-        let action = (&field, copy::ADD_ORG, Icon::ArrowRight);
-        if fields::action_field(ui, theme, &mut st.new_org_url, action)
-            && !st.new_org_url.trim().is_empty()
-        {
-            added = add_org(st, cx);
-        }
-        if st.url_error {
-            widgets::error_text(ui, theme, copy::BAD_ORG_URL);
-        }
-    });
-    if added {
-        ModalOutcome::Button(0)
-    } else {
-        outcome
-    }
-}
-
-fn repositories_dialog(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-) -> ModalOutcome {
-    let theme = cx.theme.clone();
-    let org_label = st
-        .draft
-        .orgs
-        .get(st.org)
-        .map(|o| o.display_label().to_string());
-    let spec = ModalSpec {
-        id: "choose_repositories",
-        title: copy::STEP_REPOS,
-        subtitle: org_label.as_deref(),
-        buttons: &[copy::DONE],
-        danger: false,
-        width: 560.0,
-    };
-    let Some(org) = st.draft.orgs.get_mut(st.org) else {
-        return ModalOutcome::Dismissed;
-    };
-    let id = org.org_id().cloned();
-    let state = cx.state;
-    let catalog = CatalogState::of(id.as_ref().and_then(|id| state.org(id)));
-    let filter = &mut st.scope_filter;
-    let mut reload = false;
-    let outcome = modal::modal(ctx, &theme, &spec, |ui| {
-        reload = scope_picker(ui, &theme, filter, catalog, &mut org.scope);
-    });
-    if reload && let Some(id) = id {
-        cx.push(UiAction::Send(Command::LoadCatalog {
-            org: id,
-            force: true,
-        }));
-    }
-    outcome
-}
-
-fn people_dialog(
-    ctx: &egui::Context,
-    cx: &mut FrameCx<'_>,
-    st: &mut SettingsState,
-    editor: Editor,
-) -> ModalOutcome {
-    let theme = cx.theme.clone();
-    let saved = saved(st);
-    let Some(org) = st.draft.orgs.get_mut(st.org) else {
-        return ModalOutcome::Dismissed;
-    };
-    let id = saved.then(|| org.org_id().cloned()).flatten();
-    let picker = match editor {
-        Editor::Reviewers => &mut st.pickers.reviewers,
-        Editor::Ignored => &mut st.pickers.ignored,
-        Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
-            &mut st.pickers.tracked
-        }
-    };
-    let (title, help) = list_copy(editor);
-    let org_label = org.display_label().to_string();
-    let spec = ModalSpec {
-        id: "edit_people",
-        title,
-        subtitle: Some(&org_label),
-        buttons: &[copy::DONE],
-        danger: false,
-        width: 480.0,
-    };
-    let list = people_list(org, editor);
-    let outcome = modal::modal(ctx, &theme, &spec, |ui| {
-        // why: the dialog covers the section's help, and emptying the tracked list here
-        // changes what it means.
-        widgets::muted(ui, &theme, help);
-        ui.add_space(theme.tokens.metrics.space.sm);
-        people_picker(ui, cx, picker, id.as_ref(), list);
-    });
-    if outcome != ModalOutcome::Open {
-        picker.reset();
-    }
-    outcome
 }

@@ -112,8 +112,9 @@ fn tristate(
     });
 }
 
+/// Reloading and copying themes, on as many lines as the page needs.
 fn authoring(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, env: &SettingsEnv<'_>) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.button(copy::RELOAD_THEMES).clicked() {
             cx.push(UiAction::ReloadThemes);
         }

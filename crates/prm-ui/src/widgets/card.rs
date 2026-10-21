@@ -3,13 +3,18 @@
 
 use eframe::egui::{self, Rect, RichText, UiBuilder, pos2, vec2};
 
-use crate::theme::{
-    UiTheme, adapter,
-    icons::{self, Icon},
+use crate::{
+    theme::{
+        UiTheme, adapter,
+        icons::{self, Icon},
+    },
+    widgets::fit,
 };
 
 /// A bordered card of at most `width`, centered horizontally with its top at a fixed share of
-/// the window height (so steps of different heights don't jump), scrolling when it doesn't fit.
+/// the window height (so steps of different heights don't jump), higher when that would cut off
+/// its foot (`fit::card_top`), and scrolling when it is taller than the window. In a narrow
+/// window it keeps the same even margin as a dialog (`fit::room`).
 pub(crate) fn anchored_card(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -18,24 +23,36 @@ pub(crate) fn anchored_card(
     add: impl FnOnce(&mut egui::Ui),
 ) {
     let m = &theme.tokens.metrics;
-    let top = (ui.available_height() * 0.16).max(m.space.xxl);
+    let window = ui.available_size();
+    let width = width.min(fit::room(window).x);
+    let measured = egui::Id::unique(("anchored_card_height", salt));
+    let last: Option<f32> = ui.data(|d| d.get_temp(measured));
+    let top = fit::card_top(window.y, last, m.space.xxl);
+    // why: an overlay scrollbar, so a card that scrolls stays centred between even margins.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
     egui::ScrollArea::vertical()
         .id_salt(("anchored_card", salt))
         .auto_shrink(false)
         .show(ui, |ui| {
             ui.add_space(top);
-            let width = width.min(ui.available_width() - 2.0 * m.space.xl);
             let left = ui.max_rect().center().x - width / 2.0;
             let rect =
                 Rect::from_min_size(pos2(left, ui.cursor().top()), vec2(width, f32::INFINITY));
-            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+            let card = ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
                 let frame = adapter::frame_card(theme).inner_margin(egui::Margin::ZERO);
                 frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     add(ui);
                 });
             });
-            ui.add_space(m.space.xxl);
+            let height = card.response.rect.height();
+            if last.is_none_or(|last| (last - height).abs() > 0.5) {
+                ui.data_mut(|d| d.insert_temp(measured, height));
+                // why: the top depends on the card's height, so a card that changed height is
+                // laid out again before it is shown in the wrong place.
+                ui.ctx().request_discard("the card changed height");
+            }
+            ui.add_space(top.min(m.space.xxl));
         });
 }
 
@@ -65,7 +82,7 @@ pub(crate) fn section<R>(
 }
 
 /// "Organizations › contoso": muted ancestors, then the current crumb. Lays out inline, so call
-/// it inside a horizontal layout.
+/// it inside a horizontal layout; a crumb too long for the room left is cut short.
 pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, crumbs: &[&str]) {
     let last = crumbs.len().saturating_sub(1);
     for (index, crumb) in crumbs.iter().enumerate() {
@@ -74,11 +91,10 @@ pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, crumbs: &[&str]) {
         } else {
             theme.colors.text_muted
         };
-        ui.label(
-            RichText::new(*crumb)
-                .font(crate::widgets::page_title_font(theme))
-                .color(color),
-        );
+        let text = RichText::new(*crumb)
+            .font(crate::widgets::page_title_font(theme))
+            .color(color);
+        ui.add(egui::Label::new(text).truncate());
         if index != last {
             icons::show(ui, Icon::ChevronRight, 9.0, theme.colors.text_muted);
         }

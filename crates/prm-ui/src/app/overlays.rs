@@ -14,7 +14,7 @@ use crate::{
     commands::palette::{PaletteItem, PaletteSources},
     copy,
     route::{ModalKind, Overlay},
-    screens::shortcuts::shortcuts,
+    screens::{shortcuts::shortcuts, token::token_dialog},
     widgets::{
         self,
         modal::{ModalOutcome, ModalSpec, modal},
@@ -173,34 +173,9 @@ impl PrMonitorApp {
             .state
             .org(org)
             .map_or_else(|| org.as_str().to_owned(), |o| o.label.to_string());
-        let title = copy::pat_title(&label);
-        let spec = ModalSpec {
-            id: "pat",
-            title: &title,
-            subtitle: None,
-            buttons: &[copy::SAVE_TOKEN, copy::CANCEL],
-            danger: false,
-            width: widgets::modal::WIDTH,
-        };
-        let mut docs = false;
-        let input = &mut self.pat_input;
         let error = self.pat_error.clone();
-        let outcome = modal(ctx, &theme, &spec, |ui| {
-            widgets::field_label(ui, &theme, copy::PAT_LABEL);
-            ui.add(
-                egui::TextEdit::singleline(input)
-                    .password(true)
-                    .desired_width(f32::INFINITY),
-            );
-            widgets::muted(ui, &theme, copy::PAT_HELP);
-            docs = ui.link(copy::HOW_TO_CREATE_TOKEN).clicked();
-            if let Some(error) = &error {
-                ui.label(
-                    RichText::new(error.as_ref())
-                        .color(theme.colors.tone(crate::theme::Tone::Danger).fg),
-                );
-            }
-        });
+        let draft = (&mut self.pat_input, error.as_deref());
+        let (outcome, docs) = token_dialog(ctx, &theme, &label, draft);
         if docs && let Ok(url) = url::Url::parse(DocLink::CreatePat.url()) {
             self.link.send(Command::OpenUrl(url));
         }

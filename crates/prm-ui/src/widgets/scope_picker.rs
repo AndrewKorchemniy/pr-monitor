@@ -1,5 +1,7 @@
 //! Which projects and repositories an org watches: all projects, or chosen projects with all or
-//! chosen repositories. Searchable; built from the org's catalog.
+//! chosen repositories. Searchable; built from the org's catalog. In a narrow dialog the summary
+//! moves under the "Watch all projects" line; in a short window the list is shorter, and in a
+//! very short one it scrolls with the dialog instead of in a box of its own.
 
 use std::sync::Arc;
 
@@ -22,6 +24,16 @@ use crate::{
         fields::{self, Field},
     },
 };
+
+/// The project list's height in a tall window, in points.
+const LIST_HEIGHT: f32 = 300.0;
+/// The window height the list leaves to everything around it (the dialog's header, the search
+/// field, the action bar and the margins), in points.
+const LIST_SURROUND: f32 = 400.0;
+/// From this window height (points) the list scrolls in a box of its own. In a shorter window
+/// that box would be a few rows scrolling inside a scrolling dialog, so the list is laid out in
+/// full and the dialog's body (or the first-run page) is the one thing that scrolls.
+const LIST_BOX_FROM: f32 = 560.0;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScopeFilter {
@@ -59,26 +71,7 @@ pub(crate) fn scope_picker(
     catalog: CatalogState<'_>,
     scope: &mut ScopeSpec,
 ) -> bool {
-    let mut reload = false;
-    ui.horizontal(|ui| {
-        // why: line the box up with the project boxes, which sit after a chevron.
-        ui.add_space(CHEVRON);
-        controls::checkbox(ui, theme, &mut scope.all_projects, copy::WATCH_ALL_PROJECTS);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            reload = controls::icon_button(ui, theme, Icon::Refresh, copy::REFRESH_LIST)
-                .on_hover_text(copy::REFRESH_LIST)
-                .clicked();
-            match catalog {
-                CatalogState::Failed(error) => {
-                    widgets::error_text(ui, theme, copy::PROJECTS_FAILED)
-                        .on_hover_text(error.title.as_ref());
-                }
-                CatalogState::Loading | CatalogState::Ready(_) => {
-                    widgets::muted(ui, theme, &summary(catalog, scope));
-                }
-            }
-        });
-    });
+    let reload = header(ui, theme, catalog, scope);
     let CatalogState::Ready(catalog) = catalog else {
         return reload;
     };
@@ -91,14 +84,80 @@ pub(crate) fn scope_picker(
     fields::text_field(ui, theme, &mut filter.text, &Field::new(id, &hint));
     ui.add_space(theme.tokens.metrics.space.sm);
     let needle = filter.text.trim().to_lowercase();
+    let window = ui.ctx().content_rect().height();
+    let list_box = (window >= LIST_BOX_FROM).then(|| (window - LIST_SURROUND).min(LIST_HEIGHT));
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
-        egui::ScrollArea::vertical()
-            .max_height(300.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
+        match list_box {
+            Some(height) => {
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
+            }
+            None => project_list(ui, theme, catalog, &needle, scope),
+        }
     });
     reload
+}
+
+/// "Watch all projects" with the refresh button at the right, and how many repositories are
+/// chosen (or that the list failed) between them, or under them when the line is too narrow.
+/// Returns true when the refresh button was clicked.
+fn header(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    catalog: CatalogState<'_>,
+    scope: &mut ScopeSpec,
+) -> bool {
+    let line = summary(catalog, scope);
+    let spacing = ui.spacing().item_spacing.x;
+    let measure = |text: &str| {
+        let font = theme.fonts.small.clone();
+        let galley = ui
+            .painter()
+            .layout_no_wrap(text.to_owned(), font, theme.colors.text_primary);
+        galley.size().x
+    };
+    let needed = CHEVRON
+        + controls::check_width(ui, theme, copy::WATCH_ALL_PROJECTS)
+        + measure(&line)
+        + theme.control_height()
+        + 3.0 * spacing;
+    let below = needed > ui.available_width();
+    let mut reload = false;
+    ui.horizontal(|ui| {
+        // why: line the box up with the project boxes, which sit after a chevron.
+        ui.add_space(CHEVRON);
+        controls::checkbox(ui, theme, &mut scope.all_projects, copy::WATCH_ALL_PROJECTS);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            reload = controls::icon_button(ui, theme, Icon::Refresh, copy::REFRESH_LIST)
+                .on_hover_text(copy::REFRESH_LIST)
+                .clicked();
+            if !below {
+                summary_line(ui, theme, catalog, &line);
+            }
+        });
+    });
+    if below {
+        ui.horizontal(|ui| {
+            ui.add_space(CHEVRON);
+            summary_line(ui, theme, catalog, &line);
+        });
+    }
+    reload
+}
+
+/// The muted count of chosen repositories, or the failure (its reason on hover).
+fn summary_line(ui: &mut egui::Ui, theme: &UiTheme, catalog: CatalogState<'_>, line: &str) {
+    match catalog {
+        CatalogState::Failed(error) => {
+            widgets::error_text(ui, theme, line).on_hover_text(error.title.as_ref());
+        }
+        CatalogState::Loading | CatalogState::Ready(_) => {
+            widgets::muted(ui, theme, line);
+        }
+    }
 }
 
 /// Projects (and their repositories) matching the search.

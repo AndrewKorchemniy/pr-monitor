@@ -17,6 +17,7 @@ use crate::{
         card::section,
         controls::{self, setting_row, toggle_row},
         fields::{self, Field},
+        fit,
         pr_table::column_choice,
         slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
@@ -30,7 +31,8 @@ const ORG_COLUMN: [(OrgColumn, &str); 3] = [
 
 /// The most boxes on a line of the column checklist.
 const COLUMN_GRID: usize = 3;
-/// Each box and its label in the column checklist (points).
+/// Each box and its label in the column checklist when there is room (points); narrower, the
+/// lines hold fewer boxes, each as wide as the widest label.
 const COLUMN_CHECK_WIDTH: f32 = 160.0;
 
 /// `columns` are the table's live column choices (see `SettingsEnv::columns`).
@@ -88,10 +90,20 @@ fn column_checklist(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, choices: Choices<'_
     widgets::muted(ui, &theme, copy::COLUMNS_HELP);
     ui.add_space(m.space.sm);
     let gap = m.space.xl;
-    let per_line = checks_per_line(ui.available_width(), gap);
+    let widest = columns::listed()
+        .map(|column| controls::check_width(ui, &theme, column.name))
+        .fold(0.0, f32::max);
+    let width = ui.available_width();
+    let per_line = fit::per_line(width, (widest, gap), COLUMN_GRID);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "at most three columns, far below f32's exact integer range"
+    )]
+    let share = (width - gap * (per_line - 1) as f32) / per_line as f32;
+    let column_width = share.min(COLUMN_CHECK_WIDTH).max(widest);
     egui::Grid::new("settings_columns")
         .num_columns(per_line)
-        .min_col_width(COLUMN_CHECK_WIDTH)
+        .min_col_width(column_width)
         .spacing(egui::vec2(gap, m.space.xs))
         .show(ui, |ui| {
             for (index, column) in columns::listed().enumerate() {
@@ -108,15 +120,6 @@ fn column_checklist(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, choices: Choices<'_
             }
         });
     ui.add_space(m.space.sm);
-}
-
-/// How many column checks fit side by side in `width` points with `gap` between them: up to
-/// `COLUMN_GRID`, and at least one.
-fn checks_per_line(width: f32, gap: f32) -> usize {
-    (1..=COLUMN_GRID)
-        .rev()
-        .find(|&n| n as f32 * (COLUMN_CHECK_WIDTH + gap) - gap <= width)
-        .unwrap_or(1)
 }
 
 fn refresh_row(ui: &mut egui::Ui, theme: &UiTheme, interval: &mut u32) {
@@ -163,7 +166,8 @@ fn proxy(ui: &mut egui::Ui, theme: &UiTheme, proxy: &mut ProxyConfig) {
     let mut text: String = ui
         .data_mut(|d| d.get_temp(id))
         .unwrap_or_else(|| proxy.to_string());
-    let field = Field::new(egui::Id::unique("proxy_field"), copy::PROXY_HINT).width(280.0);
+    let field =
+        Field::new(egui::Id::unique("proxy_field"), copy::PROXY_HINT).width(fit::CONTROL_WIDTH);
     let response = fields::text_field(ui, theme, &mut text, &field);
     if response.changed() {
         if let Ok(parsed) = text.parse() {
@@ -172,6 +176,3 @@ fn proxy(ui: &mut egui::Ui, theme: &UiTheme, proxy: &mut ProxyConfig) {
         ui.data_mut(|d| d.insert_temp(id, text));
     }
 }
-
-#[cfg(test)]
-mod tests;
