@@ -7,7 +7,6 @@ max_per_refresh = 0
 
 [ui]
 font_scale = 9.0
-density = "spacious"
 
 [network]
 max_concurrency = 50

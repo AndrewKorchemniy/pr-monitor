@@ -96,12 +96,11 @@ pub(crate) const PAT_HELP: &str =
 pub(crate) const HOW_TO_CREATE_TOKEN: &str = "How to create a token";
 pub(crate) const SAVE_TOKEN: &str = "Save token";
 pub(crate) const ENTRA_CLIENT_ID: &str = "Client ID";
-pub(crate) const ENTRA_TENANT: &str = "Tenant (leave empty to use the organization's tenant)";
+pub(crate) const ENTRA_TENANT: &str = "App tenant";
 pub(crate) const ENTRA_HELP: &str = "Ask your admin for a public client app registered with an http://localhost redirect. PR Monitor never fills this in for you.";
 pub(crate) const ADMIN_TITLE: &str = "Ask your admin for access";
 pub(crate) const COPY_MESSAGE: &str = "Copy message";
 
-pub(crate) const BACK: &str = "Back";
 pub(crate) const UNSAVED: &str = "You have unsaved changes.";
 pub(crate) const DISCARD: &str = "Discard";
 pub(crate) const SAVE_CHANGES: &str = "Save changes";
@@ -136,11 +135,21 @@ pub(crate) const SECTION_LAYOUT: &str = "Layout";
 pub(crate) const SECTION_PERFORMANCE: &str = "Performance";
 pub(crate) const SECTION_CUSTOM_THEMES: &str = "Custom themes";
 pub(crate) const SECTION_PRIVACY: &str = "Privacy";
-pub(crate) const SECTION_LINKS: &str = "Links";
+pub(crate) const SETTINGS: &str = "Settings";
+pub(crate) const LICENSES_SHORT: &str = "Licenses";
+pub(crate) const DOUBLE_CLICK_TO_TYPE: &str = "Double-click to type a value";
+pub(crate) const REFRESH_INTERVAL: &str = "Refresh interval";
+pub(crate) const PER_REFRESH: &str = "Notifications per refresh";
+pub(crate) const TEXT_SIZE: &str = "Text size";
+pub(crate) const UNIT_MINUTES: &str = " min";
+pub(crate) const UNIT_PERCENT: &str = "%";
 pub(crate) const NAME: &str = "Name";
 pub(crate) const WATCH_ORG: &str = "Watch this organization";
 pub(crate) const MUTE_ORG: &str = "Mute notifications from this organization";
 pub(crate) const SIGN_IN_METHOD: &str = "Sign-in method";
+pub(crate) const CONNECTION: &str = "Connection";
+pub(crate) const TENANT_HELP: &str = "Leave empty to find it from the organization.";
+pub(crate) const ENTRA_TENANT_HELP: &str = "Leave empty to use the organization's tenant.";
 pub(crate) const ADVANCED: &str = "Advanced";
 pub(crate) const TENANT_ID: &str = "Tenant ID";
 pub(crate) const TOKEN_EXPIRES: &str = "Token expires on";
@@ -176,7 +185,6 @@ pub(crate) const TEST_SENT: &str = "Test notification sent.";
 pub(crate) const PAUSE_HOUR: &str = "Pause for 1 hour";
 pub(crate) const RESUME: &str = "Resume";
 pub(crate) const THEME: &str = "Theme";
-pub(crate) const DENSITY: &str = "Density";
 pub(crate) const ANIMATIONS: &str = "Animations";
 pub(crate) const ANIMATIONS_HELP: &str = "Automatic turns animations off over Remote Desktop, with software rendering, and when Windows animations are off.";
 pub(crate) const LOW_POWER: &str = "Low-power mode";
@@ -185,7 +193,6 @@ pub(crate) const RESTART_HELP: &str = "Takes effect after restart.";
 pub(crate) const RELOAD_THEMES: &str = "Reload themes";
 pub(crate) const COPY_THEME_TOML: &str = "Copy theme as TOML";
 pub(crate) const COPY_THEMES_FOLDER: &str = "Copy themes folder path";
-pub(crate) const ABOUT_LINE: &str = "Watches Azure DevOps pull requests for your team.";
 pub(crate) const PRIVACY: &str = "PR Monitor talks only to Azure DevOps and Microsoft sign-in. Settings and cached results stay on this computer in %LOCALAPPDATA%\\PRMonitor. Tokens are kept in Windows Credential Manager. Nothing is sent anywhere else.";
 pub(crate) const LICENSES: &str = "Third-party licenses";
 pub(crate) const SOURCE_CODE: &str = "Source code";
@@ -366,27 +373,12 @@ pub(crate) fn token_saved(name: &str) -> String {
     format!("Token saved. Signed in as {name}.")
 }
 
-pub(crate) fn refresh_every(minutes: u32) -> String {
-    format!("Refresh every {} ", plural(minutes, "minute", "minutes"))
-}
-
-pub(crate) fn max_per_refresh(n: u8) -> String {
-    format!(
-        "At most {} per refresh",
-        plural(u32::from(n), "notification", "notifications")
-    )
-}
-
 pub(crate) fn remove_org_title(org: &str) -> String {
     format!("Remove {org}?")
 }
 
 pub(crate) fn whole_project(project: &str) -> String {
     format!("{project} (all repositories)")
-}
-
-pub(crate) fn text_size(scale: f32) -> String {
-    format!("Text size {:.0}%", scale * 100.0)
 }
 
 pub(crate) fn step_of(step: usize, total: usize) -> String {
@@ -473,6 +465,7 @@ pub(crate) fn user_action_label(action: &UserAction) -> &'static str {
         UserAction::OpenDocs(DocLink::CreatePat) => HOW_TO_CREATE_TOKEN,
         UserAction::OpenDocs(DocLink::EntraAppRegistration) => "How to register an app",
         UserAction::OpenDocs(DocLink::Troubleshooting) => "Troubleshooting",
+        UserAction::OpenDocs(DocLink::ReportProblem) => REPORT_PROBLEM,
         UserAction::OpenSettings(SettingsSection::Scope) => "Review repositories",
         UserAction::OpenSettings(
             SettingsSection::General

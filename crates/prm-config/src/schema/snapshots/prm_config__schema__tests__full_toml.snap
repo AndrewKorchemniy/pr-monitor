@@ -34,7 +34,6 @@ auth_problem = true
 theme = "system"
 theme_dark = "graphite"
 theme_light = "vellum"
-density = "compact"
 font_scale = 1.0
 animations = "auto"
 renderer = "auto"

@@ -1,10 +1,10 @@
-//! Appearance: theme (previewed live), density, text size, animations, low power, renderer,
+//! Appearance: theme (previewed live), text size, animations, low power, renderer,
 //! and helpers for writing your own theme.
 
 use eframe::egui;
 use prm_config::{
     Config, limits,
-    schema::{Density, RendererPref, Tristate},
+    schema::{RendererPref, Tristate},
 };
 use prm_theme::registry::SYSTEM;
 
@@ -16,6 +16,7 @@ use crate::{
     widgets::{
         card::section,
         controls::{self, setting_row},
+        slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
 };
 
@@ -28,10 +29,6 @@ const RENDERERS: [(RendererPref, &str); 3] = [
     (RendererPref::Auto, "Automatic"),
     (RendererPref::Glow, "OpenGL"),
     (RendererPref::Wgpu, "Direct3D"),
-];
-const DENSITIES: [(Density, &str); 2] = [
-    (Density::Compact, "Compact"),
-    (Density::Comfortable, "Comfortable"),
 ];
 
 fn theme_name<'a>(env: &'a SettingsEnv<'_>, id: &'a str) -> &'a str {
@@ -65,19 +62,15 @@ pub(crate) fn page(
         issues(ui, &theme, &env.theme_issues);
     });
     section(ui, &theme, copy::SECTION_LAYOUT, None, |ui| {
-        setting_row(ui, &theme, (copy::DENSITY, None), |ui| {
-            controls::segmented(ui, &theme, &mut prefs.density, &DENSITIES);
-        });
-        ui.separator();
-        let label = copy::text_size(prefs.font_scale);
-        setting_row(ui, &theme, (&label, None), |ui| {
-            controls::slider(
-                ui,
-                &theme,
-                &mut prefs.font_scale,
-                limits::FONT_SCALE,
-                &label,
-            );
+        setting_row(ui, &theme, (copy::TEXT_SIZE, None), |ui| {
+            let spec = SliderSpec {
+                id: egui::Id::unique("font_scale"),
+                name: copy::TEXT_SIZE,
+                scale: 100.0,
+                unit: copy::UNIT_PERCENT,
+                width: SLIDER_WIDTH,
+            };
+            slider_field(ui, &theme, &mut prefs.font_scale, limits::FONT_SCALE, &spec);
         });
     });
     section(ui, &theme, copy::SECTION_PERFORMANCE, None, |ui| {
@@ -87,9 +80,9 @@ pub(crate) fn page(
             (copy::ANIMATIONS, Some(copy::ANIMATIONS_HELP)),
             &mut prefs.animations,
         );
-        ui.separator();
+        controls::row_divider(ui, &theme);
         tristate(ui, &theme, (copy::LOW_POWER, None), &mut prefs.low_power);
-        ui.separator();
+        controls::row_divider(ui, &theme);
         let help = format!("{}. {}", env.renderer_line, copy::RESTART_HELP);
         setting_row(ui, &theme, (copy::RENDERER, Some(&help)), |ui| {
             controls::segmented(ui, &theme, &mut prefs.renderer, &RENDERERS);

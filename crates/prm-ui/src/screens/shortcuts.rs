@@ -34,7 +34,7 @@ pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
     };
     let outcome = modal(ctx, &theme, &spec, |ui| {
         egui::ScrollArea::vertical()
-            .max_height(480.0)
+            .max_height((ctx.content_rect().height() - 240.0).clamp(160.0, 480.0))
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 key_grid(ui, cx);

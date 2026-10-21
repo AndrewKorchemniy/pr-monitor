@@ -32,6 +32,11 @@ fn palette_snapshot_vellum() {
 }
 
 #[test]
+fn palette_snapshot_paper() {
+    insta::assert_snapshot!(listing(&derive_palette(&builtin("paper"))));
+}
+
+#[test]
 fn palette_snapshot_cyanotype() {
     insta::assert_snapshot!(listing(&derive_palette(&builtin("cyanotype"))));
 }
@@ -54,7 +59,7 @@ fn contrast_seed_monotonic() {
 
 #[test]
 fn dark_elevation_lifts_light_raised_not_darker() {
-    for id in ["graphite", "cyanotype", "vellum"] {
+    for id in ["graphite", "cyanotype", "vellum", "paper"] {
         let palette = derive_palette(&builtin(id));
         let l = |c: Rgba8| to_oklab(c).l;
         assert!(

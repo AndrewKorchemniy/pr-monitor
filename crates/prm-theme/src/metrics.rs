@@ -1,14 +1,7 @@
-//! Sizes, type, motion and strokes. Density picks row heights; the theme only scales corner radii
+//! Sizes, type, motion and strokes. Row heights are fixed; the theme only scales corner radii
 //! and toggles stripes.
 
 use crate::file::MetricTweaks;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub enum Density {
-    #[default]
-    Compact,
-    Comfortable,
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FontFace {
@@ -124,9 +117,9 @@ pub struct Radius {
 const BASE_RADIUS: [f32; 3] = [3.0, 5.0, 8.0];
 const PILL_RADIUS: u8 = 255;
 
-/// Heights and paddings per density, in points.
+/// Heights and paddings, in points.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DensityMetrics {
+pub struct RowMetrics {
     pub row_height: f32,
     pub header_height: f32,
     pub toolbar_height: f32,
@@ -139,36 +132,18 @@ pub struct DensityMetrics {
     pub revision_bar: f32,
 }
 
-impl Density {
-    pub const fn metrics(self) -> DensityMetrics {
-        match self {
-            Self::Compact => DensityMetrics {
-                row_height: 24.0,
-                header_height: 26.0,
-                toolbar_height: 40.0,
-                statusbar_height: 26.0,
-                control_height: 26.0,
-                cell_pad_x: 8.0,
-                pill_height: 18.0,
-                glyph: 10.0,
-                margin_col: 6.0,
-                revision_bar: 3.0,
-            },
-            Self::Comfortable => DensityMetrics {
-                row_height: 30.0,
-                header_height: 30.0,
-                toolbar_height: 46.0,
-                statusbar_height: 28.0,
-                control_height: 30.0,
-                cell_pad_x: 10.0,
-                pill_height: 20.0,
-                glyph: 11.0,
-                margin_col: 8.0,
-                revision_bar: 3.0,
-            },
-        }
-    }
-}
+pub const ROW: RowMetrics = RowMetrics {
+    row_height: 30.0,
+    header_height: 30.0,
+    toolbar_height: 46.0,
+    statusbar_height: 32.0,
+    control_height: 30.0,
+    cell_pad_x: 10.0,
+    pill_height: 20.0,
+    glyph: 11.0,
+    margin_col: 8.0,
+    revision_bar: 3.0,
+};
 
 /// Durations in seconds; the UI zeroes them when animations are off.
 #[derive(Clone, Debug, PartialEq)]
@@ -217,10 +192,9 @@ pub const ELEVATION: Elevation = Elevation {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metrics {
-    pub density: Density,
     pub space: Space,
     pub radius: Radius,
-    pub row: DensityMetrics,
+    pub row: RowMetrics,
     pub motion: Motion,
     pub stroke: Strokes,
     pub elevation: Elevation,
@@ -228,7 +202,7 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new(density: Density, tweaks: &MetricTweaks) -> Self {
+    pub fn new(tweaks: &MetricTweaks) -> Self {
         let scaled = |r: f32| {
             #[expect(
                 clippy::cast_possible_truncation,
@@ -239,7 +213,6 @@ impl Metrics {
             radius
         };
         Self {
-            density,
             space: SPACE,
             radius: Radius {
                 sm: scaled(BASE_RADIUS[0]),
@@ -251,7 +224,7 @@ impl Metrics {
                     0
                 },
             },
-            row: density.metrics(),
+            row: ROW,
             motion: MOTION,
             stroke: STROKES,
             elevation: ELEVATION,

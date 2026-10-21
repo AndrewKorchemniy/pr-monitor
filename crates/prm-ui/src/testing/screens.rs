@@ -18,7 +18,7 @@ use crate::{
     screens::{
         dashboard::{DashboardUi, dashboard},
         first_run::{FirstRun, first_run},
-        settings::{SettingsEnv, SettingsState, settings_screen},
+        settings::{SettingsEnv, SettingsState, settings_modal},
         shortcuts::shortcuts,
     },
     theme::{ThemeRuntime, fonts},
@@ -101,7 +101,10 @@ impl Fixture {
         match self.shown {
             Shown::Dashboard => dashboard(ui, &mut cx, &mut self.dash, true),
             Shown::FirstRun => first_run(ui, &mut cx, &mut self.first_run),
-            Shown::Settings => settings_screen(ui, &mut cx, &mut self.settings, &env()),
+            Shown::Settings => {
+                dashboard(ui, &mut cx, &mut self.dash, false);
+                settings_modal(&ctx, &mut cx, &mut self.settings, &env());
+            }
             Shown::Palette => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let rows = self.state.rows.clone();
@@ -134,6 +137,7 @@ pub(crate) fn env() -> SettingsEnv<'static> {
             ("graphite".to_owned(), "Graphite".to_owned()),
             ("vellum".to_owned(), "Vellum".to_owned()),
             ("cyanotype".to_owned(), "Cyanotype".to_owned()),
+            ("paper".to_owned(), "Paper".to_owned()),
         ],
         themes_dir: std::path::PathBuf::from("themes"),
         theme_issues: Vec::new(),

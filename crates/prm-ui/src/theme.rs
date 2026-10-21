@@ -11,10 +11,10 @@ use std::{
 };
 
 use eframe::egui::{self, Color32, FontId};
-use prm_config::{UiPrefs, schema::Density as ConfigDensity};
+use prm_config::UiPrefs;
 use prm_theme::{
-    Appearance, Density, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection,
-    Tokens, TypeRole, registry::resolve,
+    Appearance, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection, Tokens,
+    TypeRole, registry::resolve,
 };
 
 use crate::{deps::ChromeColors, render::policy::RenderPolicy};
@@ -89,6 +89,18 @@ impl UiTheme {
         }
     }
 
+    /// The height of every input, button and segmented control: one size app-wide, matching
+    /// the first-run URL field.
+    pub(crate) fn control_height(&self) -> f32 {
+        let m = &self.tokens.metrics;
+        m.row.control_height + m.space.md
+    }
+
+    /// The toolbar's height: its buttons sit as far from its edges as from the window's right.
+    pub(crate) fn toolbar_height(&self) -> f32 {
+        self.control_height() + 2.0 * self.tokens.metrics.space.md
+    }
+
     pub(crate) fn is_dark(&self) -> bool {
         self.tokens.appearance == Appearance::Dark
     }
@@ -104,7 +116,6 @@ pub(crate) fn fallback() -> Arc<UiTheme> {
                 theme: prm_theme::registry::DEFAULT_DARK.into(),
                 dark: prm_theme::registry::DEFAULT_DARK.into(),
                 light: prm_theme::registry::DEFAULT_LIGHT.into(),
-                density: Density::Compact,
             };
             let set = resolve(&registry, &selection);
             let policy = RenderPolicy {
@@ -129,10 +140,6 @@ pub(crate) fn selection_from(prefs: &UiPrefs) -> ThemeSelection {
         theme: prefs.theme.clone(),
         dark: prefs.theme_dark.clone(),
         light: prefs.theme_light.clone(),
-        density: match prefs.density {
-            ConfigDensity::Comfortable => Density::Comfortable,
-            ConfigDensity::Compact => Density::Compact,
-        },
     }
 }
 

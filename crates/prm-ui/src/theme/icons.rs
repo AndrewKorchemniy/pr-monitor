@@ -26,9 +26,13 @@ pub(crate) enum Icon {
     ChevronUp,
     /// Continue or submit.
     ArrowRight,
-    /// Back.
-    ArrowLeft,
     Plus,
+    /// Notifications.
+    Bell,
+    /// An organization: a building.
+    Building,
+    /// Appearance: a half-filled circle.
+    Contrast,
     /// Merge conflicts or warnings: a triangle with a bar.
     Warning,
     Info,
@@ -80,7 +84,7 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.circle_stroke(at(-0.2, -0.2), r * 0.55, s);
             painter.line_segment([at(0.2, 0.2), at(0.8, 0.8)], s);
         }
-        Icon::Refresh => arc_with_head(painter, c, r * 0.7, s),
+        Icon::Refresh => arc_with_head(painter, c, r * 0.62, s),
         Icon::Gear => {
             painter.circle_stroke(c, r * 0.45, s);
             for i in 0..8 {
@@ -106,14 +110,34 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.line_segment([at(0.15, -0.55), at(0.7, 0.0)], s);
             painter.line_segment([at(0.7, 0.0), at(0.15, 0.55)], s);
         }
-        Icon::ArrowLeft => {
-            painter.line_segment([at(0.7, 0.0), at(-0.7, 0.0)], s);
-            painter.line_segment([at(-0.15, -0.55), at(-0.7, 0.0)], s);
-            painter.line_segment([at(-0.7, 0.0), at(-0.15, 0.55)], s);
-        }
         Icon::Plus => {
             painter.line_segment([at(-0.7, 0.0), at(0.7, 0.0)], s);
             painter.line_segment([at(0.0, -0.7), at(0.0, 0.7)], s);
+        }
+        Icon::Bell => bell(painter, &at, s),
+        Icon::Building => {
+            let outline = vec![
+                at(-0.55, 0.8),
+                at(-0.55, -0.75),
+                at(0.55, -0.75),
+                at(0.55, 0.8),
+            ];
+            painter.add(Shape::closed_line(outline, s));
+            for y in [-0.35, 0.05] {
+                painter.line_segment([at(-0.25, y), at(0.25, y)], s);
+            }
+            painter.line_segment([at(-0.15, 0.8), at(-0.15, 0.45)], s);
+            painter.line_segment([at(0.15, 0.45), at(0.15, 0.8)], s);
+        }
+        Icon::Contrast => {
+            painter.circle_stroke(c, r * 0.8, s);
+            let half: Vec<Pos2> = (0_u8..=12)
+                .map(|i| {
+                    let angle = TAU / 4.0 + TAU / 2.0 * f32::from(i) / 12.0;
+                    c + vec2(angle.cos(), angle.sin()) * r * 0.8
+                })
+                .collect();
+            painter.add(Shape::convex_polygon(half, color, Stroke::NONE));
         }
         Icon::Warning => {
             let triangle = vec![at(0.0, -0.85), at(0.9, 0.75), at(-0.9, 0.75)];
@@ -136,24 +160,46 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     }
 }
 
+fn bell(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
+    let outline = vec![
+        at(-0.65, 0.45),
+        at(-0.5, 0.3),
+        at(-0.5, -0.1),
+        at(-0.4, -0.45),
+        at(-0.2, -0.66),
+        at(0.0, -0.72),
+        at(0.2, -0.66),
+        at(0.4, -0.45),
+        at(0.5, -0.1),
+        at(0.5, 0.3),
+        at(0.65, 0.45),
+    ];
+    painter.add(Shape::closed_line(outline, s));
+    painter.line_segment([at(-0.15, 0.68), at(0.15, 0.68)], s);
+}
+
 fn check(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
     painter.line_segment([at(-0.7, 0.05), at(-0.2, 0.55)], s);
     painter.line_segment([at(-0.2, 0.55), at(0.75, -0.55)], s);
 }
 
+/// A clockwise arc open at the top right, ending at the top in a solid arrowhead.
 fn arc_with_head(painter: &Painter, center: Pos2, radius: f32, s: Stroke) {
-    const STEPS: u8 = 16;
-    let point = |t: f32| {
-        let angle = -TAU * 0.1 + t * TAU * 0.8;
-        center + vec2(angle.cos(), angle.sin()) * radius
-    };
+    const STEPS: u8 = 24;
+    // Screen angles grow clockwise (y points down): start just above the right, end at the top.
+    let (start, sweep) = (-TAU / 12.0, TAU * 5.0 / 6.0 - TAU / 12.0);
+    let point = |angle: f32| center + vec2(angle.cos(), angle.sin()) * radius;
     let points: Vec<Pos2> = (0..=STEPS)
-        .map(|i| point(f32::from(i) / f32::from(STEPS)))
+        .map(|i| point(start + sweep * f32::from(i) / f32::from(STEPS)))
         .collect();
     painter.add(Shape::line(points, s));
-    let end = point(0.0);
-    painter.line_segment([end, end + vec2(-radius * 0.45, -radius * 0.1)], s);
-    painter.line_segment([end, end + vec2(radius * 0.05, -radius * 0.45)], s);
+    let end_angle = start + sweep;
+    let end = point(end_angle);
+    let along = vec2(-end_angle.sin(), end_angle.cos());
+    let out = vec2(end_angle.cos(), end_angle.sin());
+    let (length, half) = (radius * 0.55, radius * 0.42);
+    let head = vec![end + along * length, end + out * half, end - out * half];
+    painter.add(Shape::convex_polygon(head, s.color, Stroke::NONE));
 }
 
 /// Paints a stroked icon (check, cross, chevrons, arrows) with an explicit stroke width.
@@ -175,8 +221,10 @@ pub(crate) fn paint_stroke(painter: &Painter, rect: Rect, icon: Icon, stroke: St
         | Icon::ChevronDown
         | Icon::ChevronUp
         | Icon::ArrowRight
-        | Icon::ArrowLeft
         | Icon::Plus
+        | Icon::Bell
+        | Icon::Building
+        | Icon::Contrast
         | Icon::Warning
         | Icon::Info
         | Icon::Dot

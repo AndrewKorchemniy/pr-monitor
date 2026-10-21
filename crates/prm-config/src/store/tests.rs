@@ -44,6 +44,22 @@ fn load_missing_creates_defaults() {
     assert!(paths.config.exists());
 }
 
+/// `ui.density` was removed; a file that still has it loads in place, with no issue.
+#[test]
+fn load_with_retired_density_key() {
+    let (_dir, paths) = temp_paths();
+    std::fs::write(
+        &paths.config,
+        "schema_version = 1\n[ui]\ndensity = \"compact\"\ntheme_light = \"cyanotype\"\n",
+    )
+    .unwrap();
+    let load = load_config(&paths);
+    assert_eq!(load.issues, Vec::new());
+    assert!(!load.read_only);
+    assert_eq!(load.config.ui.theme_light, "cyanotype");
+    assert!(paths.config.exists(), "the file was not moved aside");
+}
+
 #[test]
 fn read_config_lists_orgs_without_writing() {
     let (dir, paths) = temp_paths();

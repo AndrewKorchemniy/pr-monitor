@@ -8,7 +8,7 @@ use crate::{
     copy,
     frame::FrameCx,
     theme::UiTheme,
-    widgets::{self, controls},
+    widgets::{self, fields},
 };
 
 const WIDTH: f32 = 520.0;
@@ -55,7 +55,7 @@ pub(crate) fn palette_view(
         .show(ctx, |ui| {
             ui.set_width(WIDTH);
             let field = (egui::Id::unique("palette_query"), copy::PALETTE_HINT);
-            let response = controls::search_field(ui, &theme, &mut state.query, field, WIDTH);
+            let response = fields::search_field(ui, &theme, &mut state.query, field, WIDTH);
             response.request_focus();
             if response.changed() {
                 state.selected = 0;
@@ -82,7 +82,7 @@ pub(crate) fn palette_view(
 /// One result: left-aligned, highlighted with the accent tint when selected.
 fn row(ui: &mut egui::Ui, theme: &UiTheme, title: &str, selected: bool) -> egui::Response {
     let m = &theme.tokens.metrics;
-    let size = egui::vec2(WIDTH, m.row.control_height + m.space.xs);
+    let size = egui::vec2(WIDTH, theme.control_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let fill = if selected {
         Some(theme.colors.row_selected)

@@ -1,0 +1,26 @@
+# PR Monitor theme. See graphite.toml for how to make your own.
+schema = 1
+id = "paper"
+name = "Paper"
+appearance = "light"
+description = "Aged paper and fountain-pen ink. A warm light theme."
+
+[seeds]
+base = "#F5EFE3"
+ink = "#2A2119"
+accent = "#1F6168"
+contrast = 0.0
+
+[seeds.status]
+needs_review = "#A0680A"
+active_comments = "#B04A26"
+reviewed = "#4F7A28"
+
+[seeds.feedback]
+danger = "#A82D46"
+warning = "#A0680A"
+success = "#4F7A28"
+
+[metrics]
+radius_scale = 1.0
+stripes = true

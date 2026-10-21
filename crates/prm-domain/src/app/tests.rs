@@ -20,6 +20,7 @@ fn doc_links_are_openable() {
         DocLink::CreatePat,
         DocLink::EntraAppRegistration,
         DocLink::Troubleshooting,
+        DocLink::ReportProblem,
     ] {
         assert!(is_openable_url(&Url::parse(d.url()).unwrap()), "{d:?}");
     }

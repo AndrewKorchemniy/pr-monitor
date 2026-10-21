@@ -83,12 +83,11 @@ fn scenes() -> Vec<Scene> {
         }),
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
-    let pages: [Named; 5] = [
+    let pages: [Named; 4] = [
         ("settings-general", |f| f.settings.page = PAGES[0]),
         ("settings-organizations", |f| f.settings.page = PAGES[1]),
         ("settings-notifications", |f| f.settings.page = PAGES[2]),
         ("settings-appearance", |f| f.settings.page = PAGES[3]),
-        ("settings-about", |f| f.settings.page = PAGES[4]),
     ];
     all.extend(
         pages
@@ -146,9 +145,11 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path) {
 #[ignore = "renders on the GPU and writes PNG files; run on demand for design review"]
 fn gallery() {
     let dir = out_dir();
+    // why: scenes come and go; stale images from older runs would read as current.
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("gallery dir");
     for scene in scenes() {
-        for theme in ["graphite", "vellum"] {
+        for theme in ["graphite", "vellum", "cyanotype", "paper"] {
             render(&scene, theme, &dir);
         }
     }

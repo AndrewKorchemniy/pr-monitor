@@ -11,8 +11,11 @@ use crate::{
     frame::FrameCx,
     theme::UiTheme,
     widgets::{
+        self,
         card::section,
         controls::{self, setting_row, toggle_row},
+        fields::{self, Field},
+        slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
 };
 
@@ -25,49 +28,19 @@ const ORG_COLUMN: [(OrgColumn, &str); 3] = [
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) {
     let theme = cx.theme.clone();
     section(ui, &theme, copy::SECTION_REFRESH, None, |ui| {
-        let interval = &mut draft.refresh.interval_minutes;
-        let label = copy::refresh_every(*interval);
-        setting_row(ui, &theme, (label.trim(), Some(copy::REFRESH_HELP)), |ui| {
-            controls::slider(ui, &theme, interval, limits::INTERVAL_MINUTES, label.trim());
-        });
+        refresh_row(ui, &theme, &mut draft.refresh.interval_minutes);
     });
     let prefs = &mut draft.ui;
     section(ui, &theme, copy::SECTION_WINDOW, None, |ui| {
-        toggle_row(
-            ui,
-            &theme,
-            &mut prefs.start_minimized,
-            (copy::START_MINIMIZED, None),
-        );
-        ui.separator();
-        toggle_row(
-            ui,
-            &theme,
-            &mut prefs.close_to_tray,
-            (copy::CLOSE_TO_TRAY, None),
-        );
-        ui.separator();
-        toggle_row(
-            ui,
-            &theme,
-            &mut prefs.minimize_to_tray,
-            (copy::MINIMIZE_TO_TRAY, None),
-        );
-        ui.separator();
         let error = cx.state.autostart.error.as_deref();
-        toggle_row(
-            ui,
-            &theme,
-            &mut prefs.launch_at_login,
-            (copy::LAUNCH_AT_LOGIN, error),
-        );
+        window_rows(ui, &theme, prefs, error);
     });
     section(ui, &theme, copy::SECTION_TABLE, None, |ui| {
         let help = Some(copy::ORG_COLUMN_HELP);
         setting_row(ui, &theme, (copy::ORG_COLUMN, help), |ui| {
             controls::segmented(ui, &theme, &mut prefs.show_org_column, &ORG_COLUMN);
         });
-        ui.separator();
+        controls::row_divider(ui, &theme);
         toggle_row(
             ui,
             &theme,
@@ -80,6 +53,48 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) 
             proxy(ui, &theme, &mut draft.network.proxy);
         });
     });
+    section(ui, &theme, copy::SECTION_PRIVACY, None, |ui| {
+        widgets::muted(ui, &theme, copy::PRIVACY);
+    });
+}
+
+fn refresh_row(ui: &mut egui::Ui, theme: &UiTheme, interval: &mut u32) {
+    let text = (copy::REFRESH_INTERVAL, Some(copy::REFRESH_HELP));
+    setting_row(ui, theme, text, |ui| {
+        let spec = SliderSpec {
+            id: egui::Id::unique("refresh_interval"),
+            name: copy::REFRESH_INTERVAL,
+            scale: 1.0,
+            unit: copy::UNIT_MINUTES,
+            width: SLIDER_WIDTH,
+        };
+        slider_field(ui, theme, interval, limits::INTERVAL_MINUTES, &spec);
+    });
+}
+
+/// Tray and startup switches, one row each with dividers between.
+fn window_rows(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    prefs: &mut prm_config::UiPrefs,
+    autostart_error: Option<&str>,
+) {
+    let rows = [
+        (&mut prefs.start_minimized, copy::START_MINIMIZED, None),
+        (&mut prefs.close_to_tray, copy::CLOSE_TO_TRAY, None),
+        (&mut prefs.minimize_to_tray, copy::MINIMIZE_TO_TRAY, None),
+        (
+            &mut prefs.launch_at_login,
+            copy::LAUNCH_AT_LOGIN,
+            autostart_error,
+        ),
+    ];
+    for (index, (value, label, help)) in rows.into_iter().enumerate() {
+        if index > 0 {
+            controls::row_divider(ui, theme);
+        }
+        toggle_row(ui, theme, value, (label, help));
+    }
 }
 
 fn proxy(ui: &mut egui::Ui, theme: &UiTheme, proxy: &mut ProxyConfig) {
@@ -87,12 +102,8 @@ fn proxy(ui: &mut egui::Ui, theme: &UiTheme, proxy: &mut ProxyConfig) {
     let mut text: String = ui
         .data_mut(|d| d.get_temp(id))
         .unwrap_or_else(|| proxy.to_string());
-    let response = ui.add(
-        egui::TextEdit::singleline(&mut text)
-            .hint_text(copy::PROXY_HINT)
-            .font(theme.fonts.body.clone())
-            .desired_width(260.0),
-    );
+    let field = Field::new(egui::Id::unique("proxy_field"), copy::PROXY_HINT).width(280.0);
+    let response = fields::text_field(ui, theme, &mut text, &field);
     if response.changed() {
         if let Ok(parsed) = text.parse() {
             *proxy = parsed;

@@ -18,6 +18,7 @@ use crate::{
     widgets::{
         self,
         controls::{self, Check},
+        fields::{self, Field},
     },
 };
 
@@ -52,17 +53,11 @@ pub(crate) fn scope_picker(
     if scope.all_projects {
         return reload;
     }
-    ui.add_space(theme.tokens.metrics.space.xs);
+    ui.add_space(theme.tokens.metrics.space.sm);
     let hint = copy::search_scope(catalog.projects.len(), catalog.repos.len());
     let id = ui.make_persistent_id("scope_search");
-    controls::search_field(
-        ui,
-        theme,
-        &mut filter.text,
-        (id, &hint),
-        ui.available_width(),
-    );
-    ui.add_space(theme.tokens.metrics.space.xs);
+    fields::text_field(ui, theme, &mut filter.text, &Field::new(id, &hint));
+    ui.add_space(theme.tokens.metrics.space.sm);
     let needle = filter.text.trim().to_lowercase();
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;

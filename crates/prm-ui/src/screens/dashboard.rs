@@ -64,7 +64,7 @@ pub(crate) fn dashboard(
     let theme = cx.theme.clone();
     let row = &theme.tokens.metrics.row;
     egui::Panel::top("toolbar")
-        .exact_size(row.toolbar_height)
+        .exact_size(theme.toolbar_height())
         .frame(adapter::frame_chrome(&theme))
         .show(ui, |ui| {
             d.filter_focused = toolbar(ui, cx, &mut d.filter, d.view.group);

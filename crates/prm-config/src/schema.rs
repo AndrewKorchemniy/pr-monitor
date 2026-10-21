@@ -1,5 +1,6 @@
 //! The `config.toml` model. Every struct is `#[serde(default)]` and unknown keys are ignored,
-//! so older and newer files still load; unknown enum values fall back to the default.
+//! so older and newer files still load; unknown enum values fall back to the default. Retired
+//! keys (such as `ui.density`) are ignored the same way and dropped on the next save.
 
 use std::{collections::HashSet, fmt, str::FromStr, sync::Arc};
 
@@ -95,7 +96,6 @@ pub struct UiPrefs {
     /// Used when `theme = "system"` and the OS is dark.
     pub theme_dark: String,
     pub theme_light: String,
-    pub density: Density,
     pub font_scale: f32,
     pub animations: Tristate,
     pub renderer: RendererPref,
@@ -118,7 +118,6 @@ impl Default for UiPrefs {
             theme: THEME_SYSTEM.into(),
             theme_dark: DEFAULT_DARK_THEME.into(),
             theme_light: DEFAULT_LIGHT_THEME.into(),
-            density: Density::default(),
             font_scale: limits::DEFAULT_FONT_SCALE,
             animations: Tristate::default(),
             renderer: RendererPref::default(),
@@ -131,16 +130,6 @@ impl Default for UiPrefs {
             relative_times: true,
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Density {
-    Comfortable,
-    /// Last because `#[serde(other)]` must be the final variant.
-    #[default]
-    #[serde(other)]
-    Compact,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]

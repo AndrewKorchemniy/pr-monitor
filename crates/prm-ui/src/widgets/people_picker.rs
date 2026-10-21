@@ -10,7 +10,15 @@ use eframe::egui::{self, RichText};
 use prm_domain::{OrgId, Person, ids::RequestId, person::PersonCandidate};
 use prm_service::{AppEvent, Command, SearchPhase};
 
-use crate::{actions::UiAction, copy, frame::FrameCx, widgets};
+use crate::{
+    actions::UiAction,
+    copy,
+    frame::FrameCx,
+    widgets::{
+        self,
+        fields::{self, Field},
+    },
+};
 
 /// Directory searches start at this many characters.
 pub(crate) const MIN_QUERY: usize = 3;
@@ -106,17 +114,15 @@ pub(crate) fn people_picker(
     people: &mut Vec<Person>,
 ) {
     let theme = cx.theme.clone();
-    chips(ui, &theme, people);
+    if !people.is_empty() {
+        chips(ui, &theme, people);
+    }
     let Some(org) = org else {
         widgets::muted(ui, &theme, copy::SAVE_ORG_FIRST);
         return;
     };
-    let response = ui.add(
-        egui::TextEdit::singleline(&mut picker.query)
-            .id(egui::Id::unique(("people", picker.id)))
-            .hint_text(copy::ADD_PEOPLE)
-            .desired_width(f32::INFINITY),
-    );
+    let field = Field::new(egui::Id::unique(("people", picker.id)), copy::ADD_PEOPLE);
+    let response = fields::text_field(ui, &theme, &mut picker.query, &field);
     if response.changed() {
         start_search(cx, picker, org);
     }

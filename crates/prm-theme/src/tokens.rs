@@ -6,7 +6,7 @@ use crate::{
     derive::derive_palette,
     file::{Appearance, ThemeFile},
     issue::{IssueLevel, ThemeId, ThemeIssue},
-    metrics::{Density, Metrics},
+    metrics::Metrics,
     palette::Palette,
     validate::validate,
 };
@@ -33,12 +33,7 @@ pub struct Tokens {
 
 impl Tokens {
     /// Derive, apply overrides (an unknown key is a Warning), then validate. Never panics.
-    pub fn build(
-        file: &ThemeFile,
-        src: &str,
-        source: ThemeSource,
-        density: Density,
-    ) -> (Self, Vec<ThemeIssue>) {
+    pub fn build(file: &ThemeFile, src: &str, source: ThemeSource) -> (Self, Vec<ThemeIssue>) {
         let id = ThemeId::new(&file.id);
         let mut palette = derive_palette(file);
         let mut issues = Vec::new();
@@ -56,7 +51,7 @@ impl Tokens {
             name: Arc::from(file.name.as_str()),
             description: Arc::from(file.description.as_str()),
             appearance: file.appearance,
-            metrics: Metrics::new(density, &file.metrics),
+            metrics: Metrics::new(&file.metrics),
             palette,
             source,
             file_toml: Arc::from(src),

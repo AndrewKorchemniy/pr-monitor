@@ -16,6 +16,7 @@ use crate::{
         self,
         card::section,
         controls::{self, setting_row, toggle_row},
+        slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
 };
 
@@ -88,24 +89,30 @@ fn delivery(ui: &mut egui::Ui, theme: &UiTheme, prefs: &mut NotificationPrefs) {
         (copy::SHOW_NOTIFICATIONS, None),
     );
     ui.add_enabled_ui(prefs.enabled, |ui| {
-        ui.separator();
+        controls::row_divider(ui, theme);
         setting_row(ui, theme, (copy::WHILE_IN_FRONT, None), |ui| {
             controls::segmented(ui, theme, &mut prefs.when_focused, &WHEN_FOCUSED);
         });
-        ui.separator();
+        controls::row_divider(ui, theme);
         toggle_row(ui, theme, &mut prefs.sound, (copy::PLAY_SOUND, None));
-        ui.separator();
+        controls::row_divider(ui, theme);
         toggle_row(
             ui,
             theme,
             &mut prefs.include_drafts,
             (copy::INCLUDE_DRAFTS, None),
         );
-        ui.separator();
-        let label = copy::max_per_refresh(prefs.max_per_refresh);
-        setting_row(ui, theme, (&label, None), |ui| {
+        controls::row_divider(ui, theme);
+        setting_row(ui, theme, (copy::PER_REFRESH, None), |ui| {
+            let spec = SliderSpec {
+                id: egui::Id::unique("max_per_refresh"),
+                name: copy::PER_REFRESH,
+                scale: 1.0,
+                unit: "",
+                width: SLIDER_WIDTH,
+            };
             let range = limits::MAX_PER_REFRESH;
-            controls::slider(ui, theme, &mut prefs.max_per_refresh, range, &label);
+            slider_field(ui, theme, &mut prefs.max_per_refresh, range, &spec);
         });
     });
 }

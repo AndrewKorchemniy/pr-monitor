@@ -1,7 +1,7 @@
 //! The toolbar: the filter field, grouping, refresh and settings, with the refresh progress
 //! line along its bottom edge.
 
-use eframe::egui::{self, RichText};
+use eframe::egui;
 use prm_domain::view::GroupBy;
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     copy,
     frame::FrameCx,
     theme::icons::Icon,
-    widgets::{self, controls},
+    widgets::{self, controls, fields},
 };
 
 pub(crate) const FILTER_ID: &str = "filter";
@@ -46,9 +46,13 @@ pub(crate) fn toolbar(
     let rect = ui.max_rect();
     let mut focused = false;
     ui.horizontal_centered(|ui| {
-        let width = (ui.available_width() - 280.0).clamp(160.0, 520.0);
-        let response =
-            controls::search_field(ui, &theme, filter, (filter_id(), copy::FILTER_HINT), width);
+        // why: the glyph's gap to the window's left edge matches its gap to the divider below.
+        let frame_left = rect.left() - ui.ctx().content_rect().left();
+        let below = (rect.height() - fields::SEARCH_GLYPH) / 2.0;
+        ui.add_space((below - frame_left - fields::SEARCH_GLYPH_INSET).max(0.0));
+        let max = (ui.available_width() - 280.0).max(160.0);
+        let id = (filter_id(), copy::FILTER_HINT);
+        let response = fields::search_field(ui, &theme, filter, id, max);
         if response.changed() {
             cx.push(UiAction::SetFilterText(filter.clone()));
         }
@@ -78,15 +82,18 @@ fn icon_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, icon: Icon, command: Com
 fn group_menu(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, group: GroupBy) {
     let theme = cx.theme.clone();
     let response = controls::menu_button(ui, &theme, copy::GROUP, group_label(group));
-    egui::Popup::menu(&response).show(|ui| {
-        ui.set_min_width(response.rect.width().max(160.0));
+    let width = response.rect.width().max(200.0);
+    let popup = egui::Popup::menu(&response)
+        .frame(controls::menu_frame(&theme))
+        .gap(controls::MENU_GAP)
+        .width(width);
+    popup.show(|ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing.y = 0.0;
         for (value, label, command) in GROUPS {
-            let text = RichText::new(label).font(theme.fonts.body.clone());
-            if ui
-                .add(egui::Button::selectable(value == group, text))
-                .clicked()
-            {
+            if controls::menu_item(ui, &theme, label, value == group).clicked() {
                 cx.run(command);
+                ui.close();
             }
         }
     });

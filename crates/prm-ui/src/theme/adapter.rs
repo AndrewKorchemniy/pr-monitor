@@ -116,8 +116,8 @@ pub(crate) fn style(theme: &UiTheme, policy: RenderPolicy) -> Style {
     style.compact_menu_style = true;
     let spacing = &mut style.spacing;
     spacing.item_spacing = egui::vec2(m.space.md, m.space.sm);
-    spacing.button_padding = egui::vec2(m.space.md + 2.0, m.space.xs);
-    spacing.interact_size = egui::vec2(m.space.xxxl, m.row.control_height);
+    spacing.button_padding = egui::vec2(m.space.lg + 2.0, m.space.sm);
+    spacing.interact_size = egui::vec2(m.space.xxxl, theme.control_height());
     spacing.menu_margin = Margin::same(px(m.space.xs));
     spacing.window_margin = Margin::same(px(m.space.lg));
     spacing.indent = m.space.xl;
@@ -208,13 +208,6 @@ pub(crate) fn frame_chrome(theme: &UiTheme) -> egui::Frame {
         .inner_margin(Margin::symmetric(px(m.space.md), 0))
 }
 
-/// The settings footer: the canvas, inset like the page column.
-pub(crate) fn frame_footer(theme: &UiTheme) -> egui::Frame {
-    egui::Frame::NONE
-        .fill(theme.colors.surface_canvas)
-        .inner_margin(Margin::symmetric(px(theme.tokens.metrics.space.lg), 0))
-}
-
 /// The peek drawer and settings cards.
 pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;
@@ -250,16 +243,6 @@ pub(crate) fn frame_card(theme: &UiTheme) -> egui::Frame {
         .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_default))
         .corner_radius(CornerRadius::same(m.radius.lg))
         .inner_margin(Margin::same(px(m.space.xxl)))
-}
-
-/// One group of settings: a bordered box under its title.
-pub(crate) fn frame_section(theme: &UiTheme) -> egui::Frame {
-    let m = &theme.tokens.metrics;
-    egui::Frame::NONE
-        .fill(theme.colors.surface_raised)
-        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_subtle))
-        .corner_radius(CornerRadius::same(m.radius.lg))
-        .inner_margin(Margin::symmetric(px(m.space.xl), px(m.space.lg)))
 }
 
 /// A banner strip in the given tone.

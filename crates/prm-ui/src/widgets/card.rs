@@ -29,7 +29,8 @@ pub(crate) fn anchored_card(
             let rect =
                 Rect::from_min_size(pos2(left, ui.cursor().top()), vec2(width, f32::INFINITY));
             ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-                adapter::frame_card(theme).show(ui, |ui| {
+                let frame = adapter::frame_card(theme).inner_margin(egui::Margin::ZERO);
+                frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     add(ui);
                 });
@@ -38,7 +39,8 @@ pub(crate) fn anchored_card(
         });
 }
 
-/// A titled group of settings: the title (and an optional muted line) above a bordered box.
+/// A titled group of settings, like a markdown section: a heading (and an optional muted line),
+/// then the rows, which separate themselves with dividers.
 pub(crate) fn section<R>(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -47,21 +49,17 @@ pub(crate) fn section<R>(
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     let m = &theme.tokens.metrics;
+    ui.add_space(m.space.lg);
     ui.label(
         RichText::new(title)
-            .font(theme.fonts.body_strong.clone())
+            .font(theme.fonts.title.clone())
             .color(theme.colors.text_primary),
     );
     if let Some(description) = description {
         crate::widgets::muted(ui, theme, description);
     }
-    ui.add_space(m.space.xs);
-    let inner = adapter::frame_section(theme)
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            add(ui)
-        })
-        .inner;
+    ui.add_space(m.space.sm);
+    let inner = add(ui);
     ui.add_space(m.space.xl);
     inner
 }

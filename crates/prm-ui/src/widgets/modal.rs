@@ -1,8 +1,15 @@
-//! A centered dialog with a title, a body and right-aligned buttons. Esc closes it.
+//! A centered dialog on the shared dialog layout: a header with a close button, the body, and
+//! right-aligned buttons, separated by full-width dividers. Esc closes it.
 
 use eframe::egui::{self, RichText};
 
-use crate::{theme::UiTheme, widgets};
+use crate::{
+    theme::{UiTheme, adapter},
+    widgets::{
+        self,
+        dialog::{self, DialogHead},
+    },
+};
 
 /// What the user did with the dialog this frame.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -34,46 +41,39 @@ pub(crate) fn modal(
     body: impl FnOnce(&mut egui::Ui),
 ) -> ModalOutcome {
     let mut outcome = ModalOutcome::Open;
+    let frame = adapter::frame_dialog(theme, theme.policy).inner_margin(egui::Margin::ZERO);
     let response = egui::Modal::new(egui::Id::unique(spec.id))
-        .frame(crate::theme::adapter::frame_dialog(theme, theme.policy))
+        .frame(frame)
         .show(ctx, |ui| {
             ui.set_width(spec.width);
-            if header(ui, theme, spec) {
+            let head = DialogHead {
+                title: spec.title,
+                subtitle: spec.subtitle,
+                display: false,
+                close: true,
+            };
+            if dialog::header(ui, theme, &head) {
                 outcome = ModalOutcome::Dismissed;
             }
-            ui.add_space(theme.tokens.metrics.space.lg);
-            body(ui);
+            dialog::body(ui, theme, body);
             if spec.buttons.is_empty() {
                 return;
             }
-            ui.add_space(theme.tokens.metrics.space.lg);
             let right = egui::Layout::right_to_left(egui::Align::Center);
-            if let Some(index) = ui.with_layout(right, |ui| buttons(ui, theme, spec)).inner {
+            let clicked = dialog::actions(ui, theme, |ui| {
+                ui.with_layout(right, |ui| buttons(ui, theme, spec)).inner
+            });
+            if let Some(index) = clicked {
                 outcome = ModalOutcome::Button(index);
             }
         });
-    if outcome == ModalOutcome::Open && response.should_close() {
+    // why: a click beside a dialog (or on a browser window over it) must not throw away what
+    // was typed or chosen; Esc and the close button dismiss it.
+    let escaped = response.should_close() && !response.backdrop_response.clicked();
+    if outcome == ModalOutcome::Open && escaped {
         outcome = ModalOutcome::Dismissed;
     }
     outcome
-}
-
-/// The title (and subtitle) with a close button on the right; true when closed.
-fn header(ui: &mut egui::Ui, theme: &UiTheme, spec: &ModalSpec<'_>) -> bool {
-    let mut closed = false;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
-            widgets::heading(ui, theme, spec.title);
-            if let Some(subtitle) = spec.subtitle {
-                widgets::muted(ui, theme, subtitle);
-            }
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            closed = widgets::controls::close_button(ui, theme, crate::copy::CLOSE).clicked();
-        });
-    });
-    closed
 }
 
 /// The clicked button's index, if any.
