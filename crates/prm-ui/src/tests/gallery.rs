@@ -145,9 +145,11 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path) {
 #[ignore = "renders on the GPU and writes PNG files; run on demand for design review"]
 fn gallery() {
     let dir = out_dir();
+    // why: scenes come and go; stale images from older runs would read as current.
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("gallery dir");
     for scene in scenes() {
-        for theme in ["graphite", "vellum", "cyanotype"] {
+        for theme in ["graphite", "vellum", "cyanotype", "paper"] {
             render(&scene, theme, &dir);
         }
     }

@@ -31,7 +31,6 @@ auth_problem = true
 theme = "system"            # "system" | <theme id>  (ids owned by prm-theme)
 theme_dark = "graphite"
 theme_light = "vellum"
-density = "compact"         # "compact" | "comfortable"
 font_scale = 1.0            # 0.75..=1.5
 animations = "auto"         # "auto" | "on" | "off"   (auto: off on software renderer/remote session)
 renderer = "auto"           # "auto" | "glow" | "wgpu"

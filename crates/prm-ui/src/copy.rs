@@ -185,7 +185,6 @@ pub(crate) const TEST_SENT: &str = "Test notification sent.";
 pub(crate) const PAUSE_HOUR: &str = "Pause for 1 hour";
 pub(crate) const RESUME: &str = "Resume";
 pub(crate) const THEME: &str = "Theme";
-pub(crate) const DENSITY: &str = "Density";
 pub(crate) const ANIMATIONS: &str = "Animations";
 pub(crate) const ANIMATIONS_HELP: &str = "Automatic turns animations off over Remote Desktop, with software rendering, and when Windows animations are off.";
 pub(crate) const LOW_POWER: &str = "Low-power mode";

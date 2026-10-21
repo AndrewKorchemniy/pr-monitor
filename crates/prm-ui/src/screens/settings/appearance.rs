@@ -1,10 +1,10 @@
-//! Appearance: theme (previewed live), density, text size, animations, low power, renderer,
+//! Appearance: theme (previewed live), text size, animations, low power, renderer,
 //! and helpers for writing your own theme.
 
 use eframe::egui;
 use prm_config::{
     Config, limits,
-    schema::{Density, RendererPref, Tristate},
+    schema::{RendererPref, Tristate},
 };
 use prm_theme::registry::SYSTEM;
 
@@ -29,10 +29,6 @@ const RENDERERS: [(RendererPref, &str); 3] = [
     (RendererPref::Auto, "Automatic"),
     (RendererPref::Glow, "OpenGL"),
     (RendererPref::Wgpu, "Direct3D"),
-];
-const DENSITIES: [(Density, &str); 2] = [
-    (Density::Compact, "Compact"),
-    (Density::Comfortable, "Comfortable"),
 ];
 
 fn theme_name<'a>(env: &'a SettingsEnv<'_>, id: &'a str) -> &'a str {
@@ -66,10 +62,6 @@ pub(crate) fn page(
         issues(ui, &theme, &env.theme_issues);
     });
     section(ui, &theme, copy::SECTION_LAYOUT, None, |ui| {
-        setting_row(ui, &theme, (copy::DENSITY, None), |ui| {
-            controls::segmented(ui, &theme, &mut prefs.density, &DENSITIES);
-        });
-        controls::row_divider(ui, &theme);
         setting_row(ui, &theme, (copy::TEXT_SIZE, None), |ui| {
             let spec = SliderSpec {
                 id: egui::Id::unique("font_scale"),

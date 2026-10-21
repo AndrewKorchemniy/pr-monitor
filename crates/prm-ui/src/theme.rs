@@ -11,10 +11,10 @@ use std::{
 };
 
 use eframe::egui::{self, Color32, FontId};
-use prm_config::{UiPrefs, schema::Density as ConfigDensity};
+use prm_config::UiPrefs;
 use prm_theme::{
-    Appearance, Density, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection,
-    Tokens, TypeRole, registry::resolve,
+    Appearance, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection, Tokens,
+    TypeRole, registry::resolve,
 };
 
 use crate::{deps::ChromeColors, render::policy::RenderPolicy};
@@ -111,7 +111,6 @@ pub(crate) fn fallback() -> Arc<UiTheme> {
                 theme: prm_theme::registry::DEFAULT_DARK.into(),
                 dark: prm_theme::registry::DEFAULT_DARK.into(),
                 light: prm_theme::registry::DEFAULT_LIGHT.into(),
-                density: Density::Compact,
             };
             let set = resolve(&registry, &selection);
             let policy = RenderPolicy {
@@ -136,10 +135,6 @@ pub(crate) fn selection_from(prefs: &UiPrefs) -> ThemeSelection {
         theme: prefs.theme.clone(),
         dark: prefs.theme_dark.clone(),
         light: prefs.theme_light.clone(),
-        density: match prefs.density {
-            ConfigDensity::Comfortable => Density::Comfortable,
-            ConfigDensity::Compact => Density::Compact,
-        },
     }
 }
 

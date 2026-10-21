@@ -20,7 +20,7 @@ fn palette_keys_unique_and_dotted() {
 #[test]
 fn palette_get_set_by_key() {
     let tokens = crate::ThemeRegistry::builtin()
-        .tokens("graphite", crate::Density::Compact)
+        .tokens("graphite")
         .unwrap()
         .0;
     let mut palette = tokens.palette;

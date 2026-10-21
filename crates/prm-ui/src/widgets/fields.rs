@@ -248,7 +248,7 @@ fn clear_button(ui: &mut egui::Ui, theme: &UiTheme, rect: Rect, id: egui::Id) ->
     } else {
         theme.colors.text_secondary
     };
-    icons::paint(ui.painter(), rect.shrink(6.0), Icon::Cross, color);
+    icons::paint(ui.painter(), rect.shrink(4.0), Icon::Cross, color);
     let name = crate::copy::CLEAR_FILTER;
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     response.on_hover_text(name)

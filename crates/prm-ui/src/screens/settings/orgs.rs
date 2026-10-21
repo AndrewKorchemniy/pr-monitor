@@ -117,7 +117,7 @@ fn org_tabs(ui: &mut egui::Ui, cx: &FrameCx<'_>, st: &mut SettingsState) {
     let line = row.response.rect;
     let stroke = egui::Stroke::new(
         theme.tokens.metrics.stroke.hairline,
-        theme.colors.border_subtle,
+        theme.colors.border_default,
     );
     ui.painter()
         .hline(line.left()..=ui.max_rect().right(), line.bottom(), stroke);

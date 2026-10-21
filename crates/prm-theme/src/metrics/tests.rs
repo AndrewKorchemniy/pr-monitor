@@ -1,9 +1,11 @@
 use super::*;
 
 #[test]
-fn density_metrics_rows_24_30() {
-    assert!((Density::Compact.metrics().row_height - 24.0).abs() < f32::EPSILON);
-    assert!((Density::Comfortable.metrics().row_height - 30.0).abs() < f32::EPSILON);
+fn row_metrics_are_fixed() {
+    let metrics = Metrics::new(&MetricTweaks::default());
+    assert_eq!(metrics.row, ROW);
+    assert!((ROW.row_height - 30.0).abs() < f32::EPSILON);
+    assert!((ROW.statusbar_height - 32.0).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -12,7 +14,7 @@ fn radius_scale_zero_is_square() {
         radius_scale: 0.0,
         stripes: false,
     };
-    let metrics = Metrics::new(Density::Compact, &tweaks);
+    let metrics = Metrics::new(&tweaks);
     assert_eq!(
         metrics.radius,
         Radius {
@@ -27,7 +29,7 @@ fn radius_scale_zero_is_square() {
 
 #[test]
 fn radius_scale_one_is_base() {
-    let metrics = Metrics::new(Density::Comfortable, &MetricTweaks::default());
+    let metrics = Metrics::new(&MetricTweaks::default());
     assert_eq!(
         metrics.radius,
         Radius {

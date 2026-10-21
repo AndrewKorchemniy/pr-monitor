@@ -137,6 +137,7 @@ pub(crate) fn env() -> SettingsEnv<'static> {
             ("graphite".to_owned(), "Graphite".to_owned()),
             ("vellum".to_owned(), "Vellum".to_owned()),
             ("cyanotype".to_owned(), "Cyanotype".to_owned()),
+            ("paper".to_owned(), "Paper".to_owned()),
         ],
         themes_dir: std::path::PathBuf::from("themes"),
         theme_issues: Vec::new(),

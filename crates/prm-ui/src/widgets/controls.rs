@@ -422,7 +422,7 @@ pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> eg
     let side = theme.control_height() - theme.tokens.metrics.space.xs;
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
     ghost_fill(ui, theme, rect, &response);
-    let glyph = Rect::from_center_size(rect.center(), vec2(12.0, 12.0));
+    let glyph = Rect::from_center_size(rect.center(), vec2(14.0, 14.0));
     icons::paint(
         ui.painter(),
         glyph,
