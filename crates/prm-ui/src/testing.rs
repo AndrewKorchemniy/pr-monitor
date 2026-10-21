@@ -139,6 +139,7 @@ pub(crate) fn org_status(name: &str, auth: prm_service::AuthStateView) -> prm_se
         catalog_error: None,
         last_error: None,
         pat_expires_on: None,
+        loading_more: 0,
     }
 }
 

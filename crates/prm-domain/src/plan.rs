@@ -137,8 +137,10 @@ pub struct ThreadReads {
 }
 
 /// Spreads thread reads over refreshes when more PRs are tracked than `budget`, so tracking
-/// everyone in a busy project costs a bounded number of requests per refresh. The signed-in
-/// user's PRs (as author or reviewer) go first, then new PRs, then the least recently read.
+/// everyone in a busy project costs a bounded number of requests per refresh. New PRs go
+/// first, so every refresh shows more of them however many known PRs there are; known PRs
+/// follow, least recently read first. In both groups the signed-in user's PRs (as author or
+/// reviewer) lead.
 pub fn plan_thread_reads(
     mut prs: Vec<PullRequest>,
     prev: &BTreeMap<PrKey, PrRecord>,
@@ -151,10 +153,14 @@ pub fn plan_thread_reads(
             ..ThreadReads::default()
         };
     }
-    // why: `None` (never read) sorts before any time, so new PRs lead their tier.
     prs.sort_by_cached_key(|pr| {
         let last_read = prev.get(&pr.key).map(|record| record.fetched_at);
-        (!involves(pr, me), last_read, pr.key.clone())
+        (
+            last_read.is_some(),
+            !involves(pr, me),
+            last_read,
+            pr.key.clone(),
+        )
     });
     let over = prs.split_off(budget);
     let (reuse, deferred): (Vec<_>, Vec<_>) =

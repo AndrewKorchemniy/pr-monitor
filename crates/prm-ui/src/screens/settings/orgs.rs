@@ -298,25 +298,29 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState)
 }
 
 /// A title (and an optional muted line) on the left, a button on the right; true when clicked.
+/// The button goes first, so the text wraps short of it in a narrow window.
 fn row_with_button(
     ui: &mut egui::Ui,
     theme: &UiTheme,
-    (title, detail): (&str, Option<&str>),
+    text: (&str, Option<&str>),
     button: &str,
 ) -> bool {
     let mut clicked = false;
     ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
-            if let Some(detail) = detail.filter(|d| !d.is_empty()) {
-                widgets::muted(ui, theme, detail);
-            }
-        });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             clicked = ui.button(button).clicked();
+            let column = egui::Layout::top_down(egui::Align::Min);
+            ui.with_layout(column, |ui| title_and_detail(ui, theme, text));
         });
     });
     clicked
+}
+
+fn title_and_detail(ui: &mut egui::Ui, theme: &UiTheme, (title, detail): (&str, Option<&str>)) {
+    ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
+    if let Some(detail) = detail.filter(|d| !d.is_empty()) {
+        widgets::muted(ui, theme, detail);
+    }
 }
 
 /// Asks for the catalog once per org per settings visit.
@@ -332,28 +336,28 @@ fn request_catalog(ui: &egui::Ui, cx: &mut FrameCx<'_>, org: &OrgId, force: bool
     }
 }
 
-/// The people lists the People section shows, with their titles and help.
-const PEOPLE_LISTS: [(Editor, &str, Option<&str>); 3] = [
-    (
-        Editor::Tracked,
-        copy::TRACK_FROM,
-        Some(copy::TRACK_FROM_HELP),
-    ),
-    (
-        Editor::Reviewers,
-        copy::REVIEWERS_COUNT,
-        Some(copy::REVIEWERS_HELP),
-    ),
-    (Editor::Ignored, copy::IGNORE_FROM, Some(copy::IGNORE_HELP)),
-];
+/// The people lists the People section shows, in order.
+const PEOPLE_LISTS: [Editor; 3] = [Editor::Tracked, Editor::Reviewers, Editor::Ignored];
+
+/// A people list's title and help, in the People section and in its edit dialog.
+const fn list_copy(editor: Editor) -> (&'static str, &'static str) {
+    match editor {
+        Editor::Reviewers => (copy::REVIEWERS_COUNT, copy::REVIEWERS_HELP),
+        Editor::Ignored => (copy::IGNORE_FROM, copy::IGNORE_HELP),
+        Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
+            (copy::TRACK_FROM, copy::TRACK_FROM_HELP)
+        }
+    }
+}
 
 fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
     let org = &mut st.draft.orgs[st.org];
-    for (index, (editor, title, help)) in PEOPLE_LISTS.into_iter().enumerate() {
+    for (index, editor) in PEOPLE_LISTS.into_iter().enumerate() {
         if index > 0 {
             controls::row_divider(ui, theme);
         }
-        if row_with_button(ui, theme, (title, help), copy::EDIT) {
+        let (title, help) = list_copy(editor);
+        if row_with_button(ui, theme, (title, Some(help)), copy::EDIT) {
             st.editing = Some(editor);
         }
         let when_empty = empty_list_meaning(editor, org.include_me);
@@ -557,13 +561,14 @@ fn people_dialog(
         return ModalOutcome::Dismissed;
     };
     let id = saved.then(|| org.org_id().cloned()).flatten();
-    let (title, picker) = match editor {
-        Editor::Reviewers => (copy::REVIEWERS_COUNT, &mut st.pickers.reviewers),
-        Editor::Ignored => (copy::IGNORE_FROM, &mut st.pickers.ignored),
+    let picker = match editor {
+        Editor::Reviewers => &mut st.pickers.reviewers,
+        Editor::Ignored => &mut st.pickers.ignored,
         Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
-            (copy::TRACK_FROM, &mut st.pickers.tracked)
+            &mut st.pickers.tracked
         }
     };
+    let (title, help) = list_copy(editor);
     let org_label = org.display_label().to_string();
     let spec = ModalSpec {
         id: "edit_people",
@@ -575,6 +580,10 @@ fn people_dialog(
     };
     let list = people_list(org, editor);
     let outcome = modal::modal(ctx, &theme, &spec, |ui| {
+        // why: the dialog covers the section's help, and emptying the tracked list here
+        // changes what it means.
+        widgets::muted(ui, &theme, help);
+        ui.add_space(theme.tokens.metrics.space.sm);
         people_picker(ui, cx, picker, id.as_ref(), list);
     });
     if outcome != ModalOutcome::Open {

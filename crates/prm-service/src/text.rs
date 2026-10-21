@@ -43,6 +43,13 @@ pub(crate) fn pat_expiry(org: &str, days: i64) -> String {
     }
 }
 
+pub(crate) fn loading_more(org: &str, count: u32) -> String {
+    match count {
+        1 => format!("Loading 1 more pull request in {org}"),
+        n => format!("Loading {n} more pull requests in {org}"),
+    }
+}
+
 pub(crate) fn degraded(failed_queries: usize) -> String {
     match failed_queries {
         1 => "1 query failed; some PRs may be out of date".to_owned(),

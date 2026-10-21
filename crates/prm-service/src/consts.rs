@@ -13,6 +13,10 @@ pub const THREAD_CONCURRENCY: usize = 6;
 /// at `THREAD_CONCURRENCY`, so even 2 s requests leave most of `REFRESH_DEADLINE` for listing
 /// and lookups.
 pub const THREAD_READ_BUDGET: usize = 150;
+/// While the budget holds new PRs back, the next refresh comes this soon (or at the interval,
+/// if shorter), stretched like the interval when rate-limit headroom is low. Each one still
+/// reads at most `THREAD_READ_BUDGET` threads, so 500 new PRs are all in within about 2 min.
+pub const CATCH_UP_DELAY: Duration = Duration::from_secs(30);
 /// Vanished PRs looked up by id per refresh; the rest are carried over as stale.
 pub const VANISHED_RESOLVE_CAP: usize = 25;
 /// Projects and repositories are refetched after this long.

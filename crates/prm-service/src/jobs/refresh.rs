@@ -309,6 +309,25 @@ struct Gathered {
 }
 
 impl Gathered {
+    /// A PR with its threads; their authors join the people picker.
+    fn add(&mut self, record: PrRecord) {
+        self.commenters.extend(commenters(&record.threads));
+        self.records.insert(record.pr.key.clone(), record);
+    }
+
+    /// A known PR keeps its earlier threads, marked stale. A new one is left out until a read
+    /// succeeds: shown without threads, all its comments would read as new later, and it would
+    /// never get its `NewPr`.
+    fn read_failed(&mut self, ctx: &RefreshCtx, pr: PullRequest, error: &AdoError) {
+        let Some(earlier) = ctx.prev.get(&pr.key) else {
+            tracing::debug!(org = %ctx.org, pr = %pr.key, %error, "threads failed; held back");
+            return;
+        };
+        tracing::debug!(org = %ctx.org, pr = %pr.key, %error, "threads failed; reusing previous");
+        self.stale.insert(pr.key.clone());
+        self.add(with_earlier_threads(earlier, pr));
+    }
+
     /// Keeps the previous record, marked stale (it produces no events).
     fn carry(&mut self, record: &PrRecord) {
         let key = record.pr.key.clone();
@@ -332,16 +351,17 @@ async fn gather(ctx: &RefreshCtx, tracked: Vec<PullRequest>, me: Vsid) -> Gather
         );
     }
     let mut gathered = fetch_threads(ctx, plan.read).await;
-    let now = ctx.clock.now();
     for pr in plan.reuse {
-        let record = with_earlier_threads(&ctx.prev, pr, now);
-        gathered.records.insert(record.pr.key.clone(), record);
+        if let Some(earlier) = ctx.prev.get(&pr.key) {
+            gathered.add(with_earlier_threads(earlier, pr));
+        }
     }
     gathered.deferred = plan.deferred;
     gathered
 }
 
-/// Threads per PR. A failed fetch reuses the previous threads and marks the PR stale.
+/// Threads per PR. A failed fetch reuses the previous threads and marks the PR stale; a new
+/// PR whose first read fails is left out until a later read succeeds.
 async fn fetch_threads(ctx: &RefreshCtx, prs: Vec<PullRequest>) -> Gathered {
     let total = prs.len();
     let now = ctx.clock.now();
@@ -360,39 +380,25 @@ async fn fetch_threads(ctx: &RefreshCtx, prs: Vec<PullRequest>) -> Gathered {
     while let Some((pr, result)) = results.next().await {
         done += 1;
         ctx.report(RefreshPhase::Threads, done, total);
-        let key = pr.key.clone();
-        let record = match result {
-            Ok(threads) => PrRecord {
+        match result {
+            Ok(threads) => out.add(PrRecord {
                 pr,
                 threads,
                 fetched_at: now,
-            },
-            Err(error) => {
-                tracing::debug!(org = %ctx.org, pr = %key, %error, "threads failed; reusing previous");
-                out.stale.insert(key.clone());
-                with_earlier_threads(&ctx.prev, pr, now)
-            }
-        };
-        out.commenters.extend(commenters(&record.threads));
-        out.records.insert(key, record);
+            }),
+            Err(error) => out.read_failed(ctx, pr, &error),
+        }
     }
     out
 }
 
 /// `pr` with the threads read before and when they were read, so it stays first in line for
-/// the next read; a PR never read gets none.
-fn with_earlier_threads(
-    prev: &BTreeMap<PrKey, PrRecord>,
-    pr: PullRequest,
-    now: Timestamp,
-) -> PrRecord {
-    let (threads, fetched_at) = prev
-        .get(&pr.key)
-        .map_or((Vec::new(), now), |r| (r.threads.clone(), r.fetched_at));
+/// the next read among the known PRs.
+fn with_earlier_threads(earlier: &PrRecord, pr: PullRequest) -> PrRecord {
     PrRecord {
         pr,
-        threads,
-        fetched_at,
+        threads: earlier.threads.clone(),
+        fetched_at: earlier.fetched_at,
     }
 }
 

@@ -181,7 +181,7 @@ impl Service {
         };
         org.live.last_error = None;
         after_success(
-            policy,
+            policy.with_backlog(org.data.loading_more),
             &mut org.live.schedule,
             now,
             rate.headroom(),

@@ -1,5 +1,5 @@
 //! First run: connect an organization, choose repositories, choose people. Each step edits a
-//! draft config that is applied when the user finishes (or skips).
+//! draft config that is applied when the user starts monitoring.
 
 use std::sync::Arc;
 

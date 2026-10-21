@@ -216,27 +216,53 @@ fn plan_thread_reads_within_budget_reads_all_in_order() {
     assert_eq!(reads.deferred, 0);
 }
 
-#[test]
-fn plan_thread_reads_over_budget_reads_mine_then_new_then_oldest() {
-    let mine_as_reviewer = PrBuilder::new(key("contoso", 11, 6))
+/// PR `n` by person 2, with the signed-in user (person 9) asked to review it.
+fn mine_to_review(n: i32) -> PullRequest {
+    PrBuilder::new(key("contoso", 11, n))
         .author(person(2, "B"))
         .reviewer(person(9, "Me"), 0)
-        .build();
+        .build()
+}
+
+#[test]
+fn plan_thread_reads_over_budget_reads_new_then_mine_then_oldest() {
     let prs = vec![
         by(1, 1),
         by(2, 2),
         by(3, 3),
         by(4, 4),
         by(5, 9),
-        mine_as_reviewer,
+        mine_to_review(6),
         by(7, 7),
+        by(8, 9),
     ];
-    // 1 and 2 were read recently, 3 long ago; 4 and 7 are new; 5 is mine and known.
-    let prev = read_before(&prs, &[(1, 50), (2, 40), (3, 10), (5, 60)]);
-    let reads = plan_thread_reads(prs, &prev, vsid(9), 4);
-    assert_eq!(numbers(&reads.read), vec![6, 5, 4, 7]);
+    // 1 and 2 were read recently, 3 long ago; 4, 6 and 7 are new; 5 and 8 are mine and known.
+    let prev = read_before(&prs, &[(1, 50), (2, 40), (3, 10), (5, 60), (8, 70)]);
+    let reads = plan_thread_reads(prs, &prev, vsid(9), 5);
+    assert_eq!(numbers(&reads.read), vec![6, 4, 7, 5, 8]);
     assert_eq!(numbers(&reads.reuse), vec![3, 2, 1]);
     assert_eq!(reads.deferred, 0);
+}
+
+/// Known PRs the user is involved in used to go before new PRs by anyone else. A policy that
+/// adds the user as a reviewer everywhere filled the budget with them on every refresh, so
+/// other people's new PRs never showed and a first load never finished.
+#[test]
+fn plan_thread_reads_new_prs_get_in_however_many_are_mine() {
+    let mut prs: Vec<PullRequest> = (1..=4).map(mine_to_review).collect();
+    prs.extend((5..=9).map(|n| by(n, 3)));
+    let mut prev = read_before(&prs, &[(1, 0), (2, 0), (3, 0), (4, 0)]);
+    let mut deferred = Vec::new();
+    for refresh in 1..=3 {
+        let reads = plan_thread_reads(prs.clone(), &prev, vsid(9), 3);
+        deferred.push(reads.deferred);
+        for pr in reads.read {
+            let mut known = record(pr, Vec::new());
+            known.fetched_at = ts(crate::testing::BASE_TIME_SECS + refresh * 100);
+            prev.insert(known.pr.key.clone(), known);
+        }
+    }
+    assert_eq!(deferred, vec![2, 0, 0], "5 new PRs, 3 reads per refresh");
 }
 
 #[test]

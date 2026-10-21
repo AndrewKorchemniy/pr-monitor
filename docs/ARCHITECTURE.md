@@ -52,9 +52,12 @@ UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread
    empty people list tracks every author in scope; "include my own pull requests" decides
    whether the signed-in user's PRs are among them (`OrgProfile::track_spec`).
 3. **Threads.** Fetch the threads of each tracked PR, at most `THREAD_READ_BUDGET` per
-   refresh. Beyond that the user's PRs (as author or reviewer) go first, then new ones, then
-   the least recently read; the rest keep their earlier threads, and new PRs that did not fit
-   wait for the next refresh (`plan_thread_reads`).
+   refresh. Beyond that new PRs go first, then the user's PRs (as author or reviewer), then
+   the least recently read (`plan_thread_reads`). The rest keep their earlier threads. New
+   PRs that did not fit, or whose read failed, wait for a later refresh, so a PR never shows
+   without its threads; while the budget holds some back, a banner says so and the next
+   refresh comes after `CATCH_UP_DELAY` instead of the interval. A first load or rebaseline
+   stays silent until the PRs the budget held back are in.
 4. **Classify.** Active comments beat Reviewed, which beats Needs review (`classify.rs`).
 5. **Diff** against the last snapshot: new PRs, votes, comments, pushes, closes.
 6. **Notify.** Plan toasts (budget per refresh, grouping, focus rules) and show them on the

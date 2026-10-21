@@ -64,23 +64,47 @@ fn no_rows_with_every_org_signed_out_asks_to_sign_in() {
 }
 
 /// An empty people list without "include me" used to read as "You're not tracking anyone
-/// yet", though it tracks everyone in the chosen repositories.
+/// yet", though it tracks everyone in the chosen repositories. Only when everyone is tracked,
+/// the user included, does the state stop offering to edit the people.
 #[test]
 fn no_rows_when_signed_in_is_no_active_prs_whoever_is_listed() {
     let mut everyone_but_me = watching_me();
     everyone_but_me.orgs[0].include_me = false;
-    for config in [watching_me(), everyone_but_me, Config::default()] {
+    let mut listed = watching_me();
+    let maya = prm_domain::Person::new(prm_domain::Vsid::from_u128(7), "Maya Patel");
+    listed.orgs[0].people.tracked_authors.push(maya);
+    let cases = [
+        (watching_me(), true),
+        (everyone_but_me, false),
+        (listed, false),
+    ];
+    for (config, everyone) in cases {
         let state = empty_state(
             vec![org_status("contoso", AuthStateView::SignedIn)],
             config.clone(),
         );
         assert_eq!(
             kind(&state, 0, "", StatusFilter::All, false),
-            Some(EmptyKind::NoActivePrs),
+            Some(EmptyKind::NoActivePrs { everyone }),
             "{:?}",
             config.orgs
         );
     }
+}
+
+/// With every organization's watching turned off, the empty state used to offer to edit the
+/// tracked people of "0 organizations".
+#[test]
+fn no_rows_with_every_org_turned_off_is_nothing_watched() {
+    let mut off = org_status("contoso", AuthStateView::Disabled);
+    off.enabled = false;
+    let mut config = watching_me();
+    config.orgs[0].enabled = false;
+    let state = empty_state(vec![off], config);
+    assert_eq!(
+        kind(&state, 0, "", StatusFilter::All, false),
+        Some(EmptyKind::NothingWatched)
+    );
 }
 
 #[test]

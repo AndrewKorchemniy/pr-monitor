@@ -3,19 +3,21 @@
 
 use std::{collections::BTreeSet, time::Duration};
 
-use prm_ado::testing::ApiCall;
+use prm_ado::{AdoError, testing::ApiCall};
+use prm_config::OrgPersisted;
 use prm_domain::{
     Person, PrKey,
     diff::ChangeKind,
     model::{PrState, PullRequest},
-    testing::{PrBuilder, key, org, person},
+    testing::{PrBuilder, ThreadBuilder, key, org, person, record},
     tombstone::CloseOutcome,
 };
+use tokio::time::Instant;
 
-use super::support::{CONTOSO, ann, bob, change_kinds, me, pr, refreshed, setup};
+use super::support::{CONTOSO, ann, bob, change_kinds, me, pr, refreshed, rev, setup};
 use crate::{
     command::Command,
-    consts::THREAD_READ_BUDGET,
+    consts::{CATCH_UP_DELAY, THREAD_READ_BUDGET},
     state::AppState,
     testing::{HarnessSetup, ServiceHarness},
 };
@@ -108,9 +110,19 @@ fn crowd(count: usize) -> Vec<PullRequest> {
         .collect()
 }
 
+fn loading_banners(state: &AppState) -> Vec<String> {
+    state
+        .banners
+        .iter()
+        .filter(|b| b.id.starts_with("loading:"))
+        .map(|b| b.title.to_string())
+        .collect()
+}
+
 /// A project with more active PRs than the read budget never reads more threads than the
-/// budget in one refresh. The first load fills in over two refreshes without a toast, and
-/// only a PR opened afterwards is news.
+/// budget in one refresh. The first load fills in on a catch-up refresh that comes on its
+/// own, well before the interval, without a toast; a banner says more are coming meanwhile.
+/// Only a PR opened afterwards is news.
 #[tokio::test(start_paused = true)]
 async fn large_project_reads_threads_within_the_budget() {
     let count = THREAD_READ_BUDGET + 10;
@@ -121,18 +133,26 @@ async fn large_project_reads_threads_within_the_budget() {
     let budget = u32::try_from(THREAD_READ_BUDGET).unwrap();
 
     let state = refreshed(&mut h, CONTOSO, 1).await;
+    let first = Instant::now();
     assert_eq!(api.calls(ApiCall::Threads), budget);
     assert_eq!(
         state.rows.len(),
         THREAD_READ_BUDGET,
         "10 PRs wait their turn"
     );
+    let banners = loading_banners(&state);
+    assert_eq!(banners, vec!["Loading 10 more pull requests in contoso"]);
 
-    h.send(Command::RefreshNow);
     let state = refreshed(&mut h, CONTOSO, 2).await;
+    assert!(
+        first.elapsed() <= 2 * CATCH_UP_DELAY,
+        "{:?}",
+        first.elapsed()
+    );
     assert_eq!(api.calls(ApiCall::Threads), 2 * budget);
     assert_eq!(state.rows.len(), count);
     assert!(state.rows.iter().all(|r| !r.stale && !r.unread));
+    assert_eq!(loading_banners(&state), Vec::<String>::new());
 
     let opened = pr_by(9_999, ann());
     let opened_key: PrKey = opened.key.clone();
@@ -142,5 +162,61 @@ async fn large_project_reads_threads_within_the_budget() {
     let state = refreshed(&mut h, CONTOSO, 3).await;
     assert_eq!(state.rows.len(), count + 1);
     assert_eq!(change_kinds(&h), vec![(opened_key, ChangeKind::NewPr)]);
+    h.stop().await;
+}
+
+/// A new PR whose first threads read failed used to show with no threads and no `NewPr`;
+/// once read, all its comments toasted as new.
+#[tokio::test(start_paused = true)]
+async fn new_pr_whose_threads_fail_waits_for_a_read() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    let api = h.api(&org(CONTOSO));
+    let opened = pr(CONTOSO, 2);
+    let thread = ThreadBuilder::human(1).comment(rev()).build();
+    api.update(|o| {
+        o.threads.insert(opened.key.clone(), vec![thread]);
+        o.prs.push(opened.clone());
+    });
+    api.fail(ApiCall::Threads, AdoError::Network("flaky".into()));
+
+    h.send(Command::RefreshNow);
+    let state = refreshed(&mut h, CONTOSO, 2).await;
+    assert_eq!(row_numbers(&state), BTreeSet::from([1]), "held back");
+
+    api.clear_failures();
+    h.advance(Duration::from_secs(3)).await;
+    h.send(Command::RefreshNow);
+    let state = refreshed(&mut h, CONTOSO, 3).await;
+
+    let row = state.row(&opened.key).unwrap();
+    assert_eq!(row.active_threads, 1);
+    assert_eq!(change_kinds(&h), vec![(opened.key, ChangeKind::NewPr)]);
+    h.stop().await;
+}
+
+/// state.json from before an empty people list meant everyone: the baseline holds only the
+/// user's own PRs. The first refresh after the upgrade used to toast every colleague's PR.
+#[tokio::test(start_paused = true)]
+async fn upgrade_with_an_empty_people_list_rebaselines_silently() {
+    let mine = pr_by(3, me());
+    let mut start = everyone_setup(true);
+    start.persisted.orgs.insert(
+        org(CONTOSO),
+        OrgPersisted {
+            baseline: true,
+            me: Some(me()),
+            records: [(mine.key.clone(), record(mine, Vec::new()))].into(),
+            ..OrgPersisted::default()
+        },
+    );
+    let mut h = ServiceHarness::start(start);
+
+    let state = refreshed(&mut h, CONTOSO, 1).await;
+    h.settle().await;
+
+    assert_eq!(row_numbers(&state), BTreeSet::from([1, 2, 3]));
+    assert_eq!(change_kinds(&h), Vec::new());
+    assert_eq!(h.notifier.ops(), Vec::new());
     h.stop().await;
 }

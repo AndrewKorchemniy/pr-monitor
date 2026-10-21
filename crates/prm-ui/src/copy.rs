@@ -62,8 +62,13 @@ pub(crate) const EMPTY_SIGNED_OUT: &str = "You're signed out.";
 pub(crate) const EMPTY_SIGNED_OUT_BODY: &str =
     "Sign in to an organization to see its pull requests.";
 pub(crate) const EMPTY_SIGN_IN: &str = "Sign in";
+pub(crate) const EMPTY_NOTHING_WATCHED: &str = "You're not watching any organizations.";
+pub(crate) const EMPTY_NOTHING_WATCHED_BODY: &str =
+    "Turn on watching for an organization in Settings.";
+pub(crate) const EMPTY_OPEN_ORGS: &str = "Organization settings";
 pub(crate) const EMPTY_NO_PRS: &str = "No active pull requests.";
 pub(crate) const EMPTY_EDIT_PEOPLE: &str = "Edit tracked people";
+pub(crate) const EMPTY_CHOOSE_REPOS: &str = "Choose repositories";
 pub(crate) const CLEAR_FILTER: &str = "Clear filter";
 pub(crate) const SHOW_ALL: &str = "Show all";
 pub(crate) const NOTHING_CHANGED: &str = "Nothing changed since you last looked.";
@@ -334,6 +339,11 @@ pub(crate) fn no_prs_body(scope: &str) -> String {
     format!("Nobody you track has an open pull request in {scope}.")
 }
 
+/// When everyone is tracked, the user included.
+pub(crate) fn no_prs_anywhere_body(scope: &str) -> String {
+    format!("Nobody has an open pull request in {scope}.")
+}
+
 pub(crate) fn no_match(query: &str) -> String {
     format!("No pull requests match “{query}”.")
 }
@@ -522,6 +532,8 @@ pub(crate) const ALL: &[&str] = &[
     SERVICE_STOPPED,
     EMPTY_LOADING,
     EMPTY_SIGNED_OUT,
+    EMPTY_NOTHING_WATCHED,
+    EMPTY_NOTHING_WATCHED_BODY,
     EMPTY_NO_PRS,
     NOTHING_CHANGED,
     NO_ORGS,
