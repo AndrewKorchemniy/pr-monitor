@@ -19,6 +19,7 @@ pub enum SecretBackendPref {
 }
 
 impl SecretBackendPref {
+    /// Never fails: unknown or missing values mean `Auto`.
     pub fn parse(value: Option<&str>) -> Self {
         match value.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
             Some("keyring") => Self::Keyring,
@@ -29,6 +30,7 @@ impl SecretBackendPref {
     }
 }
 
+/// The secret backend chosen at startup (`secret_store`); fixed for the process lifetime.
 pub enum PlatformSecretStore {
     Keyring(KeyringSecretStore),
     #[cfg(windows)]
@@ -76,13 +78,13 @@ impl SecretStore for PlatformSecretStore {
 }
 
 /// Never fails: a backend that cannot start degrades to memory (secrets will not persist).
-pub fn secret_store(root: &Path, pref: SecretBackendPref) -> PlatformSecretStore {
+pub(crate) fn secret_store(root: &Path, pref: SecretBackendPref) -> PlatformSecretStore {
     if pref == SecretBackendPref::Memory {
         return PlatformSecretStore::Memory(InMemorySecretStore::default());
     }
     #[cfg(windows)]
     if pref == SecretBackendPref::Dpapi {
-        let dir = root.join("secrets");
+        let dir = root.join(crate::shared::secret_names::SECRETS_DIR_NAME);
         return PlatformSecretStore::Dpapi(crate::win::dpapi::DpapiFileStore::new(dir));
     }
     let _ = root;

@@ -10,16 +10,19 @@ use std::{
 use interprocess::local_socket::{Stream, traits::Stream as _};
 
 use crate::shared::{
-    handoff_codec::{HandoffReply, HandoffRequest, MAX_FRAME, decode_reply, encode_request},
+    handoff_codec::{HandoffReply, HandoffRequest, READ_LIMIT, decode_reply, encode_request},
     instance_key::InstanceKey,
 };
 
 const CONNECT_RETRY: Duration = Duration::from_millis(100);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// What happened to a forwarded request; the second launch exits on every outcome but
+/// `NoPrimary` (which means the primary is quitting: take over).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ForwardOutcome {
     Delivered,
+    /// The primary refused the request; the reason is user-facing copy.
     Rejected(String),
     /// Nobody is listening (the primary exited or never started).
     NoPrimary,
@@ -75,11 +78,10 @@ fn exchange(stream: &Stream, frame: &[u8]) -> Option<ForwardOutcome> {
     let mut writer = stream;
     writer.write_all(frame).ok()?;
     let mut reader = BufReader::new(stream);
-    let limit = u64::try_from(MAX_FRAME + 1).unwrap_or(u64::MAX);
     let mut reply = Vec::with_capacity(64);
     reader
         .by_ref()
-        .take(limit)
+        .take(READ_LIMIT)
         .read_until(b'\n', &mut reply)
         .ok()?;
     Some(match decode_reply(&reply).ok()? {

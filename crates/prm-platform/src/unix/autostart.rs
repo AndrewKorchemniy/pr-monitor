@@ -1,27 +1,32 @@
-//! Launch at login via a `LaunchAgent` (macOS) or an XDG autostart entry (Linux).
+//! Launch at login via a `LaunchAgent` (macOS) or an XDG autostart entry (Linux). An isolated
+//! data root has its own entry, which repeats `--home`.
 
 use std::path::Path;
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
-use prm_domain::ports::{PortError, PortErrorKind};
+use prm_domain::ports::PortError;
 use prm_service::ports::{Autostart, AutostartState};
+
+use crate::common::failed;
 
 pub(crate) struct UnixAutostart {
     launcher: AutoLaunch,
 }
 
-fn failed(error: impl std::fmt::Display) -> PortError {
-    PortError::new(PortErrorKind::Failed, error.to_string())
-}
-
 impl UnixAutostart {
-    pub(crate) fn new(exe: &Path) -> Result<Self, String> {
+    /// `name` is the entry name (`autostart_entry_name`); `home` the `--home` override, if any.
+    pub(crate) fn new(exe: &Path, name: &str, home: Option<&Path>) -> Result<Self, PortError> {
+        let mut args = vec!["--minimized".to_owned()];
+        if let Some(home) = home {
+            args.push("--home".to_owned());
+            args.push(home.to_string_lossy().into_owned());
+        }
         let launcher = AutoLaunchBuilder::new()
-            .set_app_name(prm_domain::app::APP_ID)
+            .set_app_name(name)
             .set_app_path(&exe.to_string_lossy())
-            .set_args(&["--minimized"])
+            .set_args(args.as_slice())
             .build()
-            .map_err(|e| e.to_string())?;
+            .map_err(failed)?;
         Ok(Self { launcher })
     }
 }

@@ -1,10 +1,11 @@
 //! Shell identity at startup: AUMID, toast identity, URL protocol, the icon file. Windows only;
-//! other platforms report everything as skipped.
+//! other platforms report everything as skipped. Failures are logged where they happen.
 
 use std::path::Path;
 
 use crate::shared::registration::RegistrationScope;
 
+/// What `ensure_shell_identity` registers, and for which exe.
 pub struct RegistrationSpec<'a> {
     pub exe: &'a Path,
     /// Where the toast icon is written (under the data root).
@@ -13,33 +14,26 @@ pub struct RegistrationSpec<'a> {
     pub scope: RegistrationScope,
 }
 
+/// Whether toasts can show under our own name. `Failed` makes the notifier fall back to
+/// another app's identity, so toasts still appear.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum IdentityStatus {
+    /// Not attempted (another OS, or already registered by the installed app).
     #[default]
     Skipped,
-    Registered {
-        changed: bool,
-    },
+    Registered,
     Failed,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct RegistrationReport {
-    pub process_aumid_set: bool,
-    pub toast_identity: IdentityStatus,
-    pub protocol: IdentityStatus,
-    pub icon_written: bool,
-    pub errors: Vec<String>,
-}
-
 /// Synchronous (about a millisecond of registry work); call before any window exists.
-pub fn ensure_shell_identity(spec: &RegistrationSpec<'_>) -> RegistrationReport {
+/// Returns the toast identity's status; every failure is logged.
+pub fn ensure_shell_identity(spec: &RegistrationSpec<'_>) -> IdentityStatus {
     #[cfg(windows)]
-    let report = crate::win::registration::ensure(spec);
+    let status = crate::win::registration::ensure(spec);
     #[cfg(not(windows))]
-    let report = {
+    let status = {
         let _ = spec;
-        RegistrationReport::default()
+        IdentityStatus::Skipped
     };
-    report
+    status
 }

@@ -33,7 +33,7 @@ fn router() -> (ActivationRouter, Arc<AtomicBool>) {
 #[test]
 fn activations_before_the_service_are_replayed_in_order() {
     let (router, _) = router();
-    router.activate(Activation::Show);
+    router.activate(HandoffRequest::Show);
     router.activate_raw("prmonitor://refresh");
     let recorder = Arc::new(Recorder::default());
     router.attach(Arc::clone(&recorder) as Arc<dyn CommandSink>);
@@ -41,7 +41,7 @@ fn activations_before_the_service_are_replayed_in_order() {
         recorder.taken(),
         ["Activate(Show { key: None })", "Activate(Refresh)"]
     );
-    router.activate(Activation::Show);
+    router.activate(HandoffRequest::Show);
     assert_eq!(
         recorder.taken().len(),
         1,
@@ -53,7 +53,7 @@ fn activations_before_the_service_are_replayed_in_order() {
 fn the_buffer_keeps_only_the_newest() {
     let (router, _) = router();
     for _ in 0..(BUFFER + 4) {
-        router.activate(Activation::Show);
+        router.activate(HandoffRequest::Show);
     }
     router.activate_raw("prmonitor://refresh");
     let recorder = Arc::new(Recorder::default());
@@ -68,7 +68,7 @@ fn quit_sets_the_flag_instead_of_sending() {
     let (router, quit) = router();
     let recorder = Arc::new(Recorder::default());
     router.attach(Arc::clone(&recorder) as Arc<dyn CommandSink>);
-    router.activate(Activation::Quit);
+    router.activate(HandoffRequest::Quit);
     assert!(quit.load(Ordering::Relaxed));
     assert!(recorder.taken().is_empty(), "nothing is sent for quit");
 }

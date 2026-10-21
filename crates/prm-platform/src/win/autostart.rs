@@ -14,9 +14,26 @@ use crate::shared::run_command::{
 const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const APPROVED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 
-/// `Key::open` is read-only; deleting a value needs write access.
-fn open_writable(path: &str) -> windows_registry::Result<windows_registry::Key> {
-    CURRENT_USER.options().read().write().open(path)
+/// Deletes one HKCU value; a missing key or value counts as removed. (`Key::open` is
+/// read-only, and deleting a value needs write access.)
+fn remove_value(path: &str, name: &str) -> Result<(), PortError> {
+    let removed = CURRENT_USER
+        .options()
+        .read()
+        .write()
+        .open(path)
+        .and_then(|key| key.remove_value(name));
+    match removed {
+        Ok(()) => Ok(()),
+        Err(error) if is_not_found(&error) => Ok(()),
+        Err(error) => Err(port_error(&error)),
+    }
+}
+
+/// Removes the `Run` value and its approval flag (uninstall); missing ones count as removed.
+pub(crate) fn remove_run_values(value_name: &str) -> Result<(), PortError> {
+    remove_value(RUN, value_name)?;
+    remove_value(APPROVED, value_name)
 }
 
 pub(crate) struct WinAutostart {
@@ -34,6 +51,14 @@ impl WinAutostart {
         }
     }
 
+    /// The command line in our `Run` value, if there is one.
+    fn run_command(&self) -> Option<String> {
+        CURRENT_USER
+            .open(RUN)
+            .and_then(|key| key.get_string(&self.value_name))
+            .ok()
+    }
+
     fn approval(&self) -> Option<Vec<u8>> {
         CURRENT_USER
             .open(APPROVED)
@@ -44,10 +69,7 @@ impl WinAutostart {
 
     /// The Run value points at another copy of the exe: rewrite it. `true` when it changed.
     pub(crate) fn heal_path(&self) -> Result<bool, PortError> {
-        let Ok(command) = CURRENT_USER
-            .open(RUN)
-            .and_then(|key| key.get_string(&self.value_name))
-        else {
+        let Some(command) = self.run_command() else {
             return Ok(false);
         };
         if parse_run_command(&command).is_some_and(|exe| exe == self.exe) {
@@ -64,28 +86,11 @@ impl WinAutostart {
             .and_then(|key| key.set_string(&self.value_name, &command))
             .map_err(|e| port_error(&e))
     }
-
-    /// Removes both values (uninstall); missing ones count as removed.
-    pub(crate) fn remove_all(&self) -> Result<(), PortError> {
-        for path in [RUN, APPROVED] {
-            let removed = open_writable(path).and_then(|key| key.remove_value(&self.value_name));
-            match removed {
-                Ok(()) => {}
-                Err(error) if is_not_found(&error) => {}
-                Err(error) => return Err(port_error(&error)),
-            }
-        }
-        Ok(())
-    }
 }
 
 impl Autostart for WinAutostart {
     fn state(&self) -> Result<AutostartState, PortError> {
-        let present = CURRENT_USER
-            .open(RUN)
-            .and_then(|key| key.get_string(&self.value_name))
-            .is_ok();
-        if !present {
+        if self.run_command().is_none() {
             return Ok(AutostartState::Disabled);
         }
         Ok(if startup_approved_enabled(self.approval().as_deref()) {
@@ -97,12 +102,7 @@ impl Autostart for WinAutostart {
 
     fn set_enabled(&self, enabled: bool) -> Result<(), PortError> {
         if !enabled {
-            let removed = open_writable(RUN).and_then(|key| key.remove_value(&self.value_name));
-            return match removed {
-                Ok(()) => Ok(()),
-                Err(error) if is_not_found(&error) => Ok(()),
-                Err(error) => Err(port_error(&error)),
-            };
+            return remove_value(RUN, &self.value_name);
         }
         self.write_run_value()?;
         // The user turned it on in the app: clear a "disabled in Task Manager" flag too.

@@ -1,11 +1,10 @@
 //! `DesktopShell`: window chrome and desktop integration the UI needs from the OS.
 
-use std::path::Path;
-
 use prm_domain::ports::PortError;
 
 use crate::shared::{colors::TitleBarColors, session_kind::SessionInfo};
 
+/// The OS side of the window: chrome, cloaking, session and display facts. One per process.
 pub trait DesktopShell: Send + Sync + 'static {
     /// Title bar colors (Windows 11 DWM); `Unsupported` elsewhere.
     fn apply_title_bar(
@@ -21,10 +20,7 @@ pub trait DesktopShell: Send + Sync + 'static {
     ) -> Result<(), PortError>;
     /// Re-probed on every call; cheap.
     fn session(&self) -> SessionInfo;
-    /// For tray glyph contrast; `None` when unknown.
-    fn taskbar_light_theme(&self) -> Option<bool>;
-    /// Opens the folder (or selects the file) in the file manager; only under the data root.
-    fn reveal_path(&self, path: &Path) -> Result<(), PortError>;
+    /// A one-line OS name and version for the log and diagnostics; computed once.
     fn os_description(&self) -> &str;
     /// The OS "animate controls" preference, when known.
     fn system_animations_enabled(&self) -> Option<bool>;

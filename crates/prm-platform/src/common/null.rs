@@ -1,28 +1,20 @@
-//! Do-nothing adapters for platforms (or failures) without the real thing.
+//! Do-nothing adapters for when the real one cannot start: the notifier on Windows, launch at
+//! login on macOS and Linux.
 
-use std::path::Path;
+#[cfg(windows)]
+use prm_domain::notify::Notification;
+use prm_domain::ports::PortError;
+#[cfg(not(windows))]
+use prm_service::ports::{Autostart, AutostartState};
+#[cfg(windows)]
+use prm_service::ports::{Notifier, NotifierCapability};
 
-use prm_domain::{
-    notify::Notification,
-    ports::{PortError, PortErrorKind},
-};
-use prm_service::ports::{Autostart, AutostartState, Notifier, NotifierCapability};
-
-use crate::{
-    shared::{
-        colors::TitleBarColors,
-        session_kind::{SessionInfo, SessionKind},
-    },
-    shell::DesktopShell,
-};
-
-fn unsupported() -> PortError {
-    PortError::new(PortErrorKind::Unsupported, "not supported on this platform")
-}
-
+/// Shows nothing; used when the notification thread cannot start.
+#[cfg(windows)]
 #[derive(Copy, Clone, Debug, Default)]
-pub struct NullNotifier;
+pub(crate) struct NullNotifier;
 
+#[cfg(windows)]
 impl Notifier for NullNotifier {
     fn show(&self, _notification: &Notification) -> Result<(), PortError> {
         Ok(())
@@ -37,59 +29,18 @@ impl Notifier for NullNotifier {
     }
 }
 
+/// Reports launch at login as unsupported; used when the OS entry cannot be built.
+#[cfg(not(windows))]
 #[derive(Copy, Clone, Debug, Default)]
-pub struct NullAutostart;
+pub(crate) struct NullAutostart;
 
+#[cfg(not(windows))]
 impl Autostart for NullAutostart {
     fn state(&self) -> Result<AutostartState, PortError> {
         Ok(AutostartState::Unsupported)
     }
 
     fn set_enabled(&self, _enabled: bool) -> Result<(), PortError> {
-        Err(unsupported())
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct NoopShell;
-
-impl DesktopShell for NoopShell {
-    fn apply_title_bar(
-        &self,
-        _window: &dyn raw_window_handle::HasWindowHandle,
-        _colors: &TitleBarColors,
-    ) -> Result<(), PortError> {
-        Err(unsupported())
-    }
-
-    fn set_cloaked(
-        &self,
-        _window: &dyn raw_window_handle::HasWindowHandle,
-        _cloaked: bool,
-    ) -> Result<(), PortError> {
-        Err(unsupported())
-    }
-
-    fn session(&self) -> SessionInfo {
-        SessionInfo {
-            kind: SessionKind::Local,
-            id: None,
-        }
-    }
-
-    fn taskbar_light_theme(&self) -> Option<bool> {
-        None
-    }
-
-    fn reveal_path(&self, _path: &Path) -> Result<(), PortError> {
-        Err(unsupported())
-    }
-
-    fn os_description(&self) -> &str {
-        std::env::consts::OS
-    }
-
-    fn system_animations_enabled(&self) -> Option<bool> {
-        None
+        Err(super::unsupported())
     }
 }

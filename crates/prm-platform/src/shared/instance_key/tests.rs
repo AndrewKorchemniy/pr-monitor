@@ -60,3 +60,64 @@ fn instance_key_unix_socket_name() {
         format!("AndrewKorchemniy.PRMonitor.{}.sock", key.suffix)
     );
 }
+
+/// `--home D:\prm` and `--home D:\prm\` used to get different mutexes, so two primaries ran
+/// over one folder.
+#[test]
+fn instance_key_root_hash_ignores_spelling() {
+    let base = Path::new("/data/prm");
+    let spellings = [
+        PathBuf::from("/data/prm/"),
+        PathBuf::from("/data/./prm"),
+        PathBuf::from("/data/prm/."),
+        PathBuf::from("/data/x/../prm"),
+    ];
+    let expected = derive(base, InstanceScope::Isolated, None).suffix;
+    for spelled in spellings {
+        assert_eq!(
+            derive(&spelled, InstanceScope::Isolated, None).suffix,
+            expected,
+            "{}",
+            spelled.display()
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn instance_key_root_hash_ignores_separator_style_on_windows() {
+    let back = derive(Path::new(r"D:\prm\data"), InstanceScope::Isolated, Some(1));
+    let forward = derive(Path::new("D:/prm/data/"), InstanceScope::Isolated, Some(1));
+    assert_eq!(back.suffix, forward.suffix);
+}
+
+#[test]
+fn normalize_root_table() {
+    let cases = [
+        ("/a/b/", "/a/b"),
+        ("/a/./b", "/a/b"),
+        ("/a/b/..", "/a"),
+        ("/..", "/"),
+        ("../a", "../a"),
+        ("a/../..", ".."),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(
+            normalize_root(Path::new(input)),
+            PathBuf::from(expected),
+            "{input}"
+        );
+    }
+}
+
+#[test]
+fn is_same_root_compares_normalized_paths() {
+    assert!(is_same_root(
+        Path::new("/data/prm/"),
+        Path::new("/data/./prm")
+    ));
+    assert!(!is_same_root(
+        Path::new("/data/prm"),
+        Path::new("/data/prm2")
+    ));
+}

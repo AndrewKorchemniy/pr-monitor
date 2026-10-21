@@ -36,7 +36,8 @@ pub fn image_base() -> Option<usize> {
 }
 
 /// Windows: the connecting process must be in our session (pipes are session-scoped by name,
-/// but this makes it explicit). Other OSes: the socket is per-user already.
+/// but this makes it explicit). Linux: it must be our user, because the abstract socket
+/// namespace has no permissions. macOS: the socket file sits in the per-user temp dir.
 pub(crate) fn peer_in_our_session(conn: &impl StreamCommon) -> bool {
     #[cfg(windows)]
     let same = conn
@@ -46,7 +47,9 @@ pub(crate) fn peer_in_our_session(conn: &impl StreamCommon) -> bool {
         .is_some_and(|pid| {
             crate::win::process::session_of(pid) == crate::win::process::session_id()
         });
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    let same = is_our_user(conn);
+    #[cfg(all(not(windows), not(target_os = "linux")))]
     let same = {
         let _ = conn;
         true
@@ -54,7 +57,8 @@ pub(crate) fn peer_in_our_session(conn: &impl StreamCommon) -> bool {
     same
 }
 
-/// Before forwarding: refuse a primary in another session, and let it take the foreground.
+/// Before forwarding: refuse a primary in another session (Windows) or of another user
+/// (Linux), and let it take the foreground.
 pub(crate) fn prepare_foreground_handoff(stream: &impl StreamCommon) -> bool {
     #[cfg(windows)]
     {
@@ -64,8 +68,26 @@ pub(crate) fn prepare_foreground_handoff(stream: &impl StreamCommon) -> bool {
             return false;
         }
         allow_foreground(pid);
+        true
     }
-    #[cfg(not(windows))]
-    let _ = stream;
-    true
+    #[cfg(target_os = "linux")]
+    {
+        is_our_user(stream)
+    }
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
+        let _ = stream;
+        true
+    }
+}
+
+/// Whether the peer runs as our effective user; `false` when either is unknown (fail closed:
+/// anyone can connect to, or squat, an abstract socket name).
+#[cfg(target_os = "linux")]
+fn is_our_user(conn: &impl StreamCommon) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    // why: `/proc/self` is owned by this process's effective uid; std has no safe geteuid.
+    let own = std::fs::metadata("/proc/self").map(|meta| meta.uid()).ok();
+    let peer = conn.peer_creds().ok().and_then(|creds| creds.euid());
+    own.is_some() && own == peer
 }

@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use prm_domain::uri::AppUri;
-use prm_platform::{Activation, ActivationSink};
+use prm_platform::{ActivationSink, HandoffRequest};
 use prm_service::{Command, CommandSender};
 
 /// At most this many activations wait for the service; the oldest are dropped.
@@ -40,7 +40,7 @@ impl UiWaker {
 }
 
 enum RouterState {
-    Buffering(Vec<Activation>),
+    Buffering(Vec<HandoffRequest>),
     Attached(Arc<dyn CommandSink>),
 }
 
@@ -68,24 +68,24 @@ impl ActivationRouter {
                 RouterState::Attached(_) => Vec::new(),
             }
         };
-        for activation in buffered {
-            self.dispatch(sink.as_ref(), activation);
+        for request in buffered {
+            self.dispatch(sink.as_ref(), request);
         }
     }
 
     /// `--activate <uri>` from our own command line; invalid links are logged and ignored.
     pub(crate) fn activate_raw(&self, raw: &str) {
         match AppUri::parse(raw) {
-            Ok(uri) => self.activate(Activation::Open(uri)),
+            Ok(uri) => self.activate(HandoffRequest::Activate(uri)),
             Err(error) => tracing::warn!(%error, "ignored an invalid activation link"),
         }
     }
 
-    fn dispatch(&self, sink: &dyn CommandSink, activation: Activation) {
-        let command = match activation {
-            Activation::Show => Command::Activate(AppUri::Show { key: None }),
-            Activation::Open(uri) => Command::Activate(uri),
-            Activation::Quit => {
+    fn dispatch(&self, sink: &dyn CommandSink, request: HandoffRequest) {
+        let command = match request {
+            HandoffRequest::Show => Command::Activate(AppUri::Show { key: None }),
+            HandoffRequest::Activate(uri) => Command::Activate(uri),
+            HandoffRequest::Quit => {
                 self.quit.store(true, Ordering::Relaxed);
                 self.waker.wake();
                 return;
@@ -99,24 +99,24 @@ impl ActivationRouter {
 }
 
 /// Keeps the newest `BUFFER` activations.
-fn buffer(items: &mut Vec<Activation>, activation: Activation) {
+fn buffer(items: &mut Vec<HandoffRequest>, request: HandoffRequest) {
     if items.len() == BUFFER {
         items.remove(0);
     }
-    items.push(activation);
+    items.push(request);
 }
 
 impl ActivationSink for ActivationRouter {
-    fn activate(&self, activation: Activation) {
+    fn activate(&self, request: HandoffRequest) {
         let sink = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             match &mut *state {
                 RouterState::Attached(sink) => Arc::clone(sink),
-                RouterState::Buffering(items) => return buffer(items, activation),
+                RouterState::Buffering(items) => return buffer(items, request),
             }
         };
         // why: never call into the service while holding the lock.
-        self.dispatch(sink.as_ref(), activation);
+        self.dispatch(sink.as_ref(), request);
     }
 }
 

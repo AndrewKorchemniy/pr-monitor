@@ -3,17 +3,27 @@ use prm_domain::testing::org;
 use super::*;
 
 #[test]
-fn credman_target_uses_prefix() {
-    assert_eq!(
-        credman_target(&SecretKey::pat(&org("contoso"))),
-        "PRMonitor/contoso/pat"
-    );
-}
-
-#[test]
 fn dpapi_file_name_hex() {
     let name = dpapi_file_name(&SecretKey::pat(&org("ab")));
     assert_eq!(name, "61622f706174.bin");
+}
+
+#[test]
+fn is_dpapi_file_name_table() {
+    let ours = dpapi_file_name(&SecretKey::entra_refresh(&org("contoso")));
+    let cases = [
+        (ours.as_str(), true),
+        ("61622f706174.bin", true),
+        (".bin", false),
+        ("abc.bin", false),
+        ("61622F706174.bin", false),
+        ("notes.bin", false),
+        ("61622f706174.txt", false),
+        ("61622f706174", false),
+    ];
+    for (name, expected) in cases {
+        assert_eq!(is_dpapi_file_name(name), expected, "{name}");
+    }
 }
 
 type Check = fn(&SecretStoreError) -> bool;

@@ -8,22 +8,22 @@ use std::{
 };
 
 use interprocess::local_socket::{Stream as SyncStream, traits::Stream as _};
-use prm_domain::testing::key as pr_key;
+use prm_domain::{testing::key as pr_key, uri::AppUri};
 
 use super::*;
 use crate::common::handoff_client::{ForwardOutcome, forward_to_primary};
 
 #[derive(Default)]
-struct Recorder(Mutex<Vec<Activation>>);
+struct Recorder(Mutex<Vec<HandoffRequest>>);
 
 impl ActivationSink for Recorder {
-    fn activate(&self, activation: Activation) {
-        self.0.lock().unwrap().push(activation);
+    fn activate(&self, request: HandoffRequest) {
+        self.0.lock().unwrap().push(request);
     }
 }
 
 impl Recorder {
-    fn seen(&self) -> Vec<Activation> {
+    fn seen(&self) -> Vec<HandoffRequest> {
         self.0.lock().unwrap().clone()
     }
 }
@@ -50,7 +50,7 @@ fn handoff_server_roundtrip_show() {
     let outcome = forward_to_primary(&key, &HandoffRequest::Show, BUDGET);
 
     assert_eq!(outcome, ForwardOutcome::Delivered);
-    assert_eq!(sink.seen(), vec![Activation::Show]);
+    assert_eq!(sink.seen(), vec![HandoffRequest::Show]);
     assert!(server.stop(Duration::from_secs(2)));
 }
 
@@ -65,7 +65,7 @@ fn handoff_server_forwards_activation_uri() {
     let outcome = forward_to_primary(&key, &HandoffRequest::Activate(uri.clone()), BUDGET);
 
     assert_eq!(outcome, ForwardOutcome::Delivered);
-    assert_eq!(sink.seen(), vec![Activation::Open(uri)]);
+    assert_eq!(sink.seen(), vec![HandoffRequest::Activate(uri)]);
     assert!(server.stop(Duration::from_secs(2)));
 }
 
@@ -85,7 +85,7 @@ fn handoff_server_rejects_garbage_and_keeps_serving() {
         forward_to_primary(&key, &HandoffRequest::Show, BUDGET),
         ForwardOutcome::Delivered
     );
-    assert_eq!(sink.seen(), vec![Activation::Show]);
+    assert_eq!(sink.seen(), vec![HandoffRequest::Show]);
     assert!(server.stop(Duration::from_secs(2)));
 }
 
@@ -108,4 +108,27 @@ fn handoff_server_stop_joins() {
 
     let outcome = forward_to_primary(&key, &HandoffRequest::Show, Duration::from_millis(250));
     assert_eq!(outcome, ForwardOutcome::NoPrimary);
+}
+
+/// A persistent accept error used to retry at once, spinning a core and flooding the log.
+#[test]
+fn accept_backoff_doubles_up_to_the_cap() {
+    let mut backoff = AcceptBackoff::default();
+    let error = io::Error::other("no pipe instance");
+
+    let delays: Vec<u128> = (0..7).map(|_| backoff.failed(&error).as_millis()).collect();
+
+    assert_eq!(delays, [100, 200, 400, 800, 1_600, 2_000, 2_000]);
+}
+
+#[test]
+fn accept_backoff_resets_after_a_success() {
+    let mut backoff = AcceptBackoff::default();
+    let error = io::Error::other("no pipe instance");
+    backoff.failed(&error);
+    backoff.failed(&error);
+
+    backoff.succeeded();
+
+    assert_eq!(backoff.failed(&error), ACCEPT_BACKOFF_MIN);
 }

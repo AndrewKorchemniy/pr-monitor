@@ -4,43 +4,55 @@
 use prm_domain::uri::AppUri;
 use serde::{Deserialize, Serialize};
 
+/// The `v` both sides write and require; a mismatch is rejected, never guessed at.
 pub const HANDOFF_VERSION: u8 = 1;
 /// Longest frame, excluding the trailing newline.
 pub const MAX_FRAME: usize = 1024;
+/// Longest frame including its newline: what a reader may take before giving up.
+pub(crate) const MAX_LINE: usize = MAX_FRAME + 1;
+/// `MAX_LINE` as the byte limit for `AsyncReadExt::take` / `Read::take` (usize to u64 never
+/// truncates).
+pub(crate) const READ_LIMIT: u64 = MAX_LINE as u64;
 
+/// What a second launch asks the primary to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HandoffRequest {
     /// Bring the window forward.
     Show,
+    /// Open an app link (a toast button, `--activate`).
     Activate(AppUri),
+    /// Exit (`--unregister` asks this first).
     Quit,
 }
 
+/// The primary's answer to one request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HandoffReply {
     Ok,
+    /// The request was malformed; the reason is shown to the user by the second launch.
     Rejected(String),
 }
 
+/// Why a frame was refused. The text reaches the user (in the second launch's error dialog).
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CodecError {
-    #[error("frame too long")]
+    #[error("The activation message is too long.")]
     TooLong,
-    #[error("missing newline")]
+    #[error("The activation message has no line ending.")]
     NoNewline,
-    #[error("not UTF-8")]
+    #[error("The activation message is not UTF-8.")]
     NotUtf8,
-    #[error("NUL byte")]
+    #[error("The activation message contains a NUL byte.")]
     Nul,
-    #[error("bad json: {0}")]
+    #[error("The activation message is not valid JSON: {0}")]
     Json(String),
-    #[error("unsupported version {0}")]
+    #[error("Unsupported activation message version {0}.")]
     Version(u64),
-    #[error("uri not allowed for cmd")]
+    #[error("This command does not take a link.")]
     UnexpectedUri,
-    #[error("missing uri")]
+    #[error("The activation message has no link.")]
     MissingUri,
-    #[error("invalid uri: {0}")]
+    #[error("The activation link is not valid: {0}")]
     Uri(String),
 }
 
@@ -76,6 +88,7 @@ fn line<T: Serialize>(value: &T) -> Vec<u8> {
     bytes
 }
 
+/// One newline-terminated line.
 pub fn encode_request(request: &HandoffRequest) -> Vec<u8> {
     let (cmd, uri) = match request {
         HandoffRequest::Show => (WireCommand::Show, None),
@@ -89,6 +102,7 @@ pub fn encode_request(request: &HandoffRequest) -> Vec<u8> {
     })
 }
 
+/// One newline-terminated line.
 pub fn encode_reply(reply: &HandoffReply) -> Vec<u8> {
     let (ok, error) = match reply {
         HandoffReply::Ok => (true, None),
@@ -103,7 +117,7 @@ pub fn encode_reply(reply: &HandoffReply) -> Vec<u8> {
 
 /// Size, newline, UTF-8 and NUL checks; returns the text without the newline.
 fn frame_text(frame: &[u8]) -> Result<&str, CodecError> {
-    if frame.len() > MAX_FRAME + 1 {
+    if frame.len() > MAX_LINE {
         return Err(CodecError::TooLong);
     }
     let body = frame.strip_suffix(b"\n").ok_or(CodecError::NoNewline)?;
@@ -139,6 +153,7 @@ pub fn decode_request(frame: &[u8]) -> Result<HandoffRequest, CodecError> {
     }
 }
 
+/// `frame` includes the trailing newline.
 pub fn decode_reply(frame: &[u8]) -> Result<HandoffReply, CodecError> {
     let text = frame_text(frame)?;
     let wire: WireReply =
