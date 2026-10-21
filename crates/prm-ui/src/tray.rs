@@ -1,7 +1,7 @@
 //! The tray icon: the brand mark with a state-colored change bar, a menu whose ids are command
 //! keys, left click to toggle the window. Updates are diff-only.
 
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 use eframe::egui;
 use prm_domain::view::TrayBadge;
@@ -50,10 +50,65 @@ pub(crate) struct TrayController {
     icon: TrayIcon,
     pause: MenuItem,
     sign_in: MenuItem,
-    last_badge: Option<TrayBadge>,
-    last_theme: u64,
-    last_tooltip: String,
+    shown: TrayShown,
+}
+
+/// What last reached the OS, so a sync touches only what changed.
+#[derive(Default)]
+struct TrayShown {
+    /// The snapshot last synced. Each publish is a new `Arc`, compared by pointer.
+    state: Option<Arc<AppState>>,
+    colors: Option<MarkColors>,
+    tooltip: String,
     paused: bool,
+    /// The sign-in item starts disabled.
+    sign_in: bool,
+}
+
+/// The changes one sync makes; `None` leaves that part alone.
+#[derive(Debug, Default, PartialEq)]
+struct TrayUpdate {
+    icon: Option<MarkColors>,
+    tooltip: Option<String>,
+    paused: Option<bool>,
+    sign_in: Option<bool>,
+}
+
+impl TrayShown {
+    /// Colors are checked every frame (an OS light/dark flip changes them with no new
+    /// snapshot); the rest only when the snapshot is new.
+    fn update(&mut self, state: &Arc<AppState>, colors: MarkColors) -> TrayUpdate {
+        let mut update = TrayUpdate {
+            icon: changed(&mut self.colors, Some(colors)).flatten(),
+            ..TrayUpdate::default()
+        };
+        if self.state.as_ref().is_some_and(|s| Arc::ptr_eq(s, state)) {
+            return update;
+        }
+        self.state = Some(Arc::clone(state));
+        update.tooltip = changed(&mut self.tooltip, state.tray_tooltip());
+        update.paused = changed(&mut self.paused, state.notifications.paused_until.is_some());
+        let needs_sign_in = state.orgs.iter().any(prm_service::OrgStatus::needs_sign_in);
+        update.sign_in = changed(&mut self.sign_in, needs_sign_in);
+        update
+    }
+}
+
+/// `Some(current)` (and remembered) when it differs from `last`.
+fn changed<T: Clone + PartialEq>(last: &mut T, current: T) -> Option<T> {
+    if *last == current {
+        return None;
+    }
+    last.clone_from(&current);
+    Some(current)
+}
+
+const fn pause_label(paused: bool) -> &'static str {
+    if paused {
+        copy::TRAY_RESUME
+    } else {
+        copy::TRAY_PAUSE
+    }
 }
 
 fn item(command: CommandId, text: &str) -> MenuItem {
@@ -94,53 +149,33 @@ impl TrayController {
             icon,
             pause,
             sign_in,
-            last_badge: None,
-            last_theme: 0,
-            last_tooltip: String::new(),
-            paused: false,
+            shown: TrayShown::default(),
         };
         Ok((controller, rx))
     }
 
-    /// Updates only what changed.
-    pub(crate) fn sync(&mut self, state: &AppState, colors: &MarkColors, theme_generation: u64) {
-        let badge = state.tray_badge();
-        if self.last_badge != Some(badge) || self.last_theme != theme_generation {
-            if let Ok(icon) = tray_icon(colors) {
-                let _ = self.icon.set_icon(Some(icon));
-            }
-            self.last_badge = Some(badge);
-            self.last_theme = theme_generation;
+    /// Updates only what changed (cheap enough to call every frame).
+    pub(crate) fn sync(&mut self, state: &Arc<AppState>, colors: MarkColors) {
+        let update = self.shown.update(state, colors);
+        if let Some(colors) = update.icon
+            && let Ok(icon) = tray_icon(&colors)
+        {
+            let _ = self.icon.set_icon(Some(icon));
         }
-        let tooltip = state.tray_tooltip();
-        if tooltip != self.last_tooltip {
-            let _ = self.icon.set_tooltip(Some(&tooltip));
-            self.last_tooltip = tooltip;
+        if let Some(tooltip) = &update.tooltip {
+            let _ = self.icon.set_tooltip(Some(tooltip));
         }
-        let paused = state.notifications.paused_until.is_some();
-        if paused != self.paused {
-            self.pause.set_text(if paused {
-                copy::TRAY_RESUME
-            } else {
-                copy::TRAY_PAUSE
-            });
-            self.paused = paused;
+        if let Some(paused) = update.paused {
+            self.pause.set_text(pause_label(paused));
         }
-        let needs_sign_in = state.orgs.iter().any(|o| {
-            o.enabled
-                && matches!(
-                    o.auth.state,
-                    prm_service::AuthStateView::NeedsSignIn { .. }
-                        | prm_service::AuthStateView::Blocked { .. }
-                        | prm_service::AuthStateView::SignedOut
-                )
-        });
-        self.sign_in.set_enabled(needs_sign_in);
+        if let Some(enabled) = update.sign_in {
+            self.sign_in.set_enabled(enabled);
+        }
     }
 
     /// The pause item runs "resume" while paused.
     pub(crate) const fn paused(&self) -> bool {
-        self.paused
+        self.shown.paused
     }
 }
 

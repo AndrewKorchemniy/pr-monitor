@@ -21,6 +21,8 @@ use crate::{
 
 /// Coordinates beyond this are left over from a disconnected monitor.
 const MAX_COORDINATE: f32 = 16_384.0;
+/// Only Windows can cloak a start-hidden window; elsewhere it waits off-screen.
+const HIDE_OFFSCREEN: bool = !cfg!(windows);
 
 /// Everything `run` needs from startup.
 pub(crate) struct LaunchCtx<'a> {
@@ -58,15 +60,15 @@ pub(crate) fn rect_on_screen(
 }
 
 pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
+    let on_screen = ctx
+        .window
+        .filter(|r| rect_on_screen(r, |r| ctx.shell.rect_visible(r.x, r.y, r.w, r.h)));
     let spec = LaunchSpec {
         renderer: ctx.choice.kind,
         start_hidden: ctx.start_hidden,
-        hide_offscreen: !cfg!(windows),
+        hide_offscreen: HIDE_OFFSCREEN,
         window: ctx.window,
-        rect_on_screen: ctx
-            .window
-            .as_ref()
-            .is_some_and(|r| rect_on_screen(r, |r| ctx.shell.rect_visible(r.x, r.y, r.w, r.h))),
+        rect_on_screen: on_screen.is_some(),
         icon: Arc::new(prm_ui::window_icon()),
     };
     let marker = Arc::clone(&ctx.marker);
@@ -84,6 +86,8 @@ pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
             fallback_from: ctx.fallback_from,
         },
         start_hidden: ctx.start_hidden,
+        hide_offscreen: HIDE_OFFSCREEN,
+        restore_position: on_screen.map(|r| [r.x, r.y]),
         activation: None,
         quit_requested: ctx.quit,
         hover_bands: Arc::new(HoverBands::default()),

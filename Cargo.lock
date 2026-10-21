@@ -3926,6 +3926,7 @@ dependencies = [
  "tray-icon",
  "url",
  "wgpu",
+ "zeroize",
 ]
 
 [[package]]

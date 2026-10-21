@@ -1,5 +1,5 @@
-//! The theme at run time: resolves the user's selection to dark and light `UiTheme`s, applies
-//! them as egui styles when they change, and makes the current one available to every widget.
+//! The theme at run time: resolves the user's selection to dark and light `UiTheme`s and applies
+//! them as egui styles when they change. Widgets get the current one through `FrameCx`.
 
 pub(crate) mod adapter;
 pub(crate) mod fonts;
@@ -116,6 +116,13 @@ pub(crate) fn fallback() -> Arc<UiTheme> {
         .clone()
 }
 
+fn theme_choices(registry: &ThemeRegistry) -> Vec<(String, String)> {
+    registry
+        .list()
+        .map(|(id, entry)| (id.as_str().to_owned(), entry.file.name.clone()))
+        .collect()
+}
+
 /// The one conversion from config prefs to a theme selection.
 pub(crate) fn selection_from(prefs: &UiPrefs) -> ThemeSelection {
     ThemeSelection {
@@ -131,6 +138,8 @@ pub(crate) fn selection_from(prefs: &UiPrefs) -> ThemeSelection {
 
 pub(crate) struct ThemeRuntime {
     registry: ThemeRegistry,
+    /// `(id, display name)` of every registered theme, in registry order.
+    choices: Vec<(String, String)>,
     scanner: ThemeDirScanner,
     themes_dir: std::path::PathBuf,
     selection: ThemeSelection,
@@ -140,7 +149,7 @@ pub(crate) struct ThemeRuntime {
     light: Arc<UiTheme>,
     follow_system: bool,
     /// Bumped whenever the themes or policy change; styles are reapplied once per change.
-    pub generation: u64,
+    generation: u64,
     applied: u64,
     /// Problems loading the user themes folder (kept across rebuilds).
     dir_issues: Vec<ThemeIssue>,
@@ -160,6 +169,7 @@ impl ThemeRuntime {
             dark: Arc::new(UiTheme::new(set.dark, policy)),
             light: Arc::new(UiTheme::new(set.light, policy)),
             follow_system: set.follow_system,
+            choices: theme_choices(&registry),
             registry,
             selection,
             preview: None,
@@ -219,6 +229,7 @@ impl ThemeRuntime {
 
     pub(crate) fn reload(&mut self) {
         let (registry, dir_issues) = ThemeRegistry::builtin().with_user_dir(&self.themes_dir);
+        self.choices = theme_choices(&registry);
         self.registry = registry;
         self.dir_issues = dir_issues;
         self.rebuild();
@@ -226,6 +237,11 @@ impl ThemeRuntime {
 
     pub(crate) fn registry(&self) -> &ThemeRegistry {
         &self.registry
+    }
+
+    /// `(id, display name)` of every theme, rebuilt only when the registry is.
+    pub(crate) fn choices(&self) -> &[(String, String)] {
+        &self.choices
     }
 
     pub(crate) fn themes_dir(&self) -> &Path {
@@ -255,12 +271,6 @@ impl ThemeRuntime {
             egui::Theme::Dark => &self.dark,
             egui::Theme::Light => &self.light,
         }
-    }
-
-    /// Makes the current theme available to widgets for this frame.
-    pub(crate) fn install_frame(&self, ctx: &egui::Context) {
-        let theme = self.current(ctx).clone();
-        ctx.data_mut(|d| d.insert_temp(egui::Id::NULL, theme));
     }
 
     pub(crate) fn chrome(&self, ctx: &egui::Context) -> ChromeColors {

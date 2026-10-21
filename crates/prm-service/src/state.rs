@@ -152,6 +152,11 @@ pub struct OrgStatus {
 }
 
 impl OrgStatus {
+    /// Enabled and waiting for the user to sign in (see [`AuthStateView::needs_sign_in`]).
+    pub const fn needs_sign_in(&self) -> bool {
+        self.enabled && self.auth.state.needs_sign_in()
+    }
+
     fn is_broken(&self) -> bool {
         self.enabled
             && (matches!(self.health, OrgHealth::Failed { .. })
@@ -190,6 +195,21 @@ pub enum AuthStateView {
     },
     SignedOut,
     Disabled,
+}
+
+impl AuthStateView {
+    /// No usable credential, and only the user can fix that: the sign-in prompts (tray item,
+    /// empty state, palette) offer it. Checking or already signing in does not count.
+    pub const fn needs_sign_in(&self) -> bool {
+        match self {
+            Self::NeedsSignIn { .. } | Self::Blocked { .. } | Self::SignedOut => true,
+            Self::Unknown
+            | Self::Checking
+            | Self::SignedIn
+            | Self::SigningIn { .. }
+            | Self::Disabled => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -245,3 +265,6 @@ pub struct Banner {
     pub secondary: Option<UserAction>,
     pub dismissible: bool,
 }
+
+#[cfg(test)]
+mod tests;

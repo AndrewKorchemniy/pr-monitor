@@ -1,9 +1,10 @@
 //! Persisting UI layout (window rect, columns, filters, peek): debounced 1 s after the last
-//! change, flushed immediately when hiding or quitting.
+//! change, flushed immediately when hiding or quitting. Checked every frame without allocating;
+//! the state is only built when it changed.
 
 use std::time::Duration;
 
-use prm_config::{UiState, WindowRect};
+use prm_config::UiState;
 use prm_domain::Timestamp;
 use prm_service::Command;
 
@@ -18,32 +19,43 @@ pub(crate) struct PeekLayout {
     pub width: Option<f32>,
 }
 
+/// The live parts of the persisted UI state.
+#[derive(Copy, Clone)]
+pub(crate) struct Layout<'a> {
+    pub view: &'a DashboardView,
+    pub window: &'a WindowController,
+    pub peek: PeekLayout,
+}
+
+impl Layout<'_> {
+    /// `base` with the live parts written over it.
+    pub(crate) fn collect(&self, base: &UiState) -> UiState {
+        let mut state = base.clone();
+        self.view.write_ui_state(&mut state);
+        state.peek_open = self.peek.open;
+        state.peek_width = self.peek.width;
+        if let Some(window) = self.window.placement() {
+            state.window = Some(window);
+        }
+        state
+    }
+
+    /// Whether `collect` would change any live part of `saved` (compared in place).
+    pub(crate) fn differs(&self, saved: &UiState) -> bool {
+        self.view.differs_from(saved)
+            || saved.peek_open != self.peek.open
+            || saved.peek_width != self.peek.width
+            || self
+                .window
+                .placement()
+                .is_some_and(|window| saved.window != Some(window))
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct UiStateSync {
     last_sent: Option<UiState>,
     pending_since: Option<Timestamp>,
-}
-
-pub(crate) fn collect(
-    view: &DashboardView,
-    window: &WindowController,
-    peek: PeekLayout,
-    base: &UiState,
-) -> UiState {
-    let mut state = base.clone();
-    view.write_ui_state(&mut state);
-    state.peek_open = peek.open;
-    state.peek_width = peek.width;
-    if let Some(rect) = window.outer_rect {
-        state.window = Some(WindowRect {
-            x: rect.min.x,
-            y: rect.min.y,
-            w: rect.width(),
-            h: rect.height(),
-            maximized: window.maximized,
-        });
-    }
-    state
 }
 
 impl UiStateSync {
@@ -59,21 +71,33 @@ impl UiStateSync {
         self.pending_since.map(|at| at.saturating_add(DEBOUNCE))
     }
 
-    /// Sends once the state has been stable for `DEBOUNCE`.
-    pub(crate) fn tick(&mut self, now: Timestamp, current: UiState, link: &ServiceLink) {
-        if self.last_sent.as_ref() == Some(&current) {
+    fn changed(&self, layout: &Layout<'_>) -> bool {
+        self.last_sent
+            .as_ref()
+            .is_none_or(|sent| layout.differs(sent))
+    }
+
+    /// Sends once the layout has been stable for `DEBOUNCE`.
+    pub(crate) fn tick(
+        &mut self,
+        now: Timestamp,
+        layout: &Layout<'_>,
+        base: &UiState,
+        link: &ServiceLink,
+    ) {
+        if !self.changed(layout) {
             self.pending_since = None;
             return;
         }
         let since = *self.pending_since.get_or_insert(now);
         if now >= since.saturating_add(DEBOUNCE) {
-            self.send(current, link);
+            self.send(layout.collect(base), link);
         }
     }
 
-    pub(crate) fn flush(&mut self, current: UiState, link: &ServiceLink) {
-        if self.last_sent.as_ref() != Some(&current) {
-            self.send(current, link);
+    pub(crate) fn flush(&mut self, layout: &Layout<'_>, base: &UiState, link: &ServiceLink) {
+        if self.changed(layout) {
+            self.send(layout.collect(base), link);
         }
     }
 
