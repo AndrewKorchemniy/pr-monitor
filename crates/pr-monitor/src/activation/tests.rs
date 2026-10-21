@@ -1,4 +1,4 @@
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, OnceLock, PoisonError, Weak};
 
 use super::*;
 
@@ -46,6 +46,61 @@ fn activations_before_the_service_are_replayed_in_order() {
         recorder.taken().len(),
         1,
         "after attaching, activations pass straight through"
+    );
+}
+
+/// A sink that, on its first command, starts another thread activating the router (as the
+/// handoff listener would while the buffer is being replayed).
+struct Interrupting {
+    recorder: Recorder,
+    router: OnceLock<Weak<ActivationRouter>>,
+    started: AtomicBool,
+    other: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl CommandSink for Interrupting {
+    fn send(&self, command: Command) -> bool {
+        if !self.started.swap(true, Ordering::Relaxed)
+            && let Some(router) = self.router.get().and_then(Weak::upgrade)
+        {
+            let handle = std::thread::spawn(move || {
+                router.activate(HandoffRequest::Activate(AppUri::Refresh));
+            });
+            *self.other.lock().unwrap_or_else(PoisonError::into_inner) = Some(handle);
+        }
+        self.recorder.send(command)
+    }
+}
+
+/// Regression: an activation that arrived while the buffer was replayed reached the service
+/// before older buffered ones, so the UI acted on a stale link last.
+#[test]
+fn activations_during_the_replay_wait_for_it() {
+    let (router, _) = router();
+    let router = Arc::new(router);
+    router.activate(HandoffRequest::Show);
+    router.activate_raw("prmonitor://show");
+    let sink = Arc::new(Interrupting {
+        recorder: Recorder::default(),
+        router: OnceLock::new(),
+        started: AtomicBool::new(false),
+        other: Mutex::new(None),
+    });
+    let _ = sink.router.set(Arc::downgrade(&router));
+    router.attach(Arc::clone(&sink) as Arc<dyn CommandSink>);
+    let other = sink
+        .other
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    other.expect("started").join().expect("joined");
+    assert_eq!(
+        sink.recorder.taken(),
+        [
+            "Activate(Show { key: None })",
+            "Activate(Show { key: None })",
+            "Activate(Refresh)"
+        ]
     );
 }
 

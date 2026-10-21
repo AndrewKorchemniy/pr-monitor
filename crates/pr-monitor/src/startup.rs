@@ -6,12 +6,10 @@
 use std::{
     ffi::OsString,
     io::Write as _,
-    path::PathBuf,
+    panic::AssertUnwindSafe,
+    path::{Path, PathBuf},
     process::ExitCode,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
@@ -31,14 +29,16 @@ use prm_platform::{
     ensure_shell_identity, forward_to_primary, is_same_root, registration_scope,
 };
 use prm_service::{ServiceHandle, SystemClock, channel_sink};
+use prm_ui::RendererKind;
 
 use crate::{
     activation::{ActivationRouter, UiWaker},
     assets, build_info,
     cli::{self, Args, Mode},
-    copy, logging, net, panic,
+    copy, logging, net,
+    panic::{self, Phase},
     renderer::{
-        GLOW_FAILED, MarkerFile, RendererChoice, RendererInputs, choose_renderer,
+        MarkerFile, RendererChoice, RendererInputs, RendererReason, choose_renderer,
         is_renderer_init_error,
     },
     self_test,
@@ -58,8 +58,8 @@ const PARENT_EXIT_WAIT: Duration = Duration::from_secs(5);
 const FORWARD_BUDGET: Duration = Duration::from_secs(2);
 /// With no primary listening, a launch waits this long for a quitting one to release the lock.
 const HANDOFF: Duration = Duration::from_secs(5);
-const LOCK_RETRY: Duration = Duration::from_millis(100);
-const CRASH_LOGS_KEPT: usize = 10;
+/// Between attempts at the instance lock while another process still holds it.
+pub(crate) const LOCK_RETRY: Duration = Duration::from_millis(100);
 
 /// What this process knows from its first line on.
 struct Launch {
@@ -68,53 +68,27 @@ struct Launch {
     init_phase: Arc<AtomicBool>,
 }
 
-/// What a second launch does after trying to reach the primary.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Next {
-    /// The primary has the request.
-    Done,
-    Fatal(String),
-    NotResponding,
-    /// Nobody is listening: the primary is quitting (or crashed), so wait for the lock.
-    TakeOver,
+/// Whether this process is the renderer fallback that a failed launch started.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Attempt {
+    First,
+    Fallback,
 }
 
-pub(crate) fn after_forward(outcome: ForwardOutcome) -> Next {
-    match outcome {
-        ForwardOutcome::Delivered => Next::Done,
-        ForwardOutcome::Rejected(reason) => Next::Fatal(reason),
-        ForwardOutcome::NoPrimary => Next::TakeOver,
-        ForwardOutcome::NotResponding => Next::NotResponding,
+impl Attempt {
+    const fn of(args: &Args) -> Self {
+        if args.relaunched_after.is_some() {
+            Self::Fallback
+        } else {
+            Self::First
+        }
     }
 }
 
 /// A renderer that failed to start gets one relaunch with the other, but only before the first
 /// frame: after that the window worked and a relaunch would hide a real bug.
-pub(crate) const fn should_relaunch(
-    init_error: bool,
-    already_relaunched: bool,
-    first_frame_seen: bool,
-) -> bool {
-    init_error && !already_relaunched && !first_frame_seen
-}
-
-/// What this launch does, decided from the arguments alone.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum StartupPlan {
-    Print(String),
-    SelfTest,
-    Unregister { purge: bool },
-    Run,
-}
-
-pub(crate) fn plan(args: &Args) -> StartupPlan {
-    match args.mode {
-        Mode::Version => StartupPlan::Print(build_info::version_line()),
-        Mode::Help => StartupPlan::Print(cli::usage().to_owned()),
-        Mode::SelfTest => StartupPlan::SelfTest,
-        Mode::Unregister { purge } => StartupPlan::Unregister { purge },
-        Mode::Run => StartupPlan::Run,
-    }
+pub(crate) const fn should_relaunch(init_error: bool, attempt: Attempt, phase: Phase) -> bool {
+    init_error && matches!(attempt, Attempt::First) && matches!(phase, Phase::Init)
 }
 
 /// What a second launch asks the running instance to do; `None` means nothing (autostart while
@@ -136,46 +110,46 @@ pub(crate) fn run() -> ExitCode {
     };
     let args = match cli::parse_args(std::env::args_os().skip(1)) {
         Ok(args) => args,
-        Err(error) => {
-            let text = copy::usage_error(&error.to_string(), cli::usage());
-            // why: from a terminal, print; from a shortcut or the protocol handler, show a dialog.
-            if console::attach_parent_console(false) {
-                let _ = writeln!(console::console_out(), "{text}");
-            } else {
-                console::fatal_dialog(copy::STARTUP_FAILED, &text);
-            }
-            return ExitCode::from(EXIT_USAGE);
-        }
+        Err(error) => return usage_error(&error),
     };
     if args.debug || args.mode != Mode::Run {
         console::attach_parent_console(args.debug);
     }
-    match plan(&args) {
-        StartupPlan::Print(text) => {
+    match args.mode {
+        Mode::Version => {
             panic::suppress_dialogs();
-            print_line(&text)
+            print_line(&build_info::version_line())
         }
-        StartupPlan::SelfTest => {
+        Mode::Help => {
+            panic::suppress_dialogs();
+            print_line(&cli::usage())
+        }
+        Mode::SelfTest => {
             panic::suppress_dialogs();
             self_test::run()
         }
-        StartupPlan::Unregister { purge } => match data_root(&args) {
-            Ok((root, scope, _)) => unregister::run(&root, scope, purge),
+        Mode::Unregister { purge } => match data_root(&args) {
+            // why: the purge guard needs the user's real home folder, not the `--home` override
+            // the data root came from.
+            Ok(root) => unregister::run(&root.path, root.scope, purge, dirs::home_dir().as_deref()),
             Err(error) => fatal(&error),
         },
-        StartupPlan::Run => match data_root(&args) {
-            Ok((root, scope, home)) => primary_or_forward(
-                &args,
-                Root {
-                    path: root,
-                    scope,
-                    home,
-                },
-                &launch,
-            ),
+        Mode::Run => match data_root(&args) {
+            Ok(root) => primary_or_forward(&args, &root, &launch),
             Err(error) => fatal(&error),
         },
     }
+}
+
+fn usage_error(error: &cli::ArgError) -> ExitCode {
+    let text = copy::usage_error(&error.to_string(), &cli::usage());
+    // why: from a terminal, print; from a shortcut or the protocol handler, show a dialog.
+    if console::attach_parent_console(false) {
+        let _ = writeln!(console::console_out(), "{text}");
+    } else {
+        console::fatal_dialog(copy::STARTUP_FAILED, &text);
+    }
+    ExitCode::from(EXIT_USAGE)
 }
 
 fn print_line(text: &str) -> ExitCode {
@@ -191,38 +165,55 @@ fn fatal(error: &dyn std::fmt::Display) -> ExitCode {
 }
 
 /// The data folder and whether it is the default one.
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Root {
     path: PathBuf,
     scope: InstanceScope,
-    /// `--home` or `PRMONITOR_HOME`.
+    /// The resolved absolute root when it is not the default one (from `--home` or
+    /// `PRMONITOR_HOME`), repeated in the launch-at-login command.
     home: Option<PathBuf>,
 }
 
-fn data_root(
-    args: &Args,
-) -> Result<(PathBuf, InstanceScope, Option<PathBuf>), prm_config::ConfigError> {
+impl Root {
+    /// `resolved` is the absolute root; `explicit` when it came from `--home` or
+    /// `PRMONITOR_HOME`. An explicit root that names the default folder, however spelled, is the
+    /// default instance under the default spelling, so one folder never gets two instance locks.
+    fn new(resolved: PathBuf, explicit: bool, default: Option<PathBuf>) -> Self {
+        let home = explicit.then_some(resolved.as_path());
+        match root_scope(home, &resolved, default.as_deref()) {
+            InstanceScope::Default => Self {
+                path: default.unwrap_or(resolved),
+                scope: InstanceScope::Default,
+                home: None,
+            },
+            InstanceScope::Isolated => Self {
+                home: Some(resolved.clone()),
+                path: resolved,
+                scope: InstanceScope::Isolated,
+            },
+        }
+    }
+}
+
+fn data_root(args: &Args) -> Result<Root, prm_config::ConfigError> {
     let env_home = std::env::var_os(ENV_HOME).filter(|v| !v.is_empty());
-    let home = args
-        .home
-        .clone()
-        .or_else(|| env_home.clone().map(PathBuf::from));
+    let explicit = args.home.is_some() || env_home.is_some();
     let cwd = std::env::current_dir().unwrap_or_default();
     let data_local = dirs::data_local_dir();
     let default_root = data_local
         .as_ref()
         .map(|dir| dir.join(prm_domain::app::DATA_DIR_NAME));
-    let root = prm_config::resolve_root(args.home.clone(), env_home, data_local, &cwd)?;
-    let scope = root_scope(home.as_deref(), &root, default_root.as_deref());
-    Ok((root, scope, home))
+    let resolved = prm_config::resolve_root(args.home.clone(), env_home, data_local, &cwd)?;
+    Ok(Root::new(resolved, explicit, default_root))
 }
 
 /// An override (`home`) that names the default folder, however spelled, is still the default
 /// instance, so it shares the default instance's single-instance names instead of running
 /// beside it on the same files.
 pub(crate) fn root_scope(
-    home: Option<&std::path::Path>,
-    root: &std::path::Path,
-    default_root: Option<&std::path::Path>,
+    home: Option<&Path>,
+    root: &Path,
+    default_root: Option<&Path>,
 ) -> InstanceScope {
     let is_default = home.is_none() || default_root.is_some_and(|d| is_same_root(root, d));
     if is_default {
@@ -246,13 +237,13 @@ fn acquire(root: &Root, budget: Option<Duration>) -> Result<(Acquired, InstanceK
     }
 }
 
-fn primary_or_forward(args: &Args, root: Root, launch: &Launch) -> ExitCode {
+fn primary_or_forward(args: &Args, root: &Root, launch: &Launch) -> ExitCode {
     if let Some(pid) = args.relaunched_after {
         prm_platform::process::wait_for_exit(pid, PARENT_EXIT_WAIT);
     }
-    match acquire(&root, args.relaunched_after.map(|_| PARENT_EXIT_WAIT)) {
-        Ok((Acquired::Primary(lock), key)) => primary(args, &root, lock, &key, launch),
-        Ok((Acquired::Secondary, key)) => forward(args, &root, &key, launch),
+    match acquire(root, args.relaunched_after.map(|_| PARENT_EXIT_WAIT)) {
+        Ok((Acquired::Primary(lock), key)) => primary(args, root, lock, &key, launch),
+        Ok((Acquired::Secondary, key)) => forward(args, root, &key, launch),
         Err(error) => fatal(&error),
     }
 }
@@ -261,11 +252,12 @@ fn forward(args: &Args, root: &Root, key: &InstanceKey, launch: &Launch) -> Exit
     let Some(request) = forward_request(args) else {
         return ExitCode::SUCCESS;
     };
-    match after_forward(forward_to_primary(key, &request, FORWARD_BUDGET)) {
-        Next::Done => ExitCode::SUCCESS,
-        Next::Fatal(reason) => fatal(&reason),
-        Next::NotResponding => not_responding(),
-        Next::TakeOver => take_over(args, root, launch),
+    match forward_to_primary(key, &request, FORWARD_BUDGET) {
+        ForwardOutcome::Delivered => ExitCode::SUCCESS,
+        ForwardOutcome::Rejected(reason) => fatal(&reason),
+        ForwardOutcome::NotResponding => not_responding(),
+        // Nobody is listening: the primary is quitting (or crashed), so wait for the lock.
+        ForwardOutcome::NoPrimary => take_over(args, root, launch),
     }
 }
 
@@ -321,7 +313,7 @@ fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
     if !log.file_ok {
         tracing::warn!("log files unavailable; logging to the console only");
     }
-    panic::prune_crash_logs(&paths.logs, CRASH_LOGS_KEPT);
+    panic::prune_crash_logs(&paths.logs, panic::CRASH_LOGS_KEPT);
     let exe =
         std::env::current_exe().unwrap_or_else(|_| PathBuf::from(prm_domain::app::APP_EXE_NAME));
     let registration = registration_scope(root.scope, BuildKind::current(), register_override());
@@ -391,13 +383,7 @@ fn load(
 ) {
     let config = load_config(paths);
     let state = load_state(paths);
-    let ids: Vec<_> = config
-        .config
-        .orgs
-        .iter()
-        .filter_map(|o| o.org_id().cloned())
-        .collect();
-    let catalogs = load_catalogs(paths, &ids);
+    let catalogs = load_catalogs(paths, &config.config.org_ids());
     (config, state, catalogs)
 }
 
@@ -492,7 +478,12 @@ fn primary(
     };
     tracing::info!(ms = launch.started.elapsed().as_millis(), "service started");
     let (choice, marker) = renderer(args, &base.paths, &running);
-    let result = ui_launch::run(LaunchCtx {
+    let held = Held {
+        handle: running.handle,
+        handoff: act.handoff,
+        lock,
+    };
+    let ctx = LaunchCtx {
         choice,
         fallback_from: args.relaunched_after.map(|_| choice.kind.other()),
         start_hidden: running.start_hidden,
@@ -501,19 +492,27 @@ fn primary(
         paths: &base.paths,
         shell: running.shell,
         clock: base.clock,
-        handle: &running.handle,
+        handle: &held.handle,
         events: running.events,
         waker: act.waker,
         quit: act.quit,
         marker: Arc::clone(&marker),
         init_phase: Arc::clone(&launch.init_phase),
-    });
-    let held = Held {
-        handle: running.handle,
-        handoff: act.handoff,
-        lock,
     };
-    finish(args, result, choice.kind, (held, &marker), launch)
+    // why: a panic on the UI thread (the hook already reported it) must still stop the service,
+    // so its final persist runs, and release the handoff listener and the lock.
+    let Ok(result) = std::panic::catch_unwind(AssertUnwindSafe(|| ui_launch::run(ctx))) else {
+        tracing::error!("the window panicked; shutting down");
+        let _ = shutdown::graceful(held, launch.started);
+        return ExitCode::FAILURE;
+    };
+    let end = RunEnd {
+        held,
+        marker: &marker,
+        tried: choice.kind,
+        result,
+    };
+    finish(args, end, launch)
 }
 
 /// Picks the renderer and records the attempt (so a crash before the first frame counts).
@@ -531,33 +530,41 @@ fn renderer(args: &Args, paths: &AppPaths, running: &Running) -> (RendererChoice
         marker: previous.as_ref(),
         version: build_info::VERSION,
     });
-    if choice.reason == GLOW_FAILED {
+    if matches!(choice.reason, RendererReason::GlowFailed) {
         tracing::warn!(marker = ?previous, "OpenGL failed before on this version; using wgpu");
     }
     tracing::info!(
         renderer = choice.kind.as_arg(),
-        reason = choice.reason,
+        reason = choice.reason.as_str(),
         "renderer chosen"
     );
-    marker.begin(choice.kind);
+    marker.begin(previous.as_ref(), choice.kind);
     (choice, marker)
 }
 
-fn finish(
-    args: &Args,
+/// How the window run ended, and what the run still holds.
+struct RunEnd<'a> {
+    held: Held,
+    marker: &'a MarkerFile,
+    tried: RendererKind,
     result: Result<(), eframe::Error>,
-    tried: prm_ui::RendererKind,
-    (held, marker): (Held, &MarkerFile),
-    launch: &Launch,
-) -> ExitCode {
-    let first_frame_seen = !launch.init_phase.load(Ordering::Relaxed);
+}
+
+fn finish(args: &Args, end: RunEnd<'_>, launch: &Launch) -> ExitCode {
+    let phase = Phase::of(&launch.init_phase);
+    let RunEnd {
+        held,
+        marker,
+        tried,
+        result,
+    } = end;
     match result {
         Ok(()) => shutdown::graceful(held, launch.started),
         Err(error)
             if should_relaunch(
                 is_renderer_init_error(&error, tried),
-                args.relaunched_after.is_some(),
-                first_frame_seen,
+                Attempt::of(args),
+                phase,
             ) =>
         {
             tracing::warn!(%error, renderer = tried.as_arg(), "renderer failed; relaunching with the other one");
@@ -567,14 +574,19 @@ fn finish(
             shutdown::fallback_relaunch(held, relaunch)
         }
         Err(error) => {
-            tracing::error!(%error, first_frame_seen, "the window failed");
-            let detail = error.to_string();
-            if first_frame_seen {
-                console::fatal_dialog(copy::CRASHED_TITLE, &copy::crashed(&detail, None));
-            } else {
-                console::fatal_dialog(copy::STARTUP_FAILED, &copy::graphics_failed(&detail));
-            }
+            tracing::error!(%error, ?phase, "the window failed");
+            // why: let go of the lock, the listener and the service before the modal dialog, so
+            // a launch meanwhile starts afresh instead of reaching a process with no window.
             let _ = shutdown::graceful(held, launch.started);
+            let detail = error.to_string();
+            match phase {
+                Phase::Running => {
+                    console::fatal_dialog(copy::CRASHED_TITLE, &copy::crashed(&detail, None));
+                }
+                Phase::Init => {
+                    console::fatal_dialog(copy::STARTUP_FAILED, &copy::graphics_failed(&detail));
+                }
+            }
             ExitCode::FAILURE
         }
     }

@@ -9,7 +9,8 @@ use prm_service::{AppEvent, AppState, CommandSender};
 
 use crate::render::{RenderEnv, hover_bands::HoverBands};
 
-/// Title-bar colors (DWM caption, text and border; the dark flag is egui's job).
+/// Title-bar colors (DWM caption, text and border); the host derives the dark-glyph flag from
+/// the caption.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ChromeColors {
     pub caption: [u8; 3],

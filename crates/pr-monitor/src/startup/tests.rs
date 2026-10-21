@@ -1,30 +1,6 @@
 use super::*;
 
 #[test]
-fn self_test_short_circuits_before_instance_lock() {
-    let args = Args {
-        mode: Mode::SelfTest,
-        ..Args::default()
-    };
-    assert_eq!(plan(&args), StartupPlan::SelfTest);
-}
-
-#[test]
-fn version_and_help_only_print() {
-    let version = plan(&Args {
-        mode: Mode::Version,
-        ..Args::default()
-    });
-    assert!(matches!(version, StartupPlan::Print(ref text) if text.contains(build_info::VERSION)));
-    let help = plan(&Args {
-        mode: Mode::Help,
-        ..Args::default()
-    });
-    assert!(matches!(help, StartupPlan::Print(ref text) if text.contains("--self-test")));
-    assert_eq!(plan(&Args::default()), StartupPlan::Run);
-}
-
-#[test]
 fn a_second_launch_forwards_links_shows_or_stays_quiet() {
     let link = Args {
         activate: Some("prmonitor://refresh".to_owned()),
@@ -52,42 +28,90 @@ fn a_second_launch_forwards_links_shows_or_stays_quiet() {
 }
 
 #[test]
-fn after_forward_takes_over_only_when_nobody_listens() {
+fn should_relaunch_only_for_a_first_init_error_before_the_first_frame() {
     let cases = [
-        (ForwardOutcome::Delivered, Next::Done),
-        (
-            ForwardOutcome::Rejected("bad request".to_owned()),
-            Next::Fatal("bad request".to_owned()),
-        ),
-        (ForwardOutcome::NoPrimary, Next::TakeOver),
-        (ForwardOutcome::NotResponding, Next::NotResponding),
+        ((true, Attempt::First, Phase::Init), true),
+        ((true, Attempt::Fallback, Phase::Init), false),
+        ((true, Attempt::First, Phase::Running), false),
+        ((true, Attempt::Fallback, Phase::Running), false),
+        ((false, Attempt::First, Phase::Init), false),
+        ((false, Attempt::Fallback, Phase::Init), false),
+        ((false, Attempt::First, Phase::Running), false),
+        ((false, Attempt::Fallback, Phase::Running), false),
     ];
-    for (outcome, expected) in cases {
-        let label = format!("{outcome:?}");
-        assert_eq!(after_forward(outcome), expected, "{label}");
+    for ((init_error, attempt, phase), expected) in cases {
+        assert_eq!(
+            should_relaunch(init_error, attempt, phase),
+            expected,
+            "init_error={init_error} attempt={attempt:?} phase={phase:?}"
+        );
     }
 }
 
 #[test]
-fn should_relaunch_only_for_a_first_init_error_before_the_first_frame() {
-    // (init_error, already_relaunched, first_frame_seen) -> relaunch
-    let cases = [
-        ((true, false, false), true),
-        ((true, true, false), false),
-        ((true, false, true), false),
-        ((true, true, true), false),
-        ((false, false, false), false),
-        ((false, true, false), false),
-        ((false, false, true), false),
-        ((false, true, true), false),
-    ];
-    for ((init_error, relaunched, frame), expected) in cases {
-        assert_eq!(
-            should_relaunch(init_error, relaunched, frame),
-            expected,
-            "init_error={init_error} already_relaunched={relaunched} first_frame_seen={frame}"
-        );
-    }
+fn attempt_is_a_fallback_only_when_relaunched() {
+    assert_eq!(Attempt::of(&Args::default()), Attempt::First);
+    let child = Args {
+        relaunched_after: Some(7),
+        ..Args::default()
+    };
+    assert_eq!(Attempt::of(&child), Attempt::Fallback);
+}
+
+fn default_root() -> PathBuf {
+    PathBuf::from(if cfg!(windows) {
+        r"C:\Users\me\AppData\Local\PRMonitor"
+    } else {
+        "/home/me/.local/share/PRMonitor"
+    })
+}
+
+#[test]
+fn root_without_home_is_the_default_instance() {
+    let root = Root::new(default_root(), false, Some(default_root()));
+    assert_eq!(
+        root,
+        Root {
+            path: default_root(),
+            scope: InstanceScope::Default,
+            home: None
+        }
+    );
+}
+
+/// Regression: `--home` pointed at the default folder got an isolated lock, so it ran as a
+/// second primary on the default instance's files.
+#[test]
+fn root_home_naming_the_default_folder_is_the_default_instance() {
+    let spelled = if cfg!(windows) {
+        PathBuf::from(r"c:\users\me\appdata\local\prmonitor")
+    } else {
+        default_root()
+    };
+    let root = Root::new(spelled, true, Some(default_root()));
+    assert_eq!(root.scope, InstanceScope::Default);
+    assert_eq!(root.path, default_root(), "the default spelling is kept");
+    assert_eq!(root.home, None);
+}
+
+/// Regression: the raw (possibly relative) `--home` text went into the launch-at-login
+/// command; it is now the resolved absolute root.
+#[test]
+fn root_home_elsewhere_is_isolated_and_carries_the_resolved_path() {
+    let custom = PathBuf::from(if cfg!(windows) {
+        r"C:\work\prm-data"
+    } else {
+        "/work/prm-data"
+    });
+    let root = Root::new(custom.clone(), true, Some(default_root()));
+    assert_eq!(
+        root,
+        Root {
+            path: custom.clone(),
+            scope: InstanceScope::Isolated,
+            home: Some(custom)
+        }
+    );
 }
 
 /// `--home %LOCALAPPDATA%\PRMonitor\` used to run as an isolated instance beside the default

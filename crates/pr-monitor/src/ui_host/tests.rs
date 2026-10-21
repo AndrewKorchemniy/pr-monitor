@@ -10,8 +10,15 @@ fn chrome(caption: [u8; 3]) -> ChromeColors {
 
 #[test]
 fn dark_captions_ask_for_dark_title_bars() {
-    assert!(title_bar(chrome([0x16, 0x18, 0x1C])).dark);
-    assert!(!title_bar(chrome([0xEE, 0xF1, 0xF4])).dark);
+    let cases = [
+        ([0x16, 0x18, 0x1C], true),
+        ([0x70, 0x70, 0x70], true),
+        ([0x80, 0x80, 0x80], false),
+        ([0xEE, 0xF1, 0xF4], false),
+    ];
+    for (caption, dark) in cases {
+        assert_eq!(title_bar(chrome(caption)).dark, dark, "{caption:?}");
+    }
 }
 
 #[test]

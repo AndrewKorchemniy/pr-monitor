@@ -52,4 +52,5 @@ bytes = { workspace = true }
 [build-dependencies]
 winresource = { workspace = true }
 png = { workspace = true }
+prm-domain = { workspace = true }
 prm-theme = { workspace = true }

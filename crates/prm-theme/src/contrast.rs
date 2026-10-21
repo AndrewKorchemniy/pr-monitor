@@ -17,6 +17,12 @@ pub fn relative_luminance(color: Rgba8) -> f64 {
         + 0.0722 * srgb_to_linear(color.b)
 }
 
+/// A background dark enough that what is drawn on it should be light (alpha is ignored). The
+/// one definition of "dark" for theme contrast and the OS title bar glyphs.
+pub fn is_dark(color: Rgba8) -> bool {
+    relative_luminance(color.with_alpha(u8::MAX)) < DARK_BACKGROUND
+}
+
 /// `fg` composited over `bg` in sRGB, as a browser or egui would draw it.
 fn over(fg: Rgba8, bg: Rgba8) -> Rgba8 {
     let alpha = f64::from(fg.a) / 255.0;
@@ -48,7 +54,7 @@ pub fn ensure_contrast(fg: Rgba8, bg: Rgba8, min: f64) -> Rgba8 {
         return fg;
     }
     let lab = to_oklab(fg);
-    let lighter = relative_luminance(bg.with_alpha(u8::MAX)) < DARK_BACKGROUND;
+    let lighter = is_dark(bg);
     let target = if lighter { 1.0 } else { 0.0 };
     let at = |l: f64| from_oklab(Oklab { l, ..lab }, fg.a);
     if contrast_ratio(at(target), bg) < min {

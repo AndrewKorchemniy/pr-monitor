@@ -59,6 +59,58 @@ fn modes_are_exclusive_and_purge_needs_unregister() {
     ));
 }
 
+/// Regression: a protocol link whose quotes a launcher did not encode could carry
+/// `--unregister --purge` in with `--activate`, deleting the user's data.
+#[test]
+fn activation_conflicts_with_every_other_mode() {
+    let cases: [&[&str]; 4] = [
+        &[
+            "--activate",
+            "prmonitor://show",
+            "--unregister",
+            "--purge",
+            "--relaunched-after",
+            "1",
+        ],
+        &["prmonitor://show", "--self-test"],
+        &["--version", "prmonitor://refresh"],
+        &["--activate", "prmonitor://show", "--help"],
+    ];
+    for argv in cases {
+        assert!(
+            matches!(parse(argv), Err(ArgError::Conflict("--activate", _))),
+            "{argv:?} -> {:?}",
+            parse(argv)
+        );
+    }
+}
+
+#[test]
+fn activation_keeps_the_flags_a_relaunch_adds() {
+    let args = parse(&[
+        "--activate",
+        "prmonitor://show",
+        "--minimized",
+        "--debug",
+        "--home",
+        "D:\\data",
+        "--renderer",
+        "wgpu",
+        "--relaunched-after",
+        "9",
+    ])
+    .expect("valid");
+    assert_eq!(args.mode, Mode::Run);
+    assert_eq!(args.relaunched_after, Some(9));
+}
+
+#[test]
+fn usage_names_the_scheme_and_data_folder() {
+    let text = usage();
+    assert!(text.contains("prmonitor://"), "{text}");
+    assert!(text.contains("%LOCALAPPDATA%\\PRMonitor"), "{text}");
+}
+
 #[test]
 fn mistakes_are_reported() {
     assert_eq!(

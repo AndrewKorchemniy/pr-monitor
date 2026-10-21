@@ -22,6 +22,6 @@ pub use schema::{Config, OrgProfile, UiPrefs};
 pub use state::{OrgPersisted, PersistedState, UiState, WindowRect};
 pub use store::{
     ConfigLoad, FileRepo, StateLoad, StateRepo, atomic_write, load_catalogs, load_config,
-    load_state, save_config,
+    load_state, read_config, save_config,
 };
 pub use validate::normalize;

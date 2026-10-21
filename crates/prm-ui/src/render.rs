@@ -68,8 +68,8 @@ pub struct LaunchSpec {
     pub start_hidden: bool,
     /// Off-screen position as the start-hidden fallback (non-Windows; Windows cloaks).
     pub hide_offscreen: bool,
+    /// The saved window rect, only when it is worth restoring (plausible and on a monitor).
     pub window: Option<prm_config::WindowRect>,
-    pub rect_on_screen: bool,
     pub icon: Arc<egui::IconData>,
 }
 
@@ -85,7 +85,7 @@ pub fn native_options(spec: &LaunchSpec) -> eframe::NativeOptions {
         .with_min_inner_size(MIN_SIZE)
         .with_drag_and_drop(false);
     let mut centered = true;
-    if let (Some(rect), true) = (spec.window, spec.rect_on_screen) {
+    if let Some(rect) = spec.window {
         viewport = viewport
             .with_position([rect.x, rect.y])
             .with_inner_size([rect.w, rect.h])

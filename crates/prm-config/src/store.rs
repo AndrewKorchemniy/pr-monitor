@@ -153,12 +153,16 @@ pub fn load_config(paths: &AppPaths) -> ConfigLoad {
     }
 }
 
-/// Parses and, if older, migrates. A newer file loads best-effort and is marked read-only.
-fn parse_config(
-    paths: &AppPaths,
-    text: &str,
-    load: &mut ConfigLoad,
-) -> Result<(Config, Origin), String> {
+/// Reads `config.toml` without writing anything: parsed, migrated in memory and normalized.
+/// `None` when it is missing or unreadable (for tools such as `--unregister` that only look).
+pub fn read_config(paths: &AppPaths) -> Option<Config> {
+    let text = read_text(&paths.config).ok()?;
+    let (config, _) = parse_migrated(&text).ok()?;
+    Some(normalize(config).0)
+}
+
+/// Parses and, if older, migrates in memory; also returns the version as written.
+fn parse_migrated(text: &str) -> Result<(Config, u32), String> {
     let mut table: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
     let version = table
         .get("schema_version")
@@ -167,11 +171,27 @@ fn parse_config(
         .unwrap_or(CURRENT_SCHEMA);
     if version < CURRENT_SCHEMA {
         migrate_with(&mut table, version, CURRENT_SCHEMA, MIGRATIONS).map_err(|e| e.to_string())?;
+        let config = table.try_into().map_err(|e| e.to_string())?;
+        return Ok((config, version));
+    }
+    // Straight from the user's text, so error positions point into their file.
+    let config = toml::from_str(text).map_err(|e| e.to_string())?;
+    Ok((config, version))
+}
+
+/// Parses and, if older, migrates and backs up. A newer file loads best-effort and is marked
+/// read-only.
+fn parse_config(
+    paths: &AppPaths,
+    text: &str,
+    load: &mut ConfigLoad,
+) -> Result<(Config, Origin), String> {
+    let (config, version) = parse_migrated(text)?;
+    if version < CURRENT_SCHEMA {
         backup(
             &paths.config,
             &paths.root.join(format!("config.v{version}.bak")),
         );
-        let config = table.try_into().map_err(|e| e.to_string())?;
         return Ok((config, Origin::Migrated));
     }
     if version > CURRENT_SCHEMA {
@@ -185,8 +205,6 @@ fn parse_config(
             ),
         ));
     }
-    // Straight from the user's text, so error positions point into their file.
-    let config = toml::from_str(text).map_err(|e| e.to_string())?;
     Ok((config, Origin::Current))
 }
 
