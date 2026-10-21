@@ -46,6 +46,10 @@ pub(crate) fn toolbar(
     let rect = ui.max_rect();
     let mut focused = false;
     ui.horizontal_centered(|ui| {
+        // why: the glyph's gap to the window's left edge matches its gap to the divider below.
+        let frame_left = rect.left() - ui.ctx().content_rect().left();
+        let below = (rect.height() - fields::SEARCH_GLYPH) / 2.0;
+        ui.add_space((below - frame_left - fields::SEARCH_GLYPH_INSET).max(0.0));
         let max = (ui.available_width() - 280.0).max(160.0);
         let id = (filter_id(), copy::FILTER_HINT);
         let response = fields::search_field(ui, &theme, filter, id, max);

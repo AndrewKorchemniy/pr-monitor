@@ -96,6 +96,11 @@ impl UiTheme {
         m.row.control_height + m.space.md
     }
 
+    /// The toolbar's height: its buttons sit as far from its edges as from the window's right.
+    pub(crate) fn toolbar_height(&self) -> f32 {
+        self.control_height() + 2.0 * self.tokens.metrics.space.md
+    }
+
     pub(crate) fn is_dark(&self) -> bool {
         self.tokens.appearance == Appearance::Dark
     }

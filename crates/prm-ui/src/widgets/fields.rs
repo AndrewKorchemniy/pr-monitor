@@ -11,6 +11,9 @@ use crate::theme::{
 };
 
 const GLYPH: f32 = 14.0;
+/// The search glyph's size, and its inset from the field's left edge.
+pub(crate) const SEARCH_GLYPH: f32 = GLYPH;
+pub(crate) const SEARCH_GLYPH_INSET: f32 = 2.0;
 
 /// What a bordered field shows besides its text.
 #[derive(Clone, Copy)]
@@ -58,7 +61,7 @@ pub(crate) fn text_field(
     ui.painter().set(
         background,
         Shape::Vec(vec![
-            Shape::rect_filled(rect, radius, theme.colors.surface_sunken),
+            Shape::rect_filled(rect, radius, theme.colors.control_bg),
             Shape::rect_stroke(rect, radius, border, StrokeKind::Inside),
         ]),
     );
@@ -140,7 +143,7 @@ fn action_frame(
 ) -> Vec<Shape> {
     let c = &theme.colors;
     let radius = CornerRadius::same(theme.tokens.metrics.radius.md);
-    let mut shapes = vec![Shape::rect_filled(rect, radius, c.surface_sunken)];
+    let mut shapes = vec![Shape::rect_filled(rect, radius, c.control_bg)];
     let fill = match (ready, hovered) {
         (true, true) => Some(c.accent_hover),
         (true, false) => Some(c.accent_base),
@@ -183,7 +186,10 @@ pub(crate) fn search_field(
     let width = (GLYPH + 2.0 + m.space.md + content + 24.0).min(max_width);
     let (rect, area) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
     let glyph = Rect::from_center_size(
-        pos2(rect.left() + GLYPH / 2.0 + 2.0, rect.center().y),
+        pos2(
+            rect.left() + GLYPH / 2.0 + SEARCH_GLYPH_INSET,
+            rect.center().y,
+        ),
         vec2(GLYPH, GLYPH),
     );
     let clear =

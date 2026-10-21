@@ -47,10 +47,21 @@ pub(crate) fn settings_modal(
             let full = Rect::from_min_max(nav.min, pos2(nav.right(), ui.min_rect().bottom()));
             ui.painter().set(sidebar_fill, sidebar_shape(&theme, full));
         });
-    // why: Esc and the close button leave settings; a click outside (say, after signing in
-    // in a browser) must not.
-    let _ = modal;
+    if modal.backdrop_response.clicked() && !busy(cx, st) {
+        cx.push(UiAction::LeaveSettings);
+    }
     orgs::editor(ctx, cx, st, env);
+}
+
+/// Something is in progress that a stray click outside settings must not interrupt: a sign-in
+/// (often finished in a browser window over this one), a save, or an open dialog.
+fn busy(cx: &FrameCx<'_>, st: &SettingsState) -> bool {
+    let signing_in = cx
+        .state
+        .orgs
+        .iter()
+        .any(|o| matches!(o.auth.state, prm_service::AuthStateView::SigningIn { .. }));
+    signing_in || st.saving || st.editing.is_some()
 }
 
 /// The darker sidebar fill (rounded on the window's left corners) and its edge.

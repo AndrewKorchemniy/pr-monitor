@@ -61,8 +61,7 @@ impl PrMonitorApp {
             settings_modal(&ctx, &mut cx, settings, &env);
         }
         self.draw_overlay(&ctx);
-        // why: notices sit under the toolbar, clear of the search field and buttons.
-        let inset = self.theme.current(&ctx).tokens.metrics.row.toolbar_height;
+        let inset = self.theme.current(&ctx).toolbar_height();
         let mut cx = frame_cx!(self, &ctx);
         notice_stack(&ctx, &mut cx, &self.notices, inset);
     }

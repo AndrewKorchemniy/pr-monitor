@@ -433,6 +433,21 @@ pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> eg
     response.on_hover_text(name)
 }
 
+/// A compact ghost close button for notices and chips.
+pub(crate) fn small_close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
+    ghost_fill(ui, theme, rect, &response);
+    let glyph = Rect::from_center_size(rect.center(), vec2(9.0, 9.0));
+    icons::paint(
+        ui.painter(),
+        glyph,
+        Icon::Cross,
+        hover_color(theme, &response),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    response.on_hover_text(name)
+}
+
 /// The hover fill of a borderless (ghost) button, faded in and out rather than switched.
 pub(crate) fn ghost_fill(ui: &egui::Ui, theme: &UiTheme, rect: Rect, response: &egui::Response) {
     let t = ui.ctx().animate_bool_with_time(

@@ -63,10 +63,8 @@ pub(crate) fn dashboard(
 ) {
     let theme = cx.theme.clone();
     let row = &theme.tokens.metrics.row;
-    // why: the buttons sit as far from the right edge as from the top and bottom.
-    let toolbar_height = theme.control_height() + 2.0 * theme.tokens.metrics.space.md;
     egui::Panel::top("toolbar")
-        .exact_size(toolbar_height)
+        .exact_size(theme.toolbar_height())
         .frame(adapter::frame_chrome(&theme))
         .show(ui, |ui| {
             d.filter_focused = toolbar(ui, cx, &mut d.filter, d.view.group);
