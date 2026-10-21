@@ -89,6 +89,13 @@ impl UiTheme {
         }
     }
 
+    /// The height of every input, button and segmented control: one size app-wide, matching
+    /// the first-run URL field.
+    pub(crate) fn control_height(&self) -> f32 {
+        let m = &self.tokens.metrics;
+        m.row.control_height + m.space.md
+    }
+
     pub(crate) fn is_dark(&self) -> bool {
         self.tokens.appearance == Appearance::Dark
     }

@@ -83,12 +83,11 @@ fn scenes() -> Vec<Scene> {
         }),
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
-    let pages: [Named; 5] = [
+    let pages: [Named; 4] = [
         ("settings-general", |f| f.settings.page = PAGES[0]),
         ("settings-organizations", |f| f.settings.page = PAGES[1]),
         ("settings-notifications", |f| f.settings.page = PAGES[2]),
         ("settings-appearance", |f| f.settings.page = PAGES[3]),
-        ("settings-about", |f| f.settings.page = PAGES[4]),
     ];
     all.extend(
         pages

@@ -14,7 +14,8 @@ use crate::{
     theme::{UiTheme, adapter, icons::Icon},
     widgets::{
         self, card,
-        controls::{self, ActionField},
+        dialog::{self, DialogHead},
+        fields::{self, Field},
         people_picker::people_picker,
         scope_picker::scope_picker,
     },
@@ -58,41 +59,39 @@ pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstR
         });
 }
 
-/// "PR Monitor", then "Step 2 of 3 · Repositories".
+/// "PR Monitor", then "Step 2 of 3 · Repositories", then a divider.
 fn header(ui: &mut egui::Ui, theme: &UiTheme, step: Step) {
     let (index, name) = match step {
         Step::Connect => (1, copy::CONNECT),
         Step::Repositories => (2, copy::REPOSITORIES),
         Step::People => (3, copy::PEOPLE),
     };
-    ui.label(
-        RichText::new(copy::APP_NAME)
-            .font(theme.fonts.display.clone())
-            .color(theme.colors.text_primary),
-    );
     let caption = format!("{} · {name}", copy::step_of(index, 3));
-    widgets::muted(ui, theme, &caption);
-    ui.add_space(theme.tokens.metrics.space.xl);
+    let head = DialogHead {
+        title: copy::APP_NAME,
+        subtitle: Some(&caption),
+        display: true,
+        close: false,
+    };
+    dialog::header(ui, theme, &head);
 }
 
 fn connect(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     let theme = cx.theme.clone();
     let st = &mut fr.settings;
-    widgets::field_label(ui, &theme, copy::ORG_URL_LABEL);
-    ui.add_space(theme.tokens.metrics.space.xs);
-    let field = ActionField {
-        id: egui::Id::unique("first_run_org_url"),
-        hint: copy::ORG_URL_HINT,
-        action: copy::CONNECT,
-        icon: Icon::ArrowRight,
-        error: st.url_error,
-        tall: true,
-    };
-    let submitted = controls::action_field(ui, &theme, &mut st.new_org_url, &field);
-    if st.url_error {
+    let submitted = dialog::body(ui, &theme, |ui| {
+        widgets::field_label(ui, &theme, copy::ORG_URL_LABEL);
         ui.add_space(theme.tokens.metrics.space.xs);
-        widgets::error_text(ui, &theme, copy::BAD_ORG_URL);
-    }
+        let mut field = Field::new(egui::Id::unique("first_run_org_url"), copy::ORG_URL_HINT);
+        field.error = st.url_error;
+        let action = (&field, copy::CONNECT, Icon::ArrowRight);
+        let submitted = fields::action_field(ui, &theme, &mut st.new_org_url, action);
+        if st.url_error {
+            ui.add_space(theme.tokens.metrics.space.xs);
+            widgets::error_text(ui, &theme, copy::BAD_ORG_URL);
+        }
+        submitted
+    });
     if !submitted {
         return;
     }
@@ -121,13 +120,14 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     let status = org.org_id().and_then(|id| cx.state.org(id));
     let identity = status.map(|s| copy::identity(&s.label, s.auth.method));
     let catalog = status.and_then(|o| o.catalog.clone());
-    if let Some(identity) = &identity {
-        widgets::muted(ui, &theme, identity);
-        ui.add_space(theme.tokens.metrics.space.md);
-    }
-    let filter = &mut st.scope_filter;
-    let reload = scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope);
-    ui.add_space(theme.tokens.metrics.space.lg);
+    let reload = dialog::body(ui, &theme, |ui| {
+        if let Some(identity) = &identity {
+            widgets::muted(ui, &theme, identity);
+            ui.add_space(theme.tokens.metrics.space.md);
+        }
+        let filter = &mut st.scope_filter;
+        scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope)
+    });
     if reload && let Some(id) = org.org_id() {
         cx.push(UiAction::Send(prm_service::Command::LoadCatalog {
             org: id.clone(),
@@ -153,19 +153,16 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         return;
     };
     let id = org.org_id().cloned();
-    group_label(ui, &theme, copy::TRACK_FROM, None);
-    let list = &mut org.people.tracked_authors;
-    people_picker(ui, cx, &mut st.pickers.tracked, id.as_ref(), list);
-    ui.add_space(theme.tokens.metrics.space.xl);
-    group_label(
-        ui,
-        &theme,
-        copy::COUNT_REVIEWS_FROM,
-        Some(copy::REVIEWERS_EMPTY_HELP),
-    );
-    let list = &mut org.people.reviewers;
-    people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
-    ui.add_space(theme.tokens.metrics.space.lg);
+    dialog::body(ui, &theme, |ui| {
+        group_label(ui, &theme, copy::TRACK_FROM, None);
+        let list = &mut org.people.tracked_authors;
+        people_picker(ui, cx, &mut st.pickers.tracked, id.as_ref(), list);
+        ui.add_space(theme.tokens.metrics.space.xl);
+        let help = Some(copy::REVIEWERS_EMPTY_HELP);
+        group_label(ui, &theme, copy::COUNT_REVIEWS_FROM, help);
+        let list = &mut org.people.reviewers;
+        people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
+    });
     // why: once people are chosen, skipping would read as throwing the choice away.
     let nobody = org.people.tracked_authors.is_empty() && org.people.reviewers.is_empty();
     let mut finish = None;
@@ -201,16 +198,14 @@ fn group_label(ui: &mut egui::Ui, theme: &UiTheme, title: &str, help: Option<&st
     if let Some(help) = help {
         widgets::muted(ui, theme, help);
     }
-    ui.add_space(theme.tokens.metrics.space.xs);
+    ui.add_space(theme.tokens.metrics.space.sm);
 }
 
-/// A Back button on the left, the step's buttons right-aligned; true on Back.
+/// The action bar: Back on the left, the step's buttons right-aligned; true on Back.
 fn footer(ui: &mut egui::Ui, theme: &UiTheme, add: impl FnOnce(&mut egui::Ui)) -> bool {
-    let mut went_back = false;
-    ui.add_space(theme.tokens.metrics.space.xs);
-    ui.horizontal(|ui| {
-        went_back = ui.button(copy::PREVIOUS).clicked();
+    dialog::actions(ui, theme, |ui| {
+        let went_back = ui.button(copy::PREVIOUS).clicked();
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
-    });
-    went_back
+        went_back
+    })
 }

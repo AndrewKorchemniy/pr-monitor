@@ -18,7 +18,7 @@ use crate::{
     screens::{
         dashboard::{DashboardUi, dashboard},
         first_run::{FirstRun, first_run},
-        settings::{SettingsEnv, SettingsState, settings_screen},
+        settings::{SettingsEnv, SettingsState, settings_modal},
         shortcuts::shortcuts,
     },
     theme::{ThemeRuntime, fonts},
@@ -101,7 +101,10 @@ impl Fixture {
         match self.shown {
             Shown::Dashboard => dashboard(ui, &mut cx, &mut self.dash, true),
             Shown::FirstRun => first_run(ui, &mut cx, &mut self.first_run),
-            Shown::Settings => settings_screen(ui, &mut cx, &mut self.settings, &env()),
+            Shown::Settings => {
+                dashboard(ui, &mut cx, &mut self.dash, false);
+                settings_modal(&ctx, &mut cx, &mut self.settings, &env());
+            }
             Shown::Palette => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let rows = self.state.rows.clone();

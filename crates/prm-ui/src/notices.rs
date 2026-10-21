@@ -1,4 +1,4 @@
-//! Transient notices (bottom right): at most three, each until its TTL runs out.
+//! Transient notices (top right): at most three, each until its TTL runs out.
 
 use std::{sync::Arc, time::Duration};
 
@@ -18,6 +18,8 @@ pub(crate) struct ShownNotice {
     pub text: Arc<str>,
     pub severity: Severity,
     pub action: Option<UserAction>,
+    /// When it appeared (it fades in from here).
+    pub shown: Timestamp,
     pub expires: Timestamp,
 }
 
@@ -33,6 +35,7 @@ impl NoticeStack {
             text: notice.text.clone(),
             severity: notice.severity,
             action: notice.action.clone(),
+            shown: now,
             expires: now.saturating_add(notice.ttl),
         });
         if self.items.len() > MAX_VISIBLE {

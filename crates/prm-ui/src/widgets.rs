@@ -4,7 +4,9 @@ pub(crate) mod banner;
 pub(crate) mod card;
 pub(crate) mod chip;
 pub(crate) mod controls;
+pub(crate) mod dialog;
 pub(crate) mod empty_state;
+pub(crate) mod fields;
 pub(crate) mod modal;
 pub(crate) mod notice_stack;
 pub(crate) mod palette_view;
@@ -12,6 +14,7 @@ pub(crate) mod peek;
 pub(crate) mod people_picker;
 pub(crate) mod pr_table;
 pub(crate) mod scope_picker;
+pub(crate) mod slider;
 pub(crate) mod status_bar;
 pub(crate) mod status_pill;
 pub(crate) mod toolbar;
@@ -40,15 +43,6 @@ pub(crate) fn page_title(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui
     ui.label(
         RichText::new(text)
             .font(page_title_font(theme))
-            .color(theme.colors.text_primary),
-    )
-}
-
-/// A section heading.
-pub(crate) fn heading(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Response {
-    ui.label(
-        RichText::new(text)
-            .font(theme.fonts.title.clone())
             .color(theme.colors.text_primary),
     )
 }

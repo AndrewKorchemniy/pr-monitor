@@ -18,7 +18,7 @@ use crate::{
     screens::{
         dashboard::dashboard,
         first_run::first_run,
-        settings::{SettingsEnv, SettingsState, settings_screen},
+        settings::{SettingsEnv, SettingsState, settings_modal},
     },
     widgets::{notice_stack::notice_stack, toolbar::filter_id},
 };
@@ -30,7 +30,12 @@ impl PrMonitorApp {
         if let Some(fr) = &mut self.first_run {
             let mut cx = frame_cx!(self, &ctx);
             first_run(ui, &mut cx, fr);
-        } else if self.screen == Screen::Settings
+        } else {
+            let mut cx = frame_cx!(self, &ctx);
+            dashboard(ui, &mut cx, &mut self.dash, focused);
+        }
+        if self.first_run.is_none()
+            && self.screen == Screen::Settings
             && let Some(settings) = &mut self.settings
         {
             let renderer_line = renderer_line(self.render, self.adapter.as_ref());
@@ -53,13 +58,11 @@ impl PrMonitorApp {
                 renderer_line: &renderer_line,
             };
             let mut cx = frame_cx!(self, &ctx);
-            settings_screen(ui, &mut cx, settings, &env);
-        } else {
-            let mut cx = frame_cx!(self, &ctx);
-            dashboard(ui, &mut cx, &mut self.dash, focused);
+            settings_modal(&ctx, &mut cx, settings, &env);
         }
         self.draw_overlay(&ctx);
-        let inset = self.theme.current(&ctx).tokens.metrics.row.statusbar_height;
+        // why: notices sit under the toolbar, clear of the search field and buttons.
+        let inset = self.theme.current(&ctx).tokens.metrics.row.toolbar_height;
         let mut cx = frame_cx!(self, &ctx);
         notice_stack(&ctx, &mut cx, &self.notices, inset);
     }
@@ -89,7 +92,9 @@ impl PrMonitorApp {
     fn escape(&mut self, ctx: &egui::Context, text_input: bool) {
         let filter_focused = ctx.memory(|m| m.has_focus(filter_id()));
         let input = EscapeInputs {
-            popup_open: egui::Popup::is_any_open(ctx),
+            // why: a settings dialog (a picker) is a modal egui closes on Esc by itself.
+            popup_open: egui::Popup::is_any_open(ctx)
+                || self.settings.as_ref().is_some_and(|s| s.editing.is_some()),
             overlay: self.overlay.clone(),
             filter_focused: filter_focused || (text_input && self.dash.filter_focused),
             filter_empty: self.dash.filter.is_empty(),

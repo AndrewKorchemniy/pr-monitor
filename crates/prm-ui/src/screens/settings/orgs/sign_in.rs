@@ -143,10 +143,14 @@ fn signed_in_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus
         }));
     }
     let response = ui.button(copy::CHANGE_SIGN_IN);
-    egui::Popup::menu(&response).show(|ui| {
-        ui.set_min_width(220.0);
-        method_items(ui, cx, status);
-    });
+    let theme = cx.theme.clone();
+    egui::Popup::menu(&response)
+        .frame(controls::menu_frame(&theme))
+        .show(|ui| {
+            ui.set_min_width(240.0);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            method_items(ui, cx, status);
+        });
 }
 
 /// Not signed in: Microsoft sign-in as the primary action, the alternatives beside it.
@@ -174,13 +178,14 @@ fn sign_in_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) 
 }
 
 fn method_items(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
-    if ui.button(copy::SIGN_IN_MICROSOFT).clicked() {
+    let theme = cx.theme.clone();
+    if controls::menu_item(ui, &theme, copy::SIGN_IN_MICROSOFT, false).clicked() {
         cx.push(UiAction::Send(az_login(status, AzBroker::Default)));
     }
-    if ui.button(copy::SIGN_IN_BROWSER).clicked() {
+    if controls::menu_item(ui, &theme, copy::SIGN_IN_BROWSER, false).clicked() {
         cx.push(UiAction::Send(az_login(status, AzBroker::Browser)));
     }
-    if ui.button(copy::USE_PAT).clicked() {
+    if controls::menu_item(ui, &theme, copy::USE_PAT, false).clicked() {
         cx.push(UiAction::Modal(ModalKind::Pat(status.id.clone())));
     }
 }

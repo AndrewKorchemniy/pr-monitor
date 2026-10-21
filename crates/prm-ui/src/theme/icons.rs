@@ -26,9 +26,13 @@ pub(crate) enum Icon {
     ChevronUp,
     /// Continue or submit.
     ArrowRight,
-    /// Back.
-    ArrowLeft,
     Plus,
+    /// Notifications.
+    Bell,
+    /// An organization: a building.
+    Building,
+    /// Appearance: a half-filled circle.
+    Contrast,
     /// Merge conflicts or warnings: a triangle with a bar.
     Warning,
     Info,
@@ -106,14 +110,34 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.line_segment([at(0.15, -0.55), at(0.7, 0.0)], s);
             painter.line_segment([at(0.7, 0.0), at(0.15, 0.55)], s);
         }
-        Icon::ArrowLeft => {
-            painter.line_segment([at(0.7, 0.0), at(-0.7, 0.0)], s);
-            painter.line_segment([at(-0.15, -0.55), at(-0.7, 0.0)], s);
-            painter.line_segment([at(-0.7, 0.0), at(-0.15, 0.55)], s);
-        }
         Icon::Plus => {
             painter.line_segment([at(-0.7, 0.0), at(0.7, 0.0)], s);
             painter.line_segment([at(0.0, -0.7), at(0.0, 0.7)], s);
+        }
+        Icon::Bell => bell(painter, &at, s),
+        Icon::Building => {
+            let outline = vec![
+                at(-0.55, 0.8),
+                at(-0.55, -0.75),
+                at(0.55, -0.75),
+                at(0.55, 0.8),
+            ];
+            painter.add(Shape::closed_line(outline, s));
+            for y in [-0.35, 0.05] {
+                painter.line_segment([at(-0.25, y), at(0.25, y)], s);
+            }
+            painter.line_segment([at(-0.15, 0.8), at(-0.15, 0.45)], s);
+            painter.line_segment([at(0.15, 0.45), at(0.15, 0.8)], s);
+        }
+        Icon::Contrast => {
+            painter.circle_stroke(c, r * 0.8, s);
+            let half: Vec<Pos2> = (0_u8..=12)
+                .map(|i| {
+                    let angle = TAU / 4.0 + TAU / 2.0 * f32::from(i) / 12.0;
+                    c + vec2(angle.cos(), angle.sin()) * r * 0.8
+                })
+                .collect();
+            painter.add(Shape::convex_polygon(half, color, Stroke::NONE));
         }
         Icon::Warning => {
             let triangle = vec![at(0.0, -0.85), at(0.9, 0.75), at(-0.9, 0.75)];
@@ -134,6 +158,24 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             );
         }
     }
+}
+
+fn bell(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
+    let outline = vec![
+        at(-0.65, 0.45),
+        at(-0.5, 0.3),
+        at(-0.5, -0.1),
+        at(-0.4, -0.45),
+        at(-0.2, -0.66),
+        at(0.0, -0.72),
+        at(0.2, -0.66),
+        at(0.4, -0.45),
+        at(0.5, -0.1),
+        at(0.5, 0.3),
+        at(0.65, 0.45),
+    ];
+    painter.add(Shape::closed_line(outline, s));
+    painter.line_segment([at(-0.15, 0.68), at(0.15, 0.68)], s);
 }
 
 fn check(painter: &Painter, at: &impl Fn(f32, f32) -> Pos2, s: Stroke) {
@@ -175,8 +217,10 @@ pub(crate) fn paint_stroke(painter: &Painter, rect: Rect, icon: Icon, stroke: St
         | Icon::ChevronDown
         | Icon::ChevronUp
         | Icon::ArrowRight
-        | Icon::ArrowLeft
         | Icon::Plus
+        | Icon::Bell
+        | Icon::Building
+        | Icon::Contrast
         | Icon::Warning
         | Icon::Info
         | Icon::Dot

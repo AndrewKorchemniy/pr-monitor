@@ -16,11 +16,12 @@ use crate::{
     copy,
     frame::FrameCx,
     route::ModalKind,
-    screens::settings::{Editor, SettingsState},
+    screens::settings::{Editor, SettingsEnv, SettingsState},
     theme::{Tone, UiTheme, icons::Icon},
     widgets::{
         self, card,
-        controls::{self, ActionField, setting_row, toggle_row},
+        controls::{self, setting_row, toggle_row},
+        fields::{self, Field},
         modal::{self, ModalOutcome, ModalSpec},
         people_picker::{self, people_picker},
         scope_picker::{self, scope_picker},
@@ -40,7 +41,6 @@ pub(crate) fn new_profile(input: &str) -> Option<OrgProfile> {
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
-    header(ui, &theme, st);
     org_tabs(ui, cx, st);
     ui.add_space(theme.tokens.metrics.space.xl);
     if st.org >= st.draft.orgs.len() {
@@ -72,18 +72,15 @@ fn saved(st: &SettingsState) -> bool {
         .is_some_and(|id| st.base.org(id).is_some())
 }
 
-/// "Organizations › contoso".
-fn header(ui: &mut egui::Ui, theme: &UiTheme, st: &SettingsState) {
+/// "Organizations › contoso", the page title in the settings header (lays out inline).
+pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, st: &SettingsState) {
     let current = st.draft.orgs.get(st.org).map(OrgProfile::display_label);
     let mut crumbs = vec![copy::settings_section(SettingsSection::Organizations)];
     if let Some(label) = current.as_deref() {
         crumbs.push(label);
     }
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
-        card::breadcrumb(ui, theme, &crumbs);
-    });
-    ui.add_space(theme.tokens.metrics.space.md);
+    ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
+    card::breadcrumb(ui, theme, &crumbs);
 }
 
 /// One tab per org with its sign-in state as a dot, then Add organization, over a baseline.
@@ -155,7 +152,7 @@ fn org_tab(
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, text);
     let pad = m.space.lg;
     let width = pad + 7.0 + m.space.sm + galley.size().x + pad;
-    let size = egui::vec2(width, m.row.control_height + m.space.xs);
+    let size = egui::vec2(width, theme.control_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     if response.hovered() && !selected {
         let top = egui::CornerRadius {
@@ -195,7 +192,7 @@ fn add_tab(ui: &mut egui::Ui, theme: &UiTheme) -> egui::Response {
     );
     let pad = m.space.lg;
     let width = pad + 12.0 + m.space.sm + galley.size().x + pad;
-    let size = egui::vec2(width, m.row.control_height + m.space.xs);
+    let size = egui::vec2(width, theme.control_height());
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let color = if response.hovered() {
         theme.colors.text_primary
@@ -240,15 +237,12 @@ fn add_org(st: &mut SettingsState) -> bool {
 
 fn details(ui: &mut egui::Ui, theme: &UiTheme, org: &mut OrgProfile) {
     setting_row(ui, theme, (copy::NAME, Some(&org.url)), |ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut org.label)
-                .font(theme.fonts.body.clone())
-                .desired_width(260.0),
-        );
+        let field = Field::new(ui.make_persistent_id("org_name"), "").width(280.0);
+        fields::text_field(ui, theme, &mut org.label, &field);
     });
-    ui.separator();
+    controls::row_divider(ui, theme);
     toggle_row(ui, theme, &mut org.enabled, (copy::WATCH_ORG, None));
-    ui.separator();
+    controls::row_divider(ui, theme);
     toggle_row(ui, theme, &mut org.muted, (copy::MUTE_ORG, None));
 }
 
@@ -270,7 +264,7 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState)
     if row_with_button(ui, &theme, (&summary, Some(&detail)), copy::CHOOSE) {
         st.editing = Some(Editor::Repositories);
     }
-    ui.separator();
+    controls::row_divider(ui, &theme);
     let mut drafts = org.drafts == DraftPolicy::Show;
     if toggle_row(ui, &theme, &mut drafts, (copy::INCLUDE_DRAFTS, None)).changed() {
         org.drafts = if drafts {
@@ -279,7 +273,7 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState)
             DraftPolicy::Hide
         };
     }
-    ui.separator();
+    controls::row_divider(ui, &theme);
     toggle_row(
         ui,
         &theme,
@@ -338,7 +332,7 @@ fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
     let org = &mut st.draft.orgs[st.org];
     for (index, (editor, title, help)) in PEOPLE_LISTS.into_iter().enumerate() {
         if index > 0 {
-            ui.separator();
+            controls::row_divider(ui, theme);
         }
         if row_with_button(ui, theme, (title, help), copy::EDIT) {
             st.editing = Some(editor);
@@ -356,7 +350,11 @@ fn people(ui: &mut egui::Ui, theme: &UiTheme, st: &mut SettingsState) {
             Editor::Reviewers if org.people.reviewers.is_empty() => {
                 reviewer_policy(ui, theme, &mut org.review.empty_reviewer_list);
             }
-            Editor::Reviewers | Editor::Ignored | Editor::AddOrg | Editor::Repositories => {}
+            Editor::Reviewers
+            | Editor::Ignored
+            | Editor::AddOrg
+            | Editor::Licenses
+            | Editor::Repositories => {}
         }
     }
 }
@@ -380,23 +378,62 @@ fn people_list(org: &mut OrgProfile, editor: Editor) -> &mut Vec<Person> {
     match editor {
         Editor::Reviewers => &mut people.reviewers,
         Editor::Ignored => &mut people.ignored_comment_authors,
-        Editor::Tracked | Editor::AddOrg | Editor::Repositories => &mut people.tracked_authors,
+        Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
+            &mut people.tracked_authors
+        }
     }
 }
 
 /// The open dialog over the page, if any: add an org, choose repositories, or edit people.
-pub(crate) fn editor(ctx: &egui::Context, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
+pub(crate) fn editor(
+    ctx: &egui::Context,
+    cx: &mut FrameCx<'_>,
+    st: &mut SettingsState,
+    env: &SettingsEnv<'_>,
+) {
     let Some(editor) = st.editing else {
         return;
     };
     let outcome = match editor {
         Editor::AddOrg => add_org_dialog(ctx, &cx.theme.clone(), st),
+        Editor::Licenses => licenses_dialog(ctx, &cx.theme.clone(), env),
         Editor::Repositories => repositories_dialog(ctx, cx, st),
         Editor::Tracked | Editor::Reviewers | Editor::Ignored => people_dialog(ctx, cx, st, editor),
     };
     if outcome != ModalOutcome::Open {
         st.editing = None;
     }
+}
+
+/// Third-party licenses and the bundled fonts' licenses, in a scrolling dialog.
+fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) -> ModalOutcome {
+    let spec = ModalSpec {
+        id: "licenses",
+        title: copy::LICENSES,
+        subtitle: None,
+        buttons: &[copy::CLOSE],
+        danger: false,
+        width: 640.0,
+    };
+    modal::modal(ctx, theme, &spec, |ui| {
+        egui::ScrollArea::vertical()
+            .max_height(420.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for text in [
+                    env.licenses,
+                    crate::theme::fonts::OFL_NEXT,
+                    crate::theme::fonts::OFL_MONO,
+                ] {
+                    ui.label(
+                        RichText::new(text)
+                            .font(theme.fonts.mono.clone())
+                            .color(theme.colors.text_secondary),
+                    );
+                    controls::row_divider(ui, theme);
+                }
+            });
+    })
 }
 
 fn add_org_dialog(ctx: &egui::Context, theme: &UiTheme, st: &mut SettingsState) -> ModalOutcome {
@@ -411,15 +448,11 @@ fn add_org_dialog(ctx: &egui::Context, theme: &UiTheme, st: &mut SettingsState) 
     let mut added = false;
     let outcome = modal::modal(ctx, theme, &spec, |ui| {
         widgets::field_label(ui, theme, copy::ORG_URL_LABEL);
-        let field = ActionField {
-            id: egui::Id::unique("add_org_url"),
-            hint: copy::ORG_URL_HINT,
-            action: copy::ADD_ORG,
-            icon: Icon::ArrowRight,
-            error: st.url_error,
-            tall: false,
-        };
-        if controls::action_field(ui, theme, &mut st.new_org_url, &field)
+        ui.add_space(theme.tokens.metrics.space.xs);
+        let mut field = Field::new(egui::Id::unique("add_org_url"), copy::ORG_URL_HINT);
+        field.error = st.url_error;
+        let action = (&field, copy::ADD_ORG, Icon::ArrowRight);
+        if fields::action_field(ui, theme, &mut st.new_org_url, action)
             && !st.new_org_url.trim().is_empty()
         {
             added = add_org(st);
@@ -491,7 +524,7 @@ fn people_dialog(
     let (title, picker) = match editor {
         Editor::Reviewers => (copy::REVIEWERS_COUNT, &mut st.pickers.reviewers),
         Editor::Ignored => (copy::IGNORE_FROM, &mut st.pickers.ignored),
-        Editor::Tracked | Editor::AddOrg | Editor::Repositories => {
+        Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
             (copy::TRACK_FROM, &mut st.pickers.tracked)
         }
     };

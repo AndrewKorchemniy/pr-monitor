@@ -16,6 +16,7 @@ use crate::{
     widgets::{
         card::section,
         controls::{self, setting_row},
+        slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
 };
 
@@ -68,16 +69,16 @@ pub(crate) fn page(
         setting_row(ui, &theme, (copy::DENSITY, None), |ui| {
             controls::segmented(ui, &theme, &mut prefs.density, &DENSITIES);
         });
-        ui.separator();
-        let label = copy::text_size(prefs.font_scale);
-        setting_row(ui, &theme, (&label, None), |ui| {
-            controls::slider(
-                ui,
-                &theme,
-                &mut prefs.font_scale,
-                limits::FONT_SCALE,
-                &label,
-            );
+        controls::row_divider(ui, &theme);
+        setting_row(ui, &theme, (copy::TEXT_SIZE, None), |ui| {
+            let spec = SliderSpec {
+                id: egui::Id::unique("font_scale"),
+                name: copy::TEXT_SIZE,
+                scale: 100.0,
+                unit: copy::UNIT_PERCENT,
+                width: SLIDER_WIDTH,
+            };
+            slider_field(ui, &theme, &mut prefs.font_scale, limits::FONT_SCALE, &spec);
         });
     });
     section(ui, &theme, copy::SECTION_PERFORMANCE, None, |ui| {
@@ -87,9 +88,9 @@ pub(crate) fn page(
             (copy::ANIMATIONS, Some(copy::ANIMATIONS_HELP)),
             &mut prefs.animations,
         );
-        ui.separator();
+        controls::row_divider(ui, &theme);
         tristate(ui, &theme, (copy::LOW_POWER, None), &mut prefs.low_power);
-        ui.separator();
+        controls::row_divider(ui, &theme);
         let help = format!("{}. {}", env.renderer_line, copy::RESTART_HELP);
         setting_row(ui, &theme, (copy::RENDERER, Some(&help)), |ui| {
             controls::segmented(ui, &theme, &mut prefs.renderer, &RENDERERS);
