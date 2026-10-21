@@ -19,13 +19,14 @@ use crate::{
     testing::{
         demo::demo_state,
         org_status, sample_rows,
-        screens::{Fixture, Shown, harness},
+        screens::{Fixture, Shown, WINDOW, harness},
         state_with,
     },
     view::{ScrollIntent, columns::ColumnId},
 };
 
 mod gallery;
+mod people;
 mod status_bar;
 
 fn signed_out() -> AppState {
@@ -152,6 +153,122 @@ fn editing_settings_enables_save() {
         actions.iter().any(|a| matches!(a, UiAction::SaveSettings)),
         "{actions:?}"
     );
+}
+
+/// A save that was applied but not written used to show only as a passing message.
+#[test]
+fn a_save_that_was_not_written_keeps_the_save_bar_with_the_reason() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    let reason = copy::changes_not_saved(copy::SAVE_FAILED);
+    fixture.settings.save_error = Some(Arc::from(reason.as_str()));
+    let mut h = harness(fixture);
+    h.run();
+
+    h.get_by_label(&reason);
+    assert!(
+        h.query_by_label(copy::DISCARD).is_none(),
+        "nothing to discard"
+    );
+    h.get_by_label(copy::SAVE_CHANGES).click();
+    h.run();
+
+    let actions = h.state_mut().take_actions();
+    assert!(
+        actions.iter().any(|a| matches!(a, UiAction::SaveSettings)),
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn the_test_notification_result_shows_beside_its_button() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    fixture.settings.page = Page::Notifications;
+    let failed = copy::test_failed("Notifications are off");
+    fixture.settings.test_result = Some(Err(Arc::from(failed.as_str())));
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(&failed);
+
+    // why: the test button sits at the bottom of the page, below the fold.
+    h.get_by_label(copy::SEND_TEST).scroll_to_me();
+    h.run();
+    h.get_by_label(copy::SEND_TEST).click();
+    h.run();
+    assert!(
+        h.query_by_label(&failed).is_none(),
+        "a new test clears the result"
+    );
+    h.state_mut().settings.test_result = Some(Ok(()));
+    h.run();
+    h.get_by_label(copy::TEST_SENT);
+}
+
+/// "Send a test notification" from the palette opens this page scrolled to the button, so the
+/// result shows without scrolling.
+#[test]
+fn a_test_sent_from_the_palette_shows_its_button() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    fixture.settings.page = Page::Notifications;
+    fixture.settings.reveal_test = true;
+    let mut h = harness(fixture);
+    h.run();
+    h.run();
+
+    let button = h.get_by_label(copy::SEND_TEST).rect();
+    let window = egui::Rect::from_min_size(egui::Pos2::ZERO, WINDOW);
+    assert!(window.contains_rect(button), "{button:?} is off screen");
+    assert!(!h.state().settings.reveal_test, "it scrolls once");
+}
+
+/// A failed project list used to leave the picker saying it was loading, forever.
+#[test]
+fn a_failed_project_list_says_so_and_offers_a_reload() {
+    let mut state = demo_state();
+    let mut orgs = state.orgs.to_vec();
+    orgs[0].catalog = None;
+    orgs[0].catalog_error = Some(UiError::new("Can't reach Azure DevOps"));
+    state.orgs = orgs.into();
+    let mut fixture = Fixture::new(Shown::Settings, state);
+    fixture.settings.page = Page::Organizations;
+    fixture.settings.editing = Some(crate::screens::settings::Editor::Repositories);
+    let mut h = harness(fixture);
+    h.run();
+
+    assert_eq!(h.query_all_by_label(copy::PROJECTS_FAILED).count(), 2);
+    assert!(h.query_by_label(copy::LOADING_PROJECTS).is_none());
+    h.get_by_label(copy::REFRESH_LIST).click();
+    h.run();
+    let actions = h.state_mut().take_actions();
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, UiAction::Send(Command::LoadCatalog { force: true, .. }))),
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn a_stopped_service_shows_a_banner_on_the_dashboard() {
+    let mut fixture = Fixture::new(Shown::Dashboard, state_with(sample_rows()));
+    fixture.dash.show_service_stopped();
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(copy::SERVICE_STOPPED);
+    assert!(
+        h.query_by_label(copy::CLOSE).is_none(),
+        "it cannot be dismissed"
+    );
+}
+
+/// Setup cannot finish without the service, so first run says so too.
+#[test]
+fn a_stopped_service_shows_a_banner_during_first_run() {
+    let mut fixture = Fixture::new(Shown::FirstRun, AppState::default());
+    fixture.dash.show_service_stopped();
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(copy::SERVICE_STOPPED);
+    h.get_by_label(copy::APP_NAME);
 }
 
 #[test]

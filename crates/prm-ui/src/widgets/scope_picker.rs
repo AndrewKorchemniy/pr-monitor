@@ -8,6 +8,7 @@ use prm_domain::{
     model::{Catalog, Project, Repository},
     scope::{ProjectScope, RepoSel, ScopeSpec},
 };
+use prm_service::{OrgStatus, UiError};
 
 use crate::{
     copy,
@@ -27,12 +28,35 @@ pub(crate) struct ScopeFilter {
     pub text: String,
 }
 
+/// Where an org's project list stands.
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum CatalogState<'a> {
+    Loading,
+    /// The last load failed and nothing is cached; the refresh button tries again.
+    Failed(&'a UiError),
+    Ready(&'a Catalog),
+}
+
+impl<'a> CatalogState<'a> {
+    /// The org's catalog, else its load failure, else still loading (also for an unknown org).
+    pub(crate) fn of(org: Option<&'a OrgStatus>) -> Self {
+        let Some(org) = org else {
+            return Self::Loading;
+        };
+        match (&org.catalog, &org.catalog_error) {
+            (Some(catalog), _) => Self::Ready(catalog),
+            (None, Some(error)) => Self::Failed(error),
+            (None, None) => Self::Loading,
+        }
+    }
+}
+
 /// Returns true when the user asked to reload the catalog.
 pub(crate) fn scope_picker(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     filter: &mut ScopeFilter,
-    catalog: Option<&Catalog>,
+    catalog: CatalogState<'_>,
     scope: &mut ScopeSpec,
 ) -> bool {
     let mut reload = false;
@@ -44,10 +68,18 @@ pub(crate) fn scope_picker(
             reload = controls::icon_button(ui, theme, Icon::Refresh, copy::REFRESH_LIST)
                 .on_hover_text(copy::REFRESH_LIST)
                 .clicked();
-            widgets::muted(ui, theme, &summary(catalog, scope));
+            match catalog {
+                CatalogState::Failed(error) => {
+                    widgets::error_text(ui, theme, copy::PROJECTS_FAILED)
+                        .on_hover_text(error.title.as_ref());
+                }
+                CatalogState::Loading | CatalogState::Ready(_) => {
+                    widgets::muted(ui, theme, &summary(catalog, scope));
+                }
+            }
         });
     });
-    let Some(catalog) = catalog else {
+    let CatalogState::Ready(catalog) = catalog else {
         return reload;
     };
     if scope.all_projects {
@@ -94,10 +126,12 @@ fn project_list(
     }
 }
 
-/// "2 of 10 repositories", or that projects are still loading.
-pub(crate) fn summary(catalog: Option<&Catalog>, scope: &ScopeSpec) -> String {
-    let Some(catalog) = catalog else {
-        return copy::LOADING_PROJECTS.to_owned();
+/// "2 of 10 repositories", or that projects are still loading or could not be loaded.
+pub(crate) fn summary(catalog: CatalogState<'_>, scope: &ScopeSpec) -> String {
+    let catalog = match catalog {
+        CatalogState::Ready(catalog) => catalog,
+        CatalogState::Loading => return copy::LOADING_PROJECTS.to_owned(),
+        CatalogState::Failed(_) => return copy::PROJECTS_FAILED.to_owned(),
     };
     let total = catalog.repos.len();
     let chosen = if scope.all_projects {

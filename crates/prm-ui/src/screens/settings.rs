@@ -118,8 +118,14 @@ pub(crate) struct SettingsState {
     pub scroll_to: Option<SettingsSection>,
     /// A save is in flight; the base updates when the service confirms.
     pub saving: bool,
-    /// A save waits for the service's confirmation notice.
+    /// A save waits for the service to say whether the settings file was written.
     pub confirm_pending: bool,
+    /// The last save was applied but not written; the Save bar shows it until a write succeeds.
+    pub save_error: Option<Arc<str>>,
+    /// The last test notification, shown beside its button.
+    pub test_result: notifications::TestResult,
+    /// Scroll the test button into view on the next frame (a test sent from the palette).
+    pub reveal_test: bool,
 }
 
 impl SettingsState {
@@ -137,11 +143,19 @@ impl SettingsState {
             scroll_to: Some(section),
             saving: false,
             confirm_pending: false,
+            save_error: None,
+            test_result: None,
+            reveal_test: false,
         }
     }
 
     pub(crate) fn dirty(&self) -> bool {
         self.draft != *self.base
+    }
+
+    /// The Save bar shows: unsaved edits, or a save that could not be written (to retry).
+    pub(crate) fn save_bar_shown(&self) -> bool {
+        self.dirty() || self.save_error.is_some()
     }
 
     /// Routes people search results to the picker that asked; adds resolved people.

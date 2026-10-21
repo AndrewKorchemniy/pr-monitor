@@ -122,10 +122,7 @@ impl PrMonitorApp {
                     );
                 });
                 if outcome == ModalOutcome::Button(0) {
-                    self.actions.push(UiAction::Copy {
-                        text: message.clone(),
-                        notice: copy::COPY_MESSAGE,
-                    });
+                    self.actions.push(UiAction::Copy(message.clone()));
                 }
                 outcome
             }

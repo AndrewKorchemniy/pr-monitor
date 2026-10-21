@@ -52,10 +52,6 @@ pub const PEOPLE_REMOTE_MIN_CHARS: usize = 3;
 pub const SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Most candidates returned per search phase.
 pub const SEARCH_LIMIT: usize = 20;
-/// The same notice for the same org is shown at most once in this window.
-pub const NOTICE_DEDUPE: Duration = Duration::from_secs(30);
-/// How long an in-app notice stays visible.
-pub const NOTICE_TTL: Duration = Duration::from_secs(8);
 /// The org-wide query probe result is trusted this long.
 pub const ORG_WIDE_PROBE_TTL: Duration = Duration::from_hours(24);
 /// A discovered tenant is trusted this long.

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, RichText};
 use prm_config::Config;
+use prm_service::state::Banner;
 
 use crate::{
     actions::UiAction,
@@ -13,11 +14,13 @@ use crate::{
     screens::settings::{SettingsState, orgs::new_profile},
     theme::{UiTheme, adapter, icons::Icon},
     widgets::{
-        self, card,
+        self,
+        banner::banners,
+        card,
         dialog::{self, DialogHead},
         fields::{self, Field},
         people_picker::people_picker,
-        scope_picker::scope_picker,
+        scope_picker::{CatalogState, scope_picker},
     },
 };
 
@@ -43,8 +46,21 @@ impl FirstRun {
     }
 }
 
-pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
+/// The current step in a card; `stopped` (the background service stopped) shows above it, as
+/// on the dashboard, since setup cannot finish without the service.
+pub(crate) fn first_run(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    fr: &mut FirstRun,
+    stopped: Option<&Banner>,
+) {
     let theme = cx.theme.clone();
+    if let Some(stopped) = stopped {
+        let mut expanded = false;
+        egui::Panel::top("banners")
+            .frame(adapter::frame_canvas(&theme).inner_margin(egui::Margin::symmetric(8, 6)))
+            .show(ui, |ui| banners(ui, cx, &[stopped], &mut expanded));
+    }
     egui::CentralPanel::no_frame()
         .frame(adapter::frame_canvas(&theme))
         .show(ui, |ui| {
@@ -117,16 +133,17 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         fr.step = Step::Connect;
         return;
     };
-    let status = org.org_id().and_then(|id| cx.state.org(id));
+    let state = cx.state;
+    let status = org.org_id().and_then(|id| state.org(id));
     let identity = status.map(|s| copy::identity(&s.label, s.auth.method));
-    let catalog = status.and_then(|o| o.catalog.clone());
+    let catalog = CatalogState::of(status);
     let reload = dialog::body(ui, &theme, |ui| {
         if let Some(identity) = &identity {
             widgets::muted(ui, &theme, identity);
             ui.add_space(theme.tokens.metrics.space.md);
         }
         let filter = &mut st.scope_filter;
-        scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope)
+        scope_picker(ui, &theme, filter, catalog, &mut org.scope)
     });
     if reload && let Some(id) = org.org_id() {
         cx.push(UiAction::Send(prm_service::Command::LoadCatalog {

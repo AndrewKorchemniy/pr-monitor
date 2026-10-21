@@ -103,7 +103,10 @@ impl Fixture {
         };
         match self.shown {
             Shown::Dashboard => dashboard(ui, &mut cx, &mut self.dash, true),
-            Shown::FirstRun => first_run(ui, &mut cx, &mut self.first_run),
+            Shown::FirstRun => {
+                let stopped = self.dash.service_stopped.as_ref();
+                first_run(ui, &mut cx, &mut self.first_run, stopped);
+            }
             Shown::Settings => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let env = SettingsEnv {

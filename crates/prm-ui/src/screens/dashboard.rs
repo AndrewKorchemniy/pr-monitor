@@ -4,9 +4,12 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use eframe::egui;
+use prm_config::Severity;
 use prm_domain::view::age::AgeCache;
+use prm_service::state::Banner;
 
 use crate::{
+    copy,
     frame::FrameCx,
     render::hover_bands::TableGeometry,
     theme::adapter,
@@ -35,6 +38,9 @@ pub(crate) struct DashboardUi {
     pub peek: PeekLayout,
     pub banners_expanded: bool,
     pub dismissed: BTreeSet<Arc<str>>,
+    /// Shown first once the background service has stopped (it cannot recover); first run
+    /// shows it too.
+    pub service_stopped: Option<Banner>,
     pub ages: AgeCache,
     pub filter_focused: bool,
     pub geometry: Option<TableGeometry>,
@@ -48,10 +54,25 @@ impl DashboardUi {
             peek,
             banners_expanded: false,
             dismissed: BTreeSet::new(),
+            service_stopped: None,
             ages: AgeCache::new(),
             filter_focused: false,
             geometry: None,
         }
+    }
+
+    /// The background service stopped and cannot recover: a banner says so until a restart.
+    pub(crate) fn show_service_stopped(&mut self) {
+        self.service_stopped.get_or_insert_with(|| Banner {
+            id: Arc::from("service-stopped"),
+            severity: Severity::Error,
+            org: None,
+            title: Arc::from(copy::SERVICE_STOPPED),
+            detail: None,
+            action: None,
+            secondary: None,
+            dismissible: false,
+        });
     }
 }
 
@@ -69,11 +90,11 @@ pub(crate) fn dashboard(
         .show(ui, |ui| {
             d.filter_focused = toolbar(ui, cx, &mut d.filter, d.view.group);
         });
-    let visible: Vec<_> = cx
-        .state
-        .banners
+    let published = cx.state.banners.iter();
+    let visible: Vec<_> = d
+        .service_stopped
         .iter()
-        .filter(|b| !d.dismissed.contains(&b.id))
+        .chain(published.filter(|b| !d.dismissed.contains(&b.id)))
         .collect();
     if !visible.is_empty() {
         egui::Panel::top("banners")
@@ -130,6 +151,6 @@ fn scope_label(cx: &FrameCx<'_>) -> String {
     let enabled: Vec<_> = cx.state.orgs.iter().filter(|o| o.enabled).collect();
     match enabled.as_slice() {
         [one] => one.label.to_string(),
-        many => crate::copy::organizations(many.len()),
+        many => copy::organizations(many.len()),
     }
 }

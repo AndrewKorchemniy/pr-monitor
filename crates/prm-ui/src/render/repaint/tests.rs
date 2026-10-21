@@ -52,11 +52,11 @@ fn the_last_minute_of_a_countdown_ticks_every_second_only_when_focused() {
 #[test]
 fn deadlines_pull_the_repaint_earlier_and_past_ones_mean_now() {
     let soon = [None, Some(ts(NOW + 4)), None];
-    let notice = RepaintInputs {
+    let pending = RepaintInputs {
         deadlines: &soon,
         ..inputs()
     };
-    assert_eq!(next_repaint(&notice), Some(Duration::from_secs(4)));
+    assert_eq!(next_repaint(&pending), Some(Duration::from_secs(4)));
     let past = [Some(ts(NOW - 4))];
     let overdue = RepaintInputs {
         deadlines: &past,

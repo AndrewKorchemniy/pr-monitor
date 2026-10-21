@@ -50,6 +50,9 @@ pub(crate) fn banners(
     }
 }
 
+/// The severity icon, in points.
+const ICON: f32 = 12.0;
+
 fn banner(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -58,21 +61,70 @@ fn banner(
     expanded: &mut bool,
 ) {
     let theme = cx.theme.clone();
-    let tone = severity_tone(item.severity);
-    adapter::frame_banner(&theme, tone).show(ui, |ui| {
+    adapter::frame_banner(&theme, severity_tone(item.severity)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            icons::show(
-                ui,
-                severity_icon(item.severity),
-                12.0,
-                theme.colors.tone(tone).solid,
-            );
-            ui.vertical(|ui| text(ui, &theme, item));
-            let right = egui::Layout::right_to_left(egui::Align::Center);
-            ui.with_layout(right, |ui| buttons(ui, cx, item, more, expanded));
-        });
+        // why: `horizontal` makes the row one control tall and starts the text at its top,
+        // which left a blank band under a title-only banner; this row is as tall as its
+        // content, with the text centred on the buttons and the icon on the title.
+        ui.horizontal_top(|ui| row(ui, cx, (item, more), expanded));
     });
+}
+
+/// The icon, the title and detail, then the buttons on the right.
+fn row(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    (item, more): (&Banner, Option<usize>),
+    expanded: &mut bool,
+) {
+    let theme = cx.theme.clone();
+    let fit = Fit::of(ui, &theme, item, more);
+    ui.vertical(|ui| {
+        ui.add_space(fit.text_top + (fit.title - ICON) / 2.0);
+        let color = theme.colors.tone(severity_tone(item.severity)).solid;
+        icons::show(ui, severity_icon(item.severity), ICON, color);
+    });
+    ui.vertical(|ui| {
+        ui.add_space(fit.text_top);
+        text(ui, &theme, item);
+    });
+    if fit.buttons {
+        let size = egui::vec2(ui.available_width(), fit.row);
+        let right = egui::Layout::right_to_left(egui::Align::Center);
+        ui.allocate_ui_with_layout(size, right, |ui| buttons(ui, cx, item, more, expanded));
+    }
+}
+
+/// How a banner's row is sized: the title's line, the row (the text, or a button if taller)
+/// and where the text starts so that it is centred in the row.
+struct Fit {
+    title: f32,
+    row: f32,
+    text_top: f32,
+    buttons: bool,
+}
+
+impl Fit {
+    fn of(ui: &egui::Ui, theme: &UiTheme, item: &Banner, more: Option<usize>) -> Self {
+        let row_height = |font: &egui::FontId| ui.ctx().fonts_mut(|f| f.row_height(font));
+        let title = row_height(&theme.fonts.body_strong);
+        let detail = item.detail.as_ref().map_or(0.0, |_| {
+            ui.spacing().item_spacing.y + row_height(&theme.fonts.body)
+        });
+        let text = title + detail;
+        let actions = item.action.is_some() || item.secondary.is_some();
+        let row = if actions {
+            text.max(ui.spacing().interact_size.y)
+        } else {
+            text
+        };
+        Self {
+            title,
+            row,
+            text_top: ((row - text) / 2.0).max(0.0),
+            buttons: actions || item.dismissible || more.is_some(),
+        }
+    }
 }
 
 fn text(ui: &mut egui::Ui, theme: &UiTheme, item: &Banner) {

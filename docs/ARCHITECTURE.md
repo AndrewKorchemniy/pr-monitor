@@ -27,7 +27,7 @@ prm-theme    pure: theme files, OKLab derivation, contrast checks, the brand mar
 UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread)
   CommandSender::send(Command)  ───────────▶  service actor (owns all mutable state)
   watch::Receiver<Arc<AppState>> ◀─────────  publishes a new snapshot after each change
-  mpsc::Receiver<AppEvent>      ◀─────────  notices, people search results, sign-in results
+  mpsc::Receiver<AppEvent>      ◀─────────  people search, sign-in, save and test results
   ctx.request_repaint()         ◀─────────  every event also wakes the UI
 ```
 
@@ -38,8 +38,11 @@ UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread
 - `logic()` runs even while the window is hidden. It drains events, the tray and
   activations. `ui()` only draws.
 - Nothing repaints while hidden. Visible windows wake once a minute (for ages), every second
-  in the last minute before a refresh when focused, and at deadlines (notices, debounced
-  saves).
+  in the last minute before a refresh when focused, and at deadlines (debounced saves, the end
+  of a notification pause).
+- There are no transient in-app messages. A result shows where the user is already looking
+  (a banner, the settings Save bar, a line beside the button that asked, the people picker's
+  dropdown, the repository picker); anything else only goes to the log.
 
 ## A refresh
 

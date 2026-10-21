@@ -254,7 +254,7 @@ pub(crate) fn frame_banner(theme: &UiTheme, tone: Tone) -> egui::Frame {
         .inner_margin(Margin::symmetric(px(m.space.lg), px(m.space.sm)))
 }
 
-/// Popups: palette, notices, modals.
+/// Popups: palette, menus, modals.
 pub(crate) fn frame_popup(theme: &UiTheme, policy: RenderPolicy) -> egui::Frame {
     let v = visuals(theme, policy);
     egui::Frame::NONE

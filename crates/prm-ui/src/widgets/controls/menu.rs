@@ -81,18 +81,58 @@ pub(crate) fn menu_item(
     text: &str,
     selected: bool,
 ) -> egui::Response {
+    menu_item_detail(ui, theme, (text, None), MenuMark::Pointer { selected })
+}
+
+/// How a menu row shows that it is the current one.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MenuMark {
+    /// A menu the pointer drives: filled while hovered; the `selected` row (the current value)
+    /// is also filled, with the accent bar and a bold label.
+    Pointer { selected: bool },
+    /// A list the keys drive (a combobox): only the `lit` row is filled, with the accent bar.
+    /// Hovering fills nothing (the caller moves the highlight instead), so one row is lit.
+    Keys { lit: bool },
+}
+
+impl MenuMark {
+    const fn filled(self, hovered: bool) -> bool {
+        match self {
+            Self::Pointer { selected } => selected || hovered,
+            Self::Keys { lit } => lit,
+        }
+    }
+
+    /// The accent bar, and the state screen readers hear.
+    const fn current(self) -> bool {
+        match self {
+            Self::Pointer { selected } => selected,
+            Self::Keys { lit } => lit,
+        }
+    }
+}
+
+/// A `menu_item` with an optional muted second text after the label (a person's sign-in
+/// name), cut to fit the row.
+pub(crate) fn menu_item_detail(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (text, detail): (&str, Option<&str>),
+    mark: MenuMark,
+) -> egui::Response {
     let m = &theme.tokens.metrics;
     let size = vec2(ui.available_width(), theme.control_height() - m.space.xs);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    if selected || response.hovered() {
+    if mark.filled(response.hovered()) {
         ui.painter()
             .rect_filled(rect, 0.0, theme.colors.row_selected);
     }
-    if selected {
+    let current = mark.current();
+    if current {
         let bar = Rect::from_min_size(rect.min, vec2(2.0, rect.height()));
         ui.painter().rect_filled(bar, 0.0, theme.colors.accent_base);
     }
-    let font = if selected {
+    let font = if mark == (MenuMark::Pointer { selected: true }) {
         theme.fonts.body_strong.clone()
     } else {
         theme.fonts.body.clone()
@@ -104,11 +144,33 @@ pub(crate) fn menu_item(
         rect.left() + m.space.lg,
         rect.center().y - galley.size().y / 2.0,
     );
+    let after = at.x + galley.size().x + m.space.md;
     ui.painter().galley(at, galley, theme.colors.text_primary);
+    if let Some(detail) = detail {
+        let space = Rect::from_min_max(pos2(after, rect.top()), rect.max - vec2(m.space.lg, 0.0));
+        paint_detail(ui, theme, detail, space);
+    }
     let enabled = ui.is_enabled();
     response
-        .widget_info(|| egui::WidgetInfo::selected(egui::Role::MenuItem, enabled, selected, text));
+        .widget_info(|| egui::WidgetInfo::selected(egui::Role::MenuItem, enabled, current, text));
     response
+}
+
+/// A muted single line, vertically centred in `space` and truncated to its width.
+fn paint_detail(ui: &egui::Ui, theme: &UiTheme, detail: &str, space: Rect) {
+    if space.width() <= 0.0 {
+        return;
+    }
+    let color = theme.colors.text_muted;
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        detail.to_owned(),
+        theme.fonts.small.clone(),
+        color,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(space.width());
+    let galley = ui.painter().layout_job(job);
+    let at = pos2(space.left(), space.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, color);
 }
 
 /// One row of a multi-choice menu: a check box and its label (in the body font unless `label`
@@ -153,3 +215,6 @@ pub(crate) fn menu_check(
     });
     response
 }
+
+#[cfg(test)]
+mod tests;

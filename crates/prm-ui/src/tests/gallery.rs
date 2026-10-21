@@ -3,12 +3,19 @@
 //! `cargo test -p prm-ui gallery -- --ignored`, output in `$PRM_GALLERY_DIR` or
 //! `target/gallery`.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use eframe::egui::{self, Role};
 use egui_kittest::{Harness, kittest::Queryable as _};
-use prm_domain::view::{GroupBy, SortKey, StatusFilter};
-use prm_service::AppState;
+use prm_config::Severity;
+use prm_domain::{
+    Person,
+    auth::{SettingsSection, UserAction},
+    person::{CandidateSource, PersonCandidate},
+    testing::{org, person},
+    view::{GroupBy, SortKey, StatusFilter},
+};
+use prm_service::{AppState, SearchPhase, UiError, state::Banner};
 
 use crate::{
     commands::CommandId,
@@ -22,6 +29,7 @@ use crate::{
         screens::{Fixture, NARROW, Shown, WINDOW},
     },
     theme::fonts,
+    widgets::people_picker::Step as Highlight,
 };
 
 /// What the pointer does once a scene has settled (hover a control, open a menu).
@@ -202,6 +210,134 @@ fn status_bar_scenes() -> [Scene; 3] {
     ]
 }
 
+/// Fictional matches for "pri": one person seen in pull requests, two from the directory.
+fn matches() -> [PersonCandidate; 3] {
+    let directory = |descriptor: &str, name: &str, unique: &str| PersonCandidate {
+        id: None,
+        descriptor: Some(Arc::from(descriptor)),
+        name: Arc::from(name),
+        unique_name: Some(Arc::from(unique)),
+        group: false,
+        source: CandidateSource::Directory,
+    };
+    let harvested = Person {
+        unique_name: Some(Arc::from("prisha.nair@contoso.com")),
+        ..person(11, "Prisha Nair")
+    };
+    [
+        harvested.to_candidate(CandidateSource::Harvested),
+        directory("aad.pd", "Priyanka Das", "priyanka.das@contoso.com"),
+        directory("aad.pw", "Prince Walker", "prince.walker@contoso.com"),
+    ]
+}
+
+/// The tracked-people dialog with its dropdown open on `phase`.
+fn people_search(f: &mut Fixture, phase: &SearchPhase, found: &[PersonCandidate]) {
+    editing(f, Editor::Tracked);
+    f.settings.pickers.tracked.show_matches("pri", phase, found);
+}
+
+fn people_scenes() -> [Named; 5] {
+    [
+        ("settings-organizations-people", |f| {
+            f.settings.page = PAGES[1];
+            f.settings.scroll_to = Some(SettingsSection::People);
+        }),
+        ("settings-edit-people-matches", |f| {
+            people_search(f, &SearchPhase::Final, &matches());
+            f.settings.pickers.tracked.step(Highlight::Down, 3);
+        }),
+        ("settings-edit-people-searching", |f| {
+            people_search(f, &SearchPhase::Local, &matches()[..1]);
+        }),
+        ("settings-edit-people-failed", |f| {
+            let failed = UiError::new("Couldn't search the directory; showing known people only");
+            people_search(f, &SearchPhase::Failed(failed), &matches()[..1]);
+        }),
+        ("settings-edit-people-signed-out", |f| {
+            people_search(f, &SearchPhase::LocalOnly, &[]);
+        }),
+    ]
+}
+
+/// Banners of every shape: one line, a title with a detail and actions, and a dismissible one.
+fn banner_shapes(f: &mut Fixture) {
+    let plain = |id: &str, severity, title: &str| Banner {
+        id: Arc::from(id),
+        severity,
+        org: None,
+        title: Arc::from(title),
+        detail: None,
+        action: None,
+        secondary: None,
+        dismissible: false,
+    };
+    let sign_in = Banner {
+        org: Some(org("contoso")),
+        detail: Some(Arc::from("Your sign-in expired.")),
+        action: Some(UserAction::SignInWithMicrosoft),
+        secondary: Some(UserAction::ChooseSignIn),
+        ..plain("auth:contoso", Severity::Error, "Sign in to contoso")
+    };
+    let offline = Banner {
+        dismissible: true,
+        ..plain(
+            "offline",
+            Severity::Warning,
+            "Can't reach Azure DevOps. Showing the last data.",
+        )
+    };
+    let unsaved = plain(
+        "state-not-saved",
+        Severity::Warning,
+        "Couldn't save PR Monitor's data. Changes may be lost on exit.",
+    );
+    f.state.banners = Arc::from([sign_in, offline, unsaved]);
+    f.dash.banners_expanded = true;
+}
+
+/// What used to be a passing message, now shown where the user is looking.
+fn failure_scenes() -> [Named; 2] {
+    [
+        ("settings-save-failed", |f| {
+            let reason = copy::changes_not_saved(copy::SAVE_FAILED);
+            f.settings.save_error = Some(Arc::from(reason));
+        }),
+        ("settings-choose-repositories-failed", |f| {
+            let mut orgs = f.state.orgs.to_vec();
+            orgs[0].catalog = None;
+            orgs[0].catalog_error = Some(UiError::new("Can't reach Azure DevOps"));
+            f.state.orgs = orgs.into();
+            editing(f, Editor::Repositories);
+        }),
+    ]
+}
+
+/// The stopped service (on the dashboard and during first run) and published banners.
+fn banner_scenes() -> [Scene; 3] {
+    let stopped = |f: &mut Fixture| f.dash.show_service_stopped();
+    [
+        scene(
+            "dashboard-service-stopped",
+            Shown::Dashboard,
+            demo_state,
+            stopped,
+        ),
+        scene(
+            "dashboard-banners",
+            Shown::Dashboard,
+            demo_state,
+            banner_shapes,
+        ),
+        scene(
+            "first-run-service-stopped",
+            Shown::FirstRun,
+            empty_state,
+            stopped,
+        ),
+    ]
+}
+
 fn scenes() -> Vec<Scene> {
     let mut all = vec![
         scene("first-run-connect", Shown::FirstRun, empty_state, nothing),
@@ -237,17 +373,19 @@ fn scenes() -> Vec<Scene> {
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
     all.extend(status_bar_scenes());
+    all.extend(banner_scenes());
+    all.extend(settings_scenes());
+    all
+}
+
+/// Each settings page, its dialogs, the people search and the failures shown in place.
+fn settings_scenes() -> Vec<Scene> {
     let pages: [Named; 4] = [
         ("settings-general", |f| f.settings.page = PAGES[0]),
         ("settings-organizations", |f| f.settings.page = PAGES[1]),
         ("settings-notifications", |f| f.settings.page = PAGES[2]),
         ("settings-appearance", |f| f.settings.page = PAGES[3]),
     ];
-    all.extend(
-        pages
-            .into_iter()
-            .map(|(name, setup)| scene(name, Shown::Settings, demo_state, setup)),
-    );
     let dialogs: [Named; 3] = [
         ("settings-add-org", |f| editing(f, Editor::AddOrg)),
         ("settings-choose-repositories", |f| {
@@ -255,12 +393,13 @@ fn scenes() -> Vec<Scene> {
         }),
         ("settings-edit-people", |f| editing(f, Editor::Tracked)),
     ];
-    all.extend(
-        dialogs
-            .into_iter()
-            .map(|(name, setup)| scene(name, Shown::Settings, demo_state, setup)),
-    );
-    all
+    pages
+        .into_iter()
+        .chain(dialogs)
+        .chain(people_scenes())
+        .chain(failure_scenes())
+        .map(|(name, setup)| scene(name, Shown::Settings, demo_state, setup))
+        .collect()
 }
 
 fn out_dir() -> PathBuf {
@@ -274,7 +413,7 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path, pointer: Option<Poi
     let mut state = (scene.state)();
     let mut config = (*state.config).clone();
     config.ui.theme = theme.to_owned();
-    state.config = std::sync::Arc::new(config);
+    state.config = Arc::new(config);
     let mut fixture = Fixture::new(scene.shown, state);
     fixture.now = now();
     (scene.setup)(&mut fixture);

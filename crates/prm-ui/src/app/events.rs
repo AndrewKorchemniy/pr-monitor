@@ -1,8 +1,11 @@
-//! Service events: notices, activation, people search, sign-in and config results.
+//! Service events: activation, people search, sign-in, config and test-notification results.
+//! Each result shows where the user is already looking; the rest only goes to the log.
+
+use std::sync::Arc;
 
 use eframe::egui;
-use prm_domain::{PrKey, Timestamp, uri::AppUri};
-use prm_service::{AppEvent, Command};
+use prm_domain::{OrgId, Person, PrKey, uri::AppUri};
+use prm_service::{AppEvent, Command, UiError};
 use zeroize::Zeroize as _;
 
 use super::PrMonitorApp;
@@ -12,15 +15,14 @@ use crate::{
 };
 
 impl PrMonitorApp {
-    pub(super) fn drain_events(&mut self, ctx: &egui::Context, now: Timestamp) {
+    pub(super) fn drain_events(&mut self, ctx: &egui::Context) {
         while let Some(event) = self.link.try_event() {
-            self.on_event(ctx, event, now);
+            self.on_event(ctx, event);
         }
     }
 
-    fn on_event(&mut self, ctx: &egui::Context, event: AppEvent, now: Timestamp) {
+    fn on_event(&mut self, ctx: &egui::Context, event: AppEvent) {
         match event {
-            AppEvent::Notice(notice) => self.notices.push(&notice, now),
             AppEvent::Activate(uri) => self.activate(ctx, uri),
             AppEvent::PeopleResults { .. } | AppEvent::PersonResolved { .. } => {
                 if let Some(settings) = &mut self.settings {
@@ -30,58 +32,61 @@ impl PrMonitorApp {
                     first_run.settings.on_event(&event);
                 }
             }
-            AppEvent::SignInFinished { result, .. } => {
-                if let Err(error) = result
-                    && !error.transient
-                {
-                    self.notices.error(&error.title, now);
+            // why: the org's sign-in state and its banner already show the outcome.
+            AppEvent::SignInFinished { org, result } => {
+                if let Err(error) = result {
+                    tracing::info!(org = %org, error = %error.title, "sign-in did not finish");
                 }
             }
-            AppEvent::PatResult { org, result } => self.on_pat_result(&org, result, now),
-            AppEvent::ConfigApplied { saved, .. } => self.on_config_applied(saved, now),
+            AppEvent::PatResult { org, result } => self.on_pat_result(&org, result),
+            AppEvent::ConfigApplied { saved, .. } => self.on_config_applied(saved),
             AppEvent::Changes(changes) => self.changes.record(&changes),
-            AppEvent::NotificationTestResult(result) => match result {
-                Ok(()) => self.notices.info(copy::TEST_SENT, now),
-                Err(error) => self.notices.error(&copy::test_failed(&error.title), now),
-            },
+            AppEvent::NotificationTestResult(result) => self.on_test_result(result),
             AppEvent::Stopped => self.on_service_stopped(),
         }
     }
 
-    /// Confirms a settings save (the new config arrives with the state).
-    fn on_config_applied(&mut self, saved: bool, now: Timestamp) {
+    /// A save from settings that could not be written keeps the Save bar up with the error;
+    /// any later successful write clears it. Success needs no message: the bar goes away.
+    fn on_config_applied(&mut self, saved: bool) {
+        if !saved {
+            tracing::warn!("settings were applied but not written to disk");
+        }
         let Some(settings) = &mut self.settings else {
             return;
         };
-        if !std::mem::take(&mut settings.confirm_pending) {
-            return;
-        }
+        let asked = std::mem::take(&mut settings.confirm_pending);
         if saved {
-            self.notices.info(copy::CHANGES_SAVED, now);
-        } else {
+            settings.save_error = None;
+        } else if asked {
             let text = copy::changes_not_saved(copy::SAVE_FAILED);
-            self.notices.error(&text, now);
+            settings.save_error = Some(Arc::from(text));
         }
     }
 
-    fn on_pat_result(
-        &mut self,
-        org: &prm_domain::OrgId,
-        result: Result<prm_domain::Person, prm_service::UiError>,
-        now: Timestamp,
-    ) {
+    /// Shown beside the test button while settings is open; a failure is logged either way.
+    fn on_test_result(&mut self, result: Result<(), UiError>) {
+        if let Err(error) = &result {
+            tracing::warn!(error = %error.title, "test notification failed");
+        }
+        if let Some(settings) = &mut self.settings {
+            let message = |e: UiError| Arc::from(copy::test_failed(&e.title));
+            settings.test_result = Some(result.map_err(message));
+        }
+    }
+
+    fn on_pat_result(&mut self, org: &OrgId, result: Result<Person, UiError>) {
         let pat_open = matches!(&self.overlay, Overlay::Modal(ModalKind::Pat(open)) if open == org);
         match result {
-            Ok(person) => {
+            Ok(_) => {
                 if pat_open {
                     self.overlay = Overlay::None;
                 }
                 self.pat_input.zeroize();
-                self.notices
-                    .info(&copy::token_saved(&person.display_name()), now);
+                tracing::info!(org = %org, "token saved");
             }
             Err(error) if pat_open => self.pat_error = Some(error.title),
-            Err(error) => self.notices.error(&error.title, now),
+            Err(error) => tracing::warn!(org = %org, error = %error.title, "token not saved"),
         }
     }
 

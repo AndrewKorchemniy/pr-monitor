@@ -23,7 +23,7 @@ use crate::{
     command::Command,
     consts::PERSIST_DEBOUNCE,
     event::AppEvent,
-    state::{OrgHealth, PauseReason},
+    state::{AppState, OrgHealth, PauseReason},
     testing::{HarnessSetup, ServiceHarness},
     text,
 };
@@ -284,8 +284,57 @@ async fn job_panic_becomes_org_error() {
     h.stop().await;
 }
 
+fn catalog_failed(state: &AppState) -> bool {
+    state
+        .org(&org(CONTOSO))
+        .is_some_and(|o| o.catalog_error.is_some())
+}
+
+/// A failed project list load used to show only as a passing message, so the repository
+/// picker said it was loading projects forever.
 #[tokio::test(start_paused = true)]
-async fn persist_failure_notice_continues() {
+async fn catalog_failure_stays_on_the_org_until_a_reload_starts() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    let load = || Command::LoadCatalog {
+        org: org(CONTOSO),
+        force: true,
+    };
+    h.api(&org(CONTOSO))
+        .fail(ApiCall::Projects, AdoError::Network("down".into()));
+
+    h.send(load());
+    let failed = h.wait_for("catalog error", catalog_failed).await;
+    h.api(&org(CONTOSO)).clear_failures();
+    h.send(load());
+    let reloaded = h
+        .wait_for("catalog error cleared", |s| !catalog_failed(s))
+        .await;
+
+    let error = failed
+        .org(&org(CONTOSO))
+        .and_then(|o| o.catalog_error.clone());
+    assert_eq!(
+        error.map(|e| e.title.to_string()).as_deref(),
+        Some(text::UNREACHABLE)
+    );
+    assert!(
+        reloaded
+            .org(&org(CONTOSO))
+            .is_some_and(|o| o.catalog.is_some())
+    );
+    h.stop().await;
+}
+
+fn save_banner(state: &AppState) -> bool {
+    state
+        .banners
+        .iter()
+        .any(|b| b.id.as_ref() == "state-not-saved")
+}
+
+#[tokio::test(start_paused = true)]
+async fn persist_failure_banner_shows_until_a_save_succeeds() {
     let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
     refreshed(&mut h, CONTOSO, 1).await;
     let repo = h.repo.clone();
@@ -293,16 +342,11 @@ async fn persist_failure_notice_continues() {
         .await;
     h.repo.fail_next(ConfigError::Serialize("disk full".into()));
 
-    let events = h.events.clone();
-    h.wait_for("save notice", move |_| {
-        events
-            .events()
-            .iter()
-            .any(|e| matches!(e, AppEvent::Notice(n) if n.text.as_ref() == text::STATE_NOT_SAVED))
-    })
-    .await;
+    h.wait_for("save banner", save_banner).await;
     h.send(Command::RefreshNow);
     refreshed(&mut h, CONTOSO, 2).await;
+    h.wait_for("banner cleared", |s| !save_banner(s)).await;
+
     assert_eq!(list_calls(&h, CONTOSO), 2);
     h.stop().await;
 }
@@ -320,14 +364,7 @@ async fn persist_failure_retried() {
     h.repo.fail_next(ConfigError::Serialize("disk full".into()));
 
     h.send(Command::MarkAllSeen);
-    let events = h.events.clone();
-    h.wait_for("save notice", move |_| {
-        events
-            .events()
-            .iter()
-            .any(|e| matches!(e, AppEvent::Notice(n) if n.text.as_ref() == text::STATE_NOT_SAVED))
-    })
-    .await;
+    h.wait_for("save banner", save_banner).await;
     let failed_at = Instant::now();
     let repo = h.repo.clone();
     h.wait_for("retried save", move |_| state_saves(&repo) > before)

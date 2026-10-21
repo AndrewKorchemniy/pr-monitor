@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use prm_config::{Config, OrgChanges, OrgProfile, Severity, diff_configs, normalize};
+use prm_config::{Config, OrgChanges, OrgProfile, diff_configs, normalize};
 use prm_domain::OrgId;
 
 use super::Service;
@@ -12,7 +12,6 @@ use crate::{
     jobs::{JobKind, JobTag, Saved},
     org::{OrgData, OrgRuntime, org_profiles},
     scheduler::{Moment, jittered},
-    text,
 };
 
 impl Service {
@@ -34,7 +33,7 @@ impl Service {
             self.reschedule_all();
         }
         if changes.network {
-            self.global_notice(Severity::Info, text::NETWORK_RESTART);
+            tracing::info!("network settings changed; they apply after a restart");
         }
         if changes.autostart {
             self.spawn_autostart(Some(self.config.ui.launch_at_login));

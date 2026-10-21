@@ -20,7 +20,7 @@ use crate::{
         first_run::first_run,
         settings::{SettingsEnv, SettingsState, settings_modal},
     },
-    widgets::{notice_stack::notice_stack, toolbar::filter_id},
+    widgets::toolbar::filter_id,
 };
 
 impl PrMonitorApp {
@@ -29,7 +29,7 @@ impl PrMonitorApp {
         let focused = self.window.focused();
         if let Some(fr) = &mut self.first_run {
             let mut cx = frame_cx!(self, &ctx);
-            first_run(ui, &mut cx, fr);
+            first_run(ui, &mut cx, fr, self.dash.service_stopped.as_ref());
         } else {
             let mut cx = frame_cx!(self, &ctx);
             dashboard(ui, &mut cx, &mut self.dash, focused);
@@ -62,9 +62,6 @@ impl PrMonitorApp {
             settings_modal(&ctx, &mut cx, settings, &env);
         }
         self.draw_overlay(&ctx);
-        let inset = self.theme.current(&ctx).toolbar_height();
-        let mut cx = frame_cx!(self, &ctx);
-        notice_stack(&ctx, &mut cx, &self.notices, inset);
     }
 
     /// Keyboard shortcuts for the active scope, then Esc.
@@ -82,9 +79,8 @@ impl PrMonitorApp {
         for command in self.keymap.dispatch(ctx, scope) {
             self.run_command(ctx, command);
         }
-        if self.overlay == Overlay::None
-            && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
-        {
+        let escape = ctx.input(|i| i.key_pressed(Key::Escape) && i.modifiers.is_none());
+        if self.overlay == Overlay::None && escape {
             self.escape(ctx, text_input);
         }
     }
@@ -103,7 +99,13 @@ impl PrMonitorApp {
             filters_active: self.dash.view.filters_active(),
             has_tray: self.tray.is_some(),
         };
-        match escape_target(&input) {
+        let target = escape_target(&input);
+        if target != EscapeTarget::Popup {
+            // why: an open popup, combobox or dialog closes itself on Esc later this frame, so
+            // the key is left for it; everything else is handled here.
+            ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+        }
+        match target {
             EscapeTarget::Popup | EscapeTarget::CloseOverlay | EscapeTarget::Nothing => {}
             EscapeTarget::ClearFilterText => self.set_filter_text(String::new()),
             EscapeTarget::BlurFilter => ctx.memory_mut(|m| m.surrender_focus(filter_id())),
@@ -138,7 +140,6 @@ impl PrMonitorApp {
     }
 
     fn apply(&mut self, ctx: &egui::Context, action: UiAction) {
-        let now = self.clock.now();
         match action {
             UiAction::Run(command) => self.run_command(ctx, command),
             UiAction::Send(command) => self.link.send(command),
@@ -150,14 +151,13 @@ impl PrMonitorApp {
             UiAction::SetStatus(status) => self.dash.view.set_status(status),
             UiAction::ClearFilters => self.clear_filters(),
             UiAction::SetFilterText(text) => self.set_filter_text(text),
-            UiAction::Copy { text, notice } => {
+            UiAction::Copy(text) => {
                 ctx.copy_text(text);
-                self.notices.info(notice, now);
+                tracing::debug!("copied to the clipboard");
             }
             UiAction::DismissBanner(id) => {
                 self.dash.dismissed.insert(id);
             }
-            UiAction::DismissNotice(index) => self.notices.dismiss(index),
             UiAction::Sort(key) => self.dash.view.sort_by(key),
             UiAction::ToggleGroup(span) => self.dash.view.toggle_group(span),
             UiAction::SaveSettings => self.save_settings(),
@@ -245,7 +245,7 @@ impl PrMonitorApp {
 
     fn save_settings(&mut self) {
         if let Some(settings) = &mut self.settings
-            && settings.dirty()
+            && settings.save_bar_shown()
         {
             settings.saving = true;
             settings.confirm_pending = true;

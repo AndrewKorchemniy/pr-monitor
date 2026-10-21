@@ -1,39 +1,68 @@
-//! A people list with directory search: chips for the chosen people, a field that searches
-//! after 3 letters, and results that resolve to a person when picked.
+//! A people list with a directory search combobox. The field comes first and never moves:
+//! typing opens a dropdown under it (a hint under 3 letters, then the matches as they arrive,
+//! local ones first), Up and Down move the highlight, Enter or a click adds the person and
+//! clears the field for the next name, and Esc closes the dropdown. The chosen people sit below
+//! as compact pills, each with a flush remove button.
 
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
 
-use eframe::egui::{self, RichText};
-use prm_domain::{OrgId, Person, ids::RequestId, person::PersonCandidate};
-use prm_service::{AppEvent, Command, SearchPhase};
-
-use crate::{
-    actions::UiAction,
-    copy,
-    frame::FrameCx,
-    widgets::{
-        self,
-        fields::{self, Field},
-    },
+use eframe::egui;
+use prm_domain::{
+    OrgId, Person,
+    ids::RequestId,
+    person::{PersonCandidate, merge_candidates},
 };
+use prm_service::{AppEvent, SearchPhase, UiError};
+
+use crate::{copy, frame::FrameCx, widgets};
+
+mod combobox;
+mod pills;
+
+pub(crate) use pills::chips;
 
 /// Directory searches start at this many characters.
-pub(crate) const MIN_QUERY: usize = 3;
+const MIN_QUERY: usize = 3;
+/// The most matches the dropdown lists.
+const MAX_ROWS: usize = 8;
 
 static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
-pub(crate) fn next_request() -> RequestId {
+fn next_request() -> RequestId {
     RequestId(NEXT_REQUEST.fetch_add(1, Ordering::Relaxed))
 }
 
+/// Where the directory search for the current query stands.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Search {
     Idle,
     Searching(RequestId),
-    Done,
+    /// Finished; the line to show when nothing is left to offer ("No people match …").
+    Done(Arc<str>),
+    /// The directory was not searched (the org is signed out); the matches are known people
+    /// only, and this muted line says so.
+    LocalOnly(Arc<str>),
+    /// The directory failed; the matches are known people only, and this line says so.
+    Failed(Arc<str>),
+}
+
+/// Which way an arrow key moves the highlight.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Step {
+    Up,
+    Down,
+}
+
+/// What choosing a match does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Pick {
+    /// The match carries its id: add the person now.
+    Add(Person),
+    /// A directory entry: the service resolves it under this request first.
+    Resolve(RequestId, PersonCandidate),
 }
 
 /// One picker's transient state (its people live in the settings draft).
@@ -43,8 +72,14 @@ pub(crate) struct PeoplePicker {
     query: String,
     search: Search,
     results: Arc<[PersonCandidate]>,
-    resolving: Option<RequestId>,
+    /// Directory entries picked and not resolved yet; each is added when its result arrives.
+    resolving: Vec<RequestId>,
+    /// Why the last pick could not be added.
     error: Option<Arc<str>>,
+    /// The dropdown is open.
+    open: bool,
+    /// The highlighted row, an index into the offered matches.
+    highlight: usize,
 }
 
 impl PeoplePicker {
@@ -54,8 +89,10 @@ impl PeoplePicker {
             query: String::new(),
             search: Search::Idle,
             results: Arc::from([]),
-            resolving: None,
+            resolving: Vec::new(),
             error: None,
+            open: false,
+            highlight: 0,
         }
     }
 
@@ -63,12 +100,13 @@ impl PeoplePicker {
     pub(crate) fn on_event(&mut self, event: &AppEvent) -> Option<Person> {
         if let AppEvent::PeopleResults {
             request,
+            query,
             phase,
             candidates,
             ..
         } = event
         {
-            self.on_results(*request, *phase, candidates);
+            self.on_results(*request, query, phase, candidates);
             return None;
         }
         let AppEvent::PersonResolved {
@@ -77,35 +115,183 @@ impl PeoplePicker {
         else {
             return None;
         };
-        if self.resolving != Some(*request) {
-            return None;
-        }
-        self.resolving = None;
-        result
-            .as_ref()
-            .map_err(|error| self.error = Some(error.title.clone()))
-            .ok()
-            .cloned()
+        self.on_resolved(*request, result)
     }
 
-    /// Local results arrive first, then the directory's; stale requests are ignored.
+    /// Local results arrive first, then the directory's; stale requests are ignored. Until the
+    /// directory answers, the earlier matches that still fit stay after the local ones.
     fn on_results(
         &mut self,
         request: RequestId,
-        phase: SearchPhase,
+        query: &str,
+        phase: &SearchPhase,
         candidates: &Arc<[PersonCandidate]>,
     ) {
         if self.search != Search::Searching(request) {
             return;
         }
+        let finished = match phase {
+            SearchPhase::Local => {
+                let kept = self.results.to_vec();
+                let limit = candidates.len() + kept.len();
+                self.results = merge_candidates(candidates.to_vec(), kept, limit).into();
+                return;
+            }
+            SearchPhase::Final => Search::Done(Arc::from(copy::no_people(query))),
+            SearchPhase::LocalOnly => Search::LocalOnly(Arc::from(copy::SIGN_IN_TO_SEARCH)),
+            SearchPhase::Failed(error) => Search::Failed(error.title.clone()),
+        };
+        self.search = finished;
         self.results = candidates.clone();
-        if phase == SearchPhase::Final {
-            self.search = Search::Done;
+    }
+
+    /// A person picked earlier is resolved (or could not be). Once nothing is left to show
+    /// (no other pick pending, nothing typed) the dropdown closes; a failure opens it to say why.
+    fn on_resolved(
+        &mut self,
+        request: RequestId,
+        result: &Result<Person, UiError>,
+    ) -> Option<Person> {
+        let pending = self.resolving.iter().position(|r| *r == request)?;
+        self.resolving.remove(pending);
+        match result {
+            Ok(person) => {
+                self.open &= self.has_rows();
+                Some(person.clone())
+            }
+            Err(error) => {
+                self.error = Some(error.title.clone());
+                self.open = true;
+                None
+            }
+        }
+    }
+
+    /// The query changed: the dropdown opens (or closes once the field is empty) and shows the
+    /// hint, or a new search starts, whose request is returned.
+    fn typed(&mut self) -> Option<RequestId> {
+        self.error = None;
+        self.highlight = 0;
+        let query = self.query.trim().to_lowercase();
+        self.open = !query.is_empty() || !self.resolving.is_empty();
+        if query.chars().count() < MIN_QUERY {
+            self.search = Search::Idle;
+            self.results = Arc::from([]);
+            return None;
+        }
+        // why: the matches that still fit stay until the new results arrive, so the dropdown
+        // does not shrink to "Searching…" and grow back with every letter.
+        self.results = self
+            .results
+            .iter()
+            .filter(|candidate| mentions(candidate, &query))
+            .cloned()
+            .collect();
+        let request = next_request();
+        self.search = Search::Searching(request);
+        Some(request)
+    }
+
+    /// Moves the highlight among `count` offered matches.
+    pub(crate) fn step(&mut self, step: Step, count: usize) {
+        self.highlight = stepped(self.highlight, step, count);
+    }
+
+    /// Chooses `candidate`: clears the field for the next name and closes the dropdown, or
+    /// keeps it open on "Adding…" while a directory entry resolves.
+    fn pick(&mut self, candidate: &PersonCandidate) -> Pick {
+        self.reset();
+        if let Some(person) = candidate.to_person() {
+            self.open = !self.resolving.is_empty();
+            return Pick::Add(person);
+        }
+        let request = next_request();
+        self.resolving.push(request);
+        self.open = true;
+        Pick::Resolve(request, candidate.clone())
+    }
+
+    /// Empties the field, forgets its search and closes the dropdown (a dialog closing). Picks
+    /// still being resolved are kept, so those people are still added.
+    pub(crate) fn reset(&mut self) {
+        self.query.clear();
+        self.search = Search::Idle;
+        self.results = Arc::from([]);
+        self.error = None;
+        self.highlight = 0;
+        self.open = false;
+    }
+
+    /// Closes the dropdown and keeps what was typed.
+    pub(crate) const fn close(&mut self) {
+        self.open = false;
+    }
+
+    /// The highlighted match among those offered next to `people`.
+    fn highlighted<'a>(&'a self, people: &'a [Person]) -> Option<&'a PersonCandidate> {
+        let count = offered(&self.results, people).count();
+        let last = count.checked_sub(1)?;
+        offered(&self.results, people).nth(self.highlight.min(last))
+    }
+
+    /// Something to show: progress on a pick, its failure, or a typed query.
+    fn has_rows(&self) -> bool {
+        !self.resolving.is_empty() || self.error.is_some() || !self.query.trim().is_empty()
+    }
+}
+
+#[cfg(test)]
+impl PeoplePicker {
+    /// The state after typing `query` and receiving `found` in `phase` (screens and gallery).
+    pub(crate) fn show_matches(
+        &mut self,
+        query: &str,
+        phase: &SearchPhase,
+        found: &[PersonCandidate],
+    ) {
+        query.clone_into(&mut self.query);
+        if let Some(request) = self.typed() {
+            self.on_results(request, query, phase, &Arc::from(found));
         }
     }
 }
 
-/// Shows the chips and the search field; edits `people` in place.
+/// The highlight after one arrow key among `count` rows, wrapping from the last row to the
+/// first and back; 0 when there are none.
+const fn stepped(highlight: usize, step: Step, count: usize) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    let current = if highlight < count {
+        highlight
+    } else {
+        count - 1
+    };
+    match step {
+        Step::Down => (current + 1) % count,
+        Step::Up => (current + count - 1) % count,
+    }
+}
+
+/// `candidate`'s name or sign-in name contains `query` (already lowercase).
+fn mentions(candidate: &PersonCandidate, query: &str) -> bool {
+    let contains = |text: &str| text.to_lowercase().contains(query);
+    contains(&candidate.name) || candidate.unique_name.as_deref().is_some_and(contains)
+}
+
+/// The matches worth offering: not chosen already, and at most `MAX_ROWS`.
+fn offered<'a>(
+    results: &'a [PersonCandidate],
+    people: &'a [Person],
+) -> impl Iterator<Item = &'a PersonCandidate> + 'a {
+    results
+        .iter()
+        .filter(|candidate| !people.iter().any(|p| candidate.is_person(p)))
+        .take(MAX_ROWS)
+}
+
+/// The search field with its dropdown, then the chosen people as pills; edits `people` in
+/// place. Without a saved org there is nothing to search yet.
 pub(crate) fn people_picker(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -114,123 +300,17 @@ pub(crate) fn people_picker(
     people: &mut Vec<Person>,
 ) {
     let theme = cx.theme.clone();
+    match org {
+        Some(org) => combobox::search(ui, cx, picker, org, people),
+        None => {
+            widgets::muted(ui, &theme, copy::SAVE_ORG_FIRST);
+        }
+    }
     if !people.is_empty() {
+        ui.add_space(theme.tokens.metrics.space.sm);
         chips(ui, &theme, people);
     }
-    let Some(org) = org else {
-        widgets::muted(ui, &theme, copy::SAVE_ORG_FIRST);
-        return;
-    };
-    let field = Field::new(egui::Id::unique(("people", picker.id)), copy::ADD_PEOPLE);
-    let response = fields::text_field(ui, &theme, &mut picker.query, &field);
-    if response.changed() {
-        start_search(cx, picker, org);
-    }
-    status_line(ui, &theme, picker);
-    results(ui, cx, picker, org, people);
 }
 
-fn start_search(cx: &mut FrameCx<'_>, picker: &mut PeoplePicker, org: &OrgId) {
-    picker.error = None;
-    let query = picker.query.trim().to_owned();
-    if query.chars().count() < MIN_QUERY {
-        picker.search = Search::Idle;
-        picker.results = Arc::from([]);
-        return;
-    }
-    let request = next_request();
-    picker.search = Search::Searching(request);
-    cx.push(UiAction::Send(Command::SearchPeople {
-        org: org.clone(),
-        query,
-        request,
-    }));
-}
-
-fn status_line(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, picker: &PeoplePicker) {
-    let text = if let Some(error) = &picker.error {
-        error.to_string()
-    } else if picker.resolving.is_some() {
-        copy::ADDING.to_owned()
-    } else {
-        match picker.search {
-            Search::Idle if !picker.query.trim().is_empty() => copy::SEARCH_MIN.to_owned(),
-            Search::Searching(_) if picker.results.is_empty() => copy::SEARCHING.to_owned(),
-            Search::Done if picker.results.is_empty() => copy::no_people(picker.query.trim()),
-            Search::Idle | Search::Searching(_) | Search::Done => return,
-        }
-    };
-    widgets::muted(ui, theme, &text);
-}
-
-/// The chosen people as removable chips.
-pub(crate) fn chips(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, people: &mut Vec<Person>) {
-    let mut remove = None;
-    ui.horizontal_wrapped(|ui| {
-        for (index, person) in people.iter().enumerate() {
-            let mut text = person.display_name().to_string();
-            if person.group {
-                text.push_str(" · ");
-                text.push_str(copy::GROUP_TAG);
-            }
-            let label = RichText::new(format!("{text}  ×")).font(theme.fonts.label.clone());
-            let response = ui.add(
-                egui::Button::new(label)
-                    .corner_radius(egui::CornerRadius::same(theme.tokens.metrics.radius.pill)),
-            );
-            let response = match &person.unique_name {
-                Some(unique) => response.on_hover_text(unique.as_ref()),
-                None => response,
-            };
-            if response.clicked() {
-                remove = Some(index);
-            }
-        }
-    });
-    if let Some(index) = remove {
-        people.remove(index);
-    }
-}
-
-fn results(
-    ui: &mut egui::Ui,
-    cx: &mut FrameCx<'_>,
-    picker: &mut PeoplePicker,
-    org: &OrgId,
-    people: &mut Vec<Person>,
-) {
-    let mut chosen = None;
-    for candidate in picker.results.iter().take(8) {
-        let already = candidate
-            .id
-            .is_some_and(|id| people.iter().any(|p| p.id == id));
-        if already {
-            continue;
-        }
-        let mut text = candidate.name.to_string();
-        if let Some(unique) = &candidate.unique_name {
-            text.push_str("  ");
-            text.push_str(unique);
-        }
-        if ui.selectable_label(false, text).clicked() {
-            chosen = Some(candidate.clone());
-        }
-    }
-    let Some(candidate) = chosen else {
-        return;
-    };
-    picker.query.clear();
-    picker.results = Arc::from([]);
-    picker.search = Search::Idle;
-    if let Some(person) = candidate.to_person() {
-        people.push(person);
-    } else {
-        let request = next_request();
-        picker.resolving = Some(request);
-        cx.push(UiAction::Send(Command::ResolvePerson {
-            org: org.clone(),
-            candidate,
-            request,
-        }));
-    }
-}
+#[cfg(test)]
+mod tests;

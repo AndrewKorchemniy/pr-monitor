@@ -25,7 +25,7 @@ pub mod testing;
 pub use clock::SystemClock;
 pub use command::{Command, CommandSender};
 pub use errors::UiError;
-pub use event::{AppEvent, ChannelEventSink, EventSink, Notice, SearchPhase, channel_sink};
+pub use event::{AppEvent, ChannelEventSink, EventSink, SearchPhase, channel_sink};
 pub use handle::{InitialData, ServiceDeps, ServiceHandle, build, initial_state, spawn};
 pub use state::{AppState, AuthStateView, OrgHealth, OrgStatus, RefreshPhase};
 

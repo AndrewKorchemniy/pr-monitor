@@ -7,7 +7,6 @@ pub(crate) mod dialog;
 pub(crate) mod empty_state;
 pub(crate) mod fields;
 pub(crate) mod modal;
-pub(crate) mod notice_stack;
 pub(crate) mod palette_view;
 pub(crate) mod peek;
 pub(crate) mod people_picker;
