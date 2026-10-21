@@ -1,11 +1,14 @@
 //! The main window's visibility: start hidden, close and minimize to the tray, tray toggling,
 //! presence reports (visible/focused) for the notification policy, and the placement to save.
 
+mod reveal;
+
 use eframe::egui::{self, Pos2, Rect, ViewportCommand};
 use prm_config::WindowRect;
 use prm_domain::Timestamp;
 use prm_service::Command;
 
+use self::reveal::Reveal;
 use crate::link::ServiceLink;
 
 /// A tray click within this long of the window losing focus means "hide" (the click itself
@@ -42,6 +45,9 @@ pub(crate) struct WindowController {
     gained_focus: bool,
     focus_lost_at: Option<Timestamp>,
     hide_on_first_logic: bool,
+    /// A show waiting for `take_show`: `Some(true)` when the window was hidden.
+    show_request: Option<bool>,
+    reveal: Reveal,
     uncloak_pending: bool,
     launch: WindowLaunch,
     pending_restore: Option<Restore>,
@@ -61,6 +67,12 @@ impl WindowController {
             gained_focus: false,
             focus_lost_at: None,
             hide_on_first_logic: launch.start_hidden,
+            show_request: None,
+            reveal: if launch.start_hidden {
+                Reveal::Idle
+            } else {
+                Reveal::Launching
+            },
             uncloak_pending: false,
             launch,
             pending_restore: None,
@@ -96,9 +108,40 @@ impl WindowController {
         std::mem::take(&mut self.gained_focus)
     }
 
-    /// The creator cloaked the window; uncloak once it is hidden.
+    /// True once a shown window has had a themed frame presented: uncloak it now.
     pub(crate) fn take_uncloak(&mut self) -> bool {
         std::mem::take(&mut self.uncloak_pending)
+    }
+
+    /// A ui pass ran; once it is presented the window can be uncloaked.
+    pub(crate) fn painted(&mut self, ctx: &egui::Context) {
+        self.reveal.painted();
+        if self.reveal.needs_frame() {
+            ctx.request_repaint();
+        }
+    }
+
+    /// Sends the show asked for since the last `logic`. True means cloak the window first: it
+    /// was hidden, and it stays cloaked until [`Self::take_uncloak`]. Call from `logic`, after
+    /// `begin_frame`; the commands run after `logic` returns, so the cloak lands before them.
+    pub(crate) fn take_show(&mut self, ctx: &egui::Context) -> bool {
+        let Some(from_hidden) = self.show_request.take() else {
+            return false;
+        };
+        if let Some(restore) = self.pending_restore.take() {
+            ctx.send_viewport_cmd(ViewportCommand::OuterPosition(restore_position(
+                ctx, restore,
+            )));
+        }
+        ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(ViewportCommand::Focus);
+        let cloak = from_hidden && !self.launch.hide_offscreen;
+        if cloak {
+            self.reveal = Reveal::Showing;
+        }
+        ctx.request_repaint();
+        cloak
     }
 
     pub(crate) fn begin_frame(
@@ -108,11 +151,15 @@ impl WindowController {
         now: Timestamp,
         has_tray: bool,
     ) {
+        self.uncloak_pending = self.reveal.begin_logic();
+        if self.reveal.needs_frame() {
+            ctx.request_repaint();
+        }
         if self.hide_on_first_logic {
+            // why: the window stays cloaked while hidden, so its next show cannot flash.
             self.hide_on_first_logic = false;
             ctx.send_viewport_cmd(ViewportCommand::Visible(false));
             self.visible = false;
-            self.uncloak_pending = !self.launch.hide_offscreen;
             if self.launch.hide_offscreen {
                 let restore = self.launch.restore_position;
                 self.pending_restore = Some(restore.map_or(Restore::Centered, Restore::Saved));
@@ -130,8 +177,11 @@ impl WindowController {
             self.track_placement(ctx);
             self.maximized = maximized.unwrap_or(false);
         }
-        if self.minimize_to_tray && has_tray && self.visible && minimized == Some(true) {
-            self.hide(ctx);
+        if self.visible && minimized == Some(true) {
+            self.uncloak_pending |= self.reveal.minimized();
+            if self.minimize_to_tray && has_tray {
+                self.hide(ctx);
+            }
         }
         self.report_presence(link);
     }
@@ -166,22 +216,21 @@ impl WindowController {
         }
     }
 
+    /// Asks for the window in front; `take_show` sends it from the next `logic`, which may be
+    /// this frame's, so the cloak can land before the window is shown.
     pub(crate) fn show(&mut self, ctx: &egui::Context) {
-        if let Some(restore) = self.pending_restore.take() {
-            ctx.send_viewport_cmd(ViewportCommand::OuterPosition(restore_position(
-                ctx, restore,
-            )));
-        }
-        ctx.send_viewport_cmd(ViewportCommand::Visible(true));
-        ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
-        ctx.send_viewport_cmd(ViewportCommand::Focus);
+        let from_hidden = self.show_request.unwrap_or(false) || !self.visible;
+        self.show_request = Some(from_hidden);
         self.visible = true;
         ctx.request_repaint();
     }
 
+    /// Hides the window; one still being revealed stays cloaked, and the next show reveals it.
     pub(crate) fn hide(&mut self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(ViewportCommand::Visible(false));
         self.visible = false;
+        self.show_request = None;
+        self.reveal = Reveal::Idle;
     }
 
     /// Tray left click: hide when the window was just in front, else bring it forward.

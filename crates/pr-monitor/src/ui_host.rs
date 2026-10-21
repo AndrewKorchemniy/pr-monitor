@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use prm_domain::ports::PortErrorKind;
 use prm_platform::{DesktopShell, Rgb, TitleBarColors};
 use prm_theme::{Rgba8, contrast::is_dark};
 use prm_ui::{ChromeColors, UiHost};
@@ -33,8 +34,13 @@ impl UiHost for PlatformUiHost {
     }
 
     fn set_cloaked(&self, window: &dyn HasWindowHandle, cloaked: bool) {
-        if let Err(error) = self.0.set_cloaked(window, cloaked) {
-            tracing::warn!(%error, cloaked, "couldn't cloak the window");
+        match self.0.set_cloaked(window, cloaked) {
+            Ok(()) => {}
+            // Only Windows cloaks; elsewhere the window simply shows as it is.
+            Err(error) if error.kind == PortErrorKind::Unsupported => {
+                tracing::debug!(%error, cloaked, "window cloaking unsupported");
+            }
+            Err(error) => tracing::warn!(%error, cloaked, "couldn't cloak the window"),
         }
     }
 

@@ -109,9 +109,8 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
     let state = link.latest();
     let adapter = adapter_facts(cc);
     log_graphics(init.render, adapter.as_ref());
-    if init.start_hidden {
-        init.host.set_cloaked(cc, true);
-    }
+    // why: cloaked until a themed frame is on screen (see `window::reveal`), hidden or not.
+    init.host.set_cloaked(cc, true);
     let policy = resolve_policy(
         init.render,
         adapter.as_ref(),
@@ -255,6 +254,9 @@ impl eframe::App for PrMonitorApp {
         if self.window.take_uncloak() {
             self.host.set_cloaked(frame, false);
         }
+        if self.window.take_show(ctx) {
+            self.host.set_cloaked(frame, true);
+        }
         if self.window.take_gained_focus() {
             self.theme.poll_user_dir();
             self.reload_keymap();
@@ -281,6 +283,7 @@ impl eframe::App for PrMonitorApp {
         self.draw(ui);
         self.run_actions(&ctx);
         self.sync_pat_draft();
+        self.window.painted(&ctx);
         if let Some(callback) = self.on_first_frame.take() {
             callback();
         }
