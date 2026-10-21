@@ -9,14 +9,13 @@ use std::{
 };
 
 use interprocess::local_socket::{ListenerOptions, tokio::Stream, traits::tokio::Listener as _};
-use prm_domain::uri::AppUri;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     sync::oneshot,
 };
 
 use crate::shared::{
-    handoff_codec::{HandoffReply, HandoffRequest, MAX_FRAME, decode_request, encode_reply},
+    handoff_codec::{HandoffReply, HandoffRequest, READ_LIMIT, decode_request, encode_reply},
     instance_key::InstanceKey,
 };
 
@@ -26,22 +25,22 @@ const READY_TIMEOUT: Duration = Duration::from_secs(2);
 const READ_TIMEOUT: Duration = Duration::from_secs(2);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 const STOP_POLL: Duration = Duration::from_millis(10);
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Activation {
-    Show,
-    Open(AppUri),
-    Quit,
-}
+/// The first pause after a failed accept; doubled per consecutive failure.
+const ACCEPT_BACKOFF_MIN: Duration = Duration::from_millis(100);
+/// The longest pause between accept attempts.
+const ACCEPT_BACKOFF_MAX: Duration = Duration::from_secs(2);
 
 /// Receives activations on the handoff thread; must not block.
 pub trait ActivationSink: Send + Sync + 'static {
-    fn activate(&self, activation: Activation);
+    /// One validated request, in arrival order.
+    fn activate(&self, request: HandoffRequest);
 }
 
+/// The running listener. Dropping it (or `stop`) ends the serve loop: the stop sender's drop
+/// wakes it.
 pub struct HandoffServer {
-    stop: Option<oneshot::Sender<()>>,
-    thread: Option<JoinHandle<()>>,
+    stop: oneshot::Sender<()>,
+    thread: JoinHandle<()>,
 }
 
 impl HandoffServer {
@@ -65,8 +64,8 @@ impl HandoffServer {
             })?;
         match ready_rx.recv_timeout(READY_TIMEOUT) {
             Ok(Ok(())) => Ok(Self {
-                stop: Some(stop_tx),
-                thread: Some(thread),
+                stop: stop_tx,
+                thread,
             }),
             Ok(Err(error)) => {
                 let _ = thread.join();
@@ -80,18 +79,52 @@ impl HandoffServer {
     }
 
     /// Stops accepting and waits up to `timeout`. `true` if the thread finished.
-    pub fn stop(mut self, timeout: Duration) -> bool {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        let Some(thread) = self.thread.take() else {
-            return true;
-        };
+    pub fn stop(self, timeout: Duration) -> bool {
+        let Self { stop, thread } = self;
+        let _ = stop.send(());
         let deadline = Instant::now() + timeout;
         while !thread.is_finished() && Instant::now() < deadline {
             std::thread::sleep(STOP_POLL);
         }
         thread.is_finished() && thread.join().is_ok()
+    }
+}
+
+/// Pacing after failed accepts, so a persistent error (no pipe instance, no file descriptors)
+/// neither spins a core nor floods the log: one warning per run of failures.
+#[derive(Debug)]
+struct AcceptBackoff {
+    failures: u32,
+    delay: Duration,
+}
+
+impl Default for AcceptBackoff {
+    fn default() -> Self {
+        Self {
+            failures: 0,
+            delay: ACCEPT_BACKOFF_MIN,
+        }
+    }
+}
+
+impl AcceptBackoff {
+    /// Records a failure; returns how long to wait before the next accept.
+    fn failed(&mut self, error: &io::Error) -> Duration {
+        if self.failures == 0 {
+            tracing::warn!(%error, "activation accept failed; backing off");
+        }
+        self.failures = self.failures.saturating_add(1);
+        let delay = self.delay;
+        self.delay = (self.delay * 2).min(ACCEPT_BACKOFF_MAX);
+        delay
+    }
+
+    /// Records a success, ending a run of failures.
+    fn succeeded(&mut self) {
+        if self.failures > 0 {
+            tracing::info!(failures = self.failures, "activation accept recovered");
+        }
+        *self = Self::default();
     }
 }
 
@@ -116,22 +149,23 @@ async fn serve(
             return;
         }
     };
+    let mut backoff = AcceptBackoff::default();
     loop {
-        tokio::select! {
+        let delay = tokio::select! {
             _ = &mut stop => break,
             accepted = listener.accept() => match accepted {
-                Ok(conn) => handle(conn, sink.as_ref()).await,
-                Err(error) => tracing::warn!(%error, "activation accept failed"),
+                Ok(conn) => {
+                    backoff.succeeded();
+                    handle(conn, sink.as_ref()).await;
+                    continue;
+                }
+                Err(error) => backoff.failed(&error),
             },
+        };
+        tokio::select! {
+            _ = &mut stop => break,
+            () = tokio::time::sleep(delay) => {}
         }
-    }
-}
-
-fn activation(request: HandoffRequest) -> Activation {
-    match request {
-        HandoffRequest::Show => Activation::Show,
-        HandoffRequest::Activate(uri) => Activation::Open(uri),
-        HandoffRequest::Quit => Activation::Quit,
     }
 }
 
@@ -141,8 +175,7 @@ async fn handle(conn: Stream, sink: &dyn ActivationSink) {
         tracing::warn!("activation from another session ignored");
         return;
     }
-    let limit = u64::try_from(MAX_FRAME + 1).unwrap_or(u64::MAX);
-    let mut reader = BufReader::new(&conn).take(limit);
+    let mut reader = BufReader::new(&conn).take(READ_LIMIT);
     let mut frame = Vec::with_capacity(128);
     let read = tokio::time::timeout(READ_TIMEOUT, reader.read_until(b'\n', &mut frame)).await;
     if !matches!(read, Ok(Ok(_))) {
@@ -150,7 +183,7 @@ async fn handle(conn: Stream, sink: &dyn ActivationSink) {
     }
     let reply = match decode_request(&frame) {
         Ok(request) => {
-            sink.activate(activation(request));
+            sink.activate(request);
             HandoffReply::Ok
         }
         Err(error) => {

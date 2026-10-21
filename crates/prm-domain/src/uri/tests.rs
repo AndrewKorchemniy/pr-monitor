@@ -41,6 +41,39 @@ fn app_uri_rejects_unknown_host_and_keys() {
     ));
 }
 
+/// The module promises a strict allow-list, but userinfo, ports, paths, fragments and
+/// repeated keys used to be ignored, so a later `org=` silently replaced an earlier one.
+#[test]
+fn app_uri_rejects_extra_parts_and_repeated_keys() {
+    let pr = "repo=00000000-0000-0000-0000-000000000007&pr=1";
+    for input in [
+        "prmonitor://user:pw@show".to_owned(),
+        "prmonitor://user@show".to_owned(),
+        "prmonitor://show:9".to_owned(),
+        "prmonitor://show/anything".to_owned(),
+        "prmonitor://refresh#x".to_owned(),
+        format!("prmonitor://show?org=a&org=evil&{pr}"),
+    ] {
+        assert!(
+            matches!(
+                AppUri::parse(&input),
+                Err(AppUriError::Invalid(_) | AppUriError::Key(_))
+            ),
+            "{input}: {:?}",
+            AppUri::parse(&input)
+        );
+    }
+}
+
+#[test]
+fn app_uri_accepts_trailing_slash() {
+    assert_eq!(AppUri::parse("prmonitor://refresh/"), Ok(AppUri::Refresh));
+    assert_eq!(
+        AppUri::parse("prmonitor://show/"),
+        Ok(AppUri::Show { key: None })
+    );
+}
+
 #[test]
 fn app_uri_rejects_overlong() {
     let long = format!("prmonitor://show?{}", "x".repeat(MAX_URI_LEN));

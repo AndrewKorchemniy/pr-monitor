@@ -27,24 +27,36 @@ pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
     let spec = ModalSpec {
         id: "shortcuts",
         title: copy::SHORTCUTS_TITLE,
+        subtitle: None,
         buttons: &[copy::CLOSE],
         danger: false,
+        width: 560.0,
     };
     let outcome = modal(ctx, &theme, &spec, |ui| {
         egui::ScrollArea::vertical()
             .max_height(480.0)
+            .auto_shrink([false, true])
             .show(ui, |ui| {
-                for (category, title) in CATEGORIES {
-                    ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
-                    let grid = egui::Grid::new(("keys", title))
-                        .num_columns(2)
-                        .spacing([24.0, 4.0]);
-                    grid.show(ui, |ui| category_rows(ui, cx, category));
-                    ui.add_space(theme.tokens.metrics.space.md);
-                }
+                key_grid(ui, cx);
             });
     });
     outcome != ModalOutcome::Open
+}
+
+/// Every category in one grid, so all key caps line up in one column.
+fn key_grid(ui: &mut egui::Ui, cx: &FrameCx<'_>) {
+    let theme = &cx.theme;
+    let grid = egui::Grid::new("keys")
+        .num_columns(2)
+        .min_col_width(280.0)
+        .spacing([24.0, 6.0]);
+    grid.show(ui, |ui| {
+        for (category, title) in CATEGORIES {
+            ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
+            ui.end_row();
+            category_rows(ui, cx, category);
+        }
+    });
 }
 
 /// One row per bound command: its title and every chord.

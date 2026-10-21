@@ -6,7 +6,8 @@ use prm_domain::OrgId;
 
 use crate::schema::{Config, OrgProfile};
 
-/// Which parts of one org changed. Each flag maps to a different service reaction.
+/// Which parts of one org changed. Each flag maps to a different service reaction; label,
+/// mute and PAT-expiry edits need none, because the org list is rebuilt on every apply.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct OrgChanges {
     /// The org URL (id) itself.
@@ -19,53 +20,44 @@ pub struct OrgChanges {
     pub authors: bool,
     /// Reviewers, ignored authors or review policy: reclassify only.
     pub classify: bool,
+    /// The org was turned on or off: start or stop its refreshes.
     pub enabled: bool,
-    /// Label, muted or PAT expiry: no refresh needed.
-    pub cosmetic: bool,
 }
 
 impl OrgChanges {
+    /// Whether the service has anything to react to.
     pub fn any(self) -> bool {
         self != Self::default()
     }
 }
 
+/// Everything in a config apply that needs a service reaction.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ConfigChanges {
-    pub added: Vec<OrgId>,
+    /// Orgs that are gone: stop their jobs and delete their data.
     pub removed: Vec<OrgId>,
+    /// Orgs present in both configs whose settings changed.
     pub changed: BTreeMap<OrgId, OrgChanges>,
+    /// Interval or jitter: reschedule every org.
     pub refresh: bool,
+    /// Proxy or timeouts: they apply after a restart.
     pub network: bool,
-    pub notifications: bool,
-    pub ui: bool,
+    /// Launch at login: update the OS registration.
     pub autostart: bool,
 }
 
-/// Both configs must already be normalized (ids set).
+/// Both configs must already be normalized (ids set). For a duplicated org id the first
+/// entry counts, as in [`Config::org`]; `normalize` turns later duplicates off.
 pub fn diff_configs(old: &Config, new: &Config) -> ConfigChanges {
-    let index = |cfg: &Config| -> BTreeMap<OrgId, OrgProfile> {
-        cfg.orgs
-            .iter()
-            .filter_map(|o| Some((o.org_id()?.clone(), o.clone())))
-            .collect()
-    };
     let (old_orgs, new_orgs) = (index(old), index(new));
     let mut changes = ConfigChanges {
-        added: new_orgs
-            .keys()
-            .filter(|k| !old_orgs.contains_key(k))
-            .cloned()
-            .collect(),
         removed: old_orgs
             .keys()
-            .filter(|k| !new_orgs.contains_key(k))
-            .cloned()
+            .filter(|k| !new_orgs.contains_key(*k))
+            .map(|k| (*k).clone())
             .collect(),
         refresh: old.refresh != new.refresh,
         network: old.network != new.network,
-        notifications: old.notifications != new.notifications,
-        ui: old.ui != new.ui,
         autostart: old.ui.launch_at_login != new.ui.launch_at_login,
         ..ConfigChanges::default()
     };
@@ -73,11 +65,22 @@ pub fn diff_configs(old: &Config, new: &Config) -> ConfigChanges {
         if let Some(old_org) = old_orgs.get(id) {
             let org_changes = diff_org(old_org, new_org);
             if org_changes.any() {
-                changes.changed.insert(id.clone(), org_changes);
+                changes.changed.insert((*id).clone(), org_changes);
             }
         }
     }
     changes
+}
+
+/// Orgs by id, keeping the first entry for each id.
+fn index(cfg: &Config) -> BTreeMap<&OrgId, &OrgProfile> {
+    let mut map = BTreeMap::new();
+    for org in &cfg.orgs {
+        if let Some(id) = org.org_id() {
+            map.entry(id).or_insert(org);
+        }
+    }
+    map
 }
 
 fn diff_org(old: &OrgProfile, new: &OrgProfile) -> OrgChanges {
@@ -92,9 +95,6 @@ fn diff_org(old: &OrgProfile, new: &OrgProfile) -> OrgChanges {
             || old.people.ignored_comment_authors != new.people.ignored_comment_authors
             || old.review != new.review,
         enabled: old.enabled != new.enabled,
-        cosmetic: old.label != new.label
-            || old.muted != new.muted
-            || old.pat_expires_on != new.pat_expires_on,
     }
 }
 

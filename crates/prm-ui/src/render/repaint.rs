@@ -9,19 +9,19 @@ const SECOND: Duration = Duration::from_secs(1);
 const MINUTE_SECS: i64 = 60;
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct RepaintInputs {
+pub(crate) struct RepaintInputs<'a> {
     pub visible: bool,
     pub focused: bool,
     pub low_power: bool,
     pub now: Option<Timestamp>,
     pub next_refresh: Option<Timestamp>,
-    /// Other deadlines: selection dwell, notice expiry, UI-state save.
-    pub deadlines: Vec<Timestamp>,
+    /// Other deadlines (notice expiry, UI-state save, pause end); `None` entries are unset.
+    pub deadlines: &'a [Option<Timestamp>],
 }
 
 /// The earliest of: the next wall-clock minute (ages, "Updated 2m ago"), one second while a
 /// focused countdown is under a minute, and every deadline.
-pub(crate) fn next_repaint(input: &RepaintInputs) -> Option<Duration> {
+pub(crate) fn next_repaint(input: &RepaintInputs<'_>) -> Option<Duration> {
     let now = input.now?;
     if !input.visible {
         return None;
@@ -36,7 +36,7 @@ pub(crate) fn next_repaint(input: &RepaintInputs) -> Option<Duration> {
     if countdown {
         next = next.min(SECOND);
     }
-    for deadline in &input.deadlines {
+    for deadline in input.deadlines.iter().flatten() {
         let wait = if *deadline > now {
             deadline.since(now)
         } else {

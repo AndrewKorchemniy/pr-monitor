@@ -24,6 +24,11 @@ pub(crate) enum Icon {
     ChevronRight,
     ChevronDown,
     ChevronUp,
+    /// Continue or submit.
+    ArrowRight,
+    /// Back.
+    ArrowLeft,
+    Plus,
     /// Merge conflicts or warnings: a triangle with a bar.
     Warning,
     Info,
@@ -96,6 +101,20 @@ pub(crate) fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.line_segment([at(-0.6, 0.3), at(0.0, -0.3)], s);
             painter.line_segment([at(0.0, -0.3), at(0.6, 0.3)], s);
         }
+        Icon::ArrowRight => {
+            painter.line_segment([at(-0.7, 0.0), at(0.7, 0.0)], s);
+            painter.line_segment([at(0.15, -0.55), at(0.7, 0.0)], s);
+            painter.line_segment([at(0.7, 0.0), at(0.15, 0.55)], s);
+        }
+        Icon::ArrowLeft => {
+            painter.line_segment([at(0.7, 0.0), at(-0.7, 0.0)], s);
+            painter.line_segment([at(-0.15, -0.55), at(-0.7, 0.0)], s);
+            painter.line_segment([at(-0.7, 0.0), at(-0.15, 0.55)], s);
+        }
+        Icon::Plus => {
+            painter.line_segment([at(-0.7, 0.0), at(0.7, 0.0)], s);
+            painter.line_segment([at(0.0, -0.7), at(0.0, 0.7)], s);
+        }
         Icon::Warning => {
             let triangle = vec![at(0.0, -0.85), at(0.9, 0.75), at(-0.9, 0.75)];
             painter.add(Shape::closed_line(triangle, s));
@@ -135,6 +154,34 @@ fn arc_with_head(painter: &Painter, center: Pos2, radius: f32, s: Stroke) {
     let end = point(0.0);
     painter.line_segment([end, end + vec2(-radius * 0.45, -radius * 0.1)], s);
     painter.line_segment([end, end + vec2(radius * 0.05, -radius * 0.45)], s);
+}
+
+/// Paints a stroked icon (check, cross, chevrons, arrows) with an explicit stroke width.
+pub(crate) fn paint_stroke(painter: &Painter, rect: Rect, icon: Icon, stroke: Stroke) {
+    let c = rect.center();
+    let r = rect.width().min(rect.height()) / 2.0;
+    let at = |x: f32, y: f32| pos2(c.x + x * r, c.y + y * r);
+    match icon {
+        Icon::Check => check(painter, &at, stroke),
+        Icon::Ring
+        | Icon::Diamond
+        | Icon::CheckDot
+        | Icon::Pause
+        | Icon::Cross
+        | Icon::Search
+        | Icon::Refresh
+        | Icon::Gear
+        | Icon::ChevronRight
+        | Icon::ChevronDown
+        | Icon::ChevronUp
+        | Icon::ArrowRight
+        | Icon::ArrowLeft
+        | Icon::Plus
+        | Icon::Warning
+        | Icon::Info
+        | Icon::Dot
+        | Icon::Bar => paint(painter, rect, icon, stroke.color),
+    }
 }
 
 /// Allocates a square and paints an icon in it (for inline use in layouts).

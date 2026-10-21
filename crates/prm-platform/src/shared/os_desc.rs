@@ -5,16 +5,16 @@ const WINDOWS_11_BUILD: u32 = 22_000;
 
 /// The registry facts the description is built from (any may be missing).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OsFacts<'a> {
-    pub product: Option<&'a str>,
-    pub display_version: Option<&'a str>,
-    pub build: Option<u32>,
-    pub ubr: Option<u32>,
-    pub arch: &'a str,
+pub(crate) struct OsFacts<'a> {
+    pub(crate) product: Option<&'a str>,
+    pub(crate) display_version: Option<&'a str>,
+    pub(crate) build: Option<u32>,
+    pub(crate) ubr: Option<u32>,
+    pub(crate) arch: &'a str,
 }
 
 /// For example `Windows 11 24H2 (26100.2033) x86_64`.
-pub fn format_os_description(facts: &OsFacts<'_>) -> String {
+pub(crate) fn format_os_description(facts: &OsFacts<'_>) -> String {
     let mut product = facts.product.unwrap_or("Windows").to_owned();
     if facts.build.is_some_and(|b| b >= WINDOWS_11_BUILD) {
         product = product.replacen("Windows 10", "Windows 11", 1);

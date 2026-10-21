@@ -5,12 +5,6 @@
     reason = "Win32 FFI; each block documents why it is sound"
 )]
 
-use std::{
-    os::windows::process::CommandExt,
-    path::{Path, PathBuf},
-    process::Command,
-};
-
 use prm_domain::ports::{PortError, PortErrorKind};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::{
@@ -28,10 +22,11 @@ use windows::{
     },
     core::BOOL,
 };
-use windows_registry::{CURRENT_USER, LOCAL_MACHINE};
+use windows_registry::LOCAL_MACHINE;
 
 use super::port_error;
 use crate::{
+    common::failed,
     shared::{
         colors::{Rgb, TitleBarColors, colorref},
         os_desc::{OsFacts, format_os_description},
@@ -41,14 +36,12 @@ use crate::{
 };
 
 pub(crate) struct WinShell {
-    root: PathBuf,
     os: String,
 }
 
 impl WinShell {
-    pub(crate) fn new(root: PathBuf) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            root,
             os: os_description(),
         }
     }
@@ -59,9 +52,7 @@ impl WinShell {
     reason = "RawWindowHandle is non_exhaustive; every non-Win32 handle is unsupported"
 )]
 fn hwnd(window: &dyn HasWindowHandle) -> Result<HWND, PortError> {
-    let handle = window
-        .window_handle()
-        .map_err(|e| PortError::new(PortErrorKind::Failed, e.to_string()))?;
+    let handle = window.window_handle().map_err(failed)?;
     match handle.as_raw() {
         RawWindowHandle::Win32(win32) => Ok(HWND(win32.hwnd.get() as *mut core::ffi::c_void)),
         _ => Err(PortError::new(
@@ -112,33 +103,6 @@ impl DesktopShell for WinShell {
 
     fn session(&self) -> SessionInfo {
         super::session::session_info()
-    }
-
-    fn taskbar_light_theme(&self) -> Option<bool> {
-        CURRENT_USER
-            .open(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-            .and_then(|key| key.get_u32("SystemUsesLightTheme"))
-            .ok()
-            .map(|value| value == 1)
-    }
-
-    fn reveal_path(&self, path: &Path) -> Result<(), PortError> {
-        let denied = || PortError::new(PortErrorKind::Denied, "outside the data folder");
-        let target = path.canonicalize().map_err(|_| denied())?;
-        let root = self.root.canonicalize().map_err(|_| denied())?;
-        if !target.starts_with(&root) {
-            return Err(denied());
-        }
-        let mut explorer = Command::new("explorer.exe");
-        if target.is_dir() {
-            explorer.arg(&target);
-        } else {
-            explorer.raw_arg(format!("/select,\"{}\"", target.display()));
-        }
-        explorer
-            .spawn()
-            .map(drop)
-            .map_err(|e| PortError::new(PortErrorKind::Failed, e.to_string()))
     }
 
     fn os_description(&self) -> &str {

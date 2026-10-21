@@ -3,12 +3,12 @@
 
 use std::{
     collections::HashMap,
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use prm_domain::{OrgId, model::Catalog};
+use prm_domain::{OrgId, app::APP_DISPLAY_NAME, model::Catalog};
 
 use crate::{
     error::{ConfigError, ConfigIssue, Severity},
@@ -26,6 +26,11 @@ const PERSIST_RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(200),
 ];
 
+/// Windows `ERROR_SHARING_VIOLATION` (32) and `ERROR_LOCK_VIOLATION` (33).
+// why: antivirus, the indexer or a sync client holding the file open fails reads and renames
+// with these codes, which std reports under an uncategorized error kind, so match the code.
+const WINDOWS_SHARING_ERRORS: [i32; 2] = [32, 33];
+
 /// Persistence port used by the service, so tests never touch the disk.
 pub trait StateRepo: Send + Sync + 'static {
     fn save_config(&self, cfg: &Config) -> Result<(), ConfigError>;
@@ -35,19 +40,37 @@ pub trait StateRepo: Send + Sync + 'static {
     fn delete_org_data(&self, org: &OrgId) -> Result<(), ConfigError>;
 }
 
+/// The on-disk [`StateRepo`], rooted at the app's data directory.
 #[derive(Clone, Debug)]
 pub struct FileRepo {
     paths: AppPaths,
+    /// Refuse to overwrite `config.toml` (see [`ConfigLoad::read_only`]).
+    config_read_only: bool,
 }
 
 impl FileRepo {
+    /// A repo that may write every file.
     pub fn new(paths: AppPaths) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            config_read_only: false,
+        }
+    }
+
+    /// A repo that keeps `config.toml` untouched when the load says it must not be saved.
+    pub fn from_load(paths: AppPaths, load: &ConfigLoad) -> Self {
+        Self {
+            paths,
+            config_read_only: load.read_only,
+        }
     }
 }
 
 impl StateRepo for FileRepo {
     fn save_config(&self, cfg: &Config) -> Result<(), ConfigError> {
+        if self.config_read_only {
+            return Err(ConfigError::ReadOnly);
+        }
         save_config(&self.paths, cfg)
     }
 
@@ -67,7 +90,7 @@ impl StateRepo for FileRepo {
         let path = self.paths.catalog_file(org);
         match std::fs::remove_file(&path) {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(ConfigError::io(&path, &e)),
         }
     }
@@ -79,33 +102,34 @@ pub fn save_config(paths: &AppPaths, cfg: &Config) -> Result<(), ConfigError> {
     atomic_write(&paths.config, text.as_bytes())
 }
 
-/// The result of loading `config.toml`.
+/// The result of loading `config.toml`. Recovery and newer-schema events reach the user
+/// through `issues`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConfigLoad {
     pub config: Config,
     pub issues: Vec<ConfigIssue>,
-    /// No config file existed.
-    pub first_run: bool,
-    pub migrated_from: Option<u32>,
-    /// Written by a newer version: loaded best-effort and never auto-saved.
-    pub newer_schema: bool,
-    /// Where an unreadable file was moved.
-    pub recovered: Option<PathBuf>,
+    /// `config.toml` must not be overwritten this session: a newer version wrote it (saving
+    /// would drop the keys this version doesn't know), or it could not be read and was left
+    /// in place. Build the repo with [`FileRepo::from_load`] to enforce this.
+    pub read_only: bool,
+}
+
+/// Whether a parsed config still has to be written back in the current schema.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Origin {
+    Current,
+    Migrated,
 }
 
 pub fn load_config(paths: &AppPaths) -> ConfigLoad {
     let mut load = ConfigLoad {
         config: Config::default(),
         issues: Vec::new(),
-        first_run: false,
-        migrated_from: None,
-        newer_schema: false,
-        recovered: None,
+        read_only: false,
     };
-    let text = match std::fs::read_to_string(&paths.config) {
+    let text = match read_text(&paths.config) {
         Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            load.first_run = true;
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
             if let Err(err) = save_config(paths, &load.config) {
                 tracing::warn!(error = %err, "could not write the default config");
             }
@@ -114,8 +138,13 @@ pub fn load_config(paths: &AppPaths) -> ConfigLoad {
         Err(e) => return recover(paths, load, &e.to_string()),
     };
     match parse_config(paths, &text, &mut load) {
-        Ok(config) => {
+        Ok((config, origin)) => {
             let (config, issues) = normalize(config);
+            if origin == Origin::Migrated
+                && let Err(e) = save_config(paths, &config)
+            {
+                tracing::warn!(error = %e, "could not save the migrated config");
+            }
             load.config = config;
             load.issues.extend(issues);
             load
@@ -124,58 +153,92 @@ pub fn load_config(paths: &AppPaths) -> ConfigLoad {
     }
 }
 
-/// Parses, migrates if older, and deserializes. Records version facts on `load`.
-fn parse_config(paths: &AppPaths, text: &str, load: &mut ConfigLoad) -> Result<Config, String> {
+/// Reads `config.toml` without writing anything: parsed, migrated in memory and normalized.
+/// `None` when it is missing or unreadable (for tools such as `--unregister` that only look).
+pub fn read_config(paths: &AppPaths) -> Option<Config> {
+    let text = read_text(&paths.config).ok()?;
+    let (config, _) = parse_migrated(&text).ok()?;
+    Some(normalize(config).0)
+}
+
+/// Parses and, if older, migrates in memory; also returns the version as written.
+fn parse_migrated(text: &str) -> Result<(Config, u32), String> {
     let mut table: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
     let version = table
         .get("schema_version")
         .and_then(toml::Value::as_integer)
         .and_then(|v| u32::try_from(v).ok())
         .unwrap_or(CURRENT_SCHEMA);
-    if version > CURRENT_SCHEMA {
-        load.newer_schema = true;
-        load.issues.push(ConfigIssue::new(
-            Severity::Warning,
-            "schema_version",
-            "This config was written by a newer PR Monitor; some settings may be ignored.",
-        ));
-    } else if version < CURRENT_SCHEMA {
+    if version < CURRENT_SCHEMA {
         migrate_with(&mut table, version, CURRENT_SCHEMA, MIGRATIONS).map_err(|e| e.to_string())?;
+        let config = table.try_into().map_err(|e| e.to_string())?;
+        return Ok((config, version));
+    }
+    // Straight from the user's text, so error positions point into their file.
+    let config = toml::from_str(text).map_err(|e| e.to_string())?;
+    Ok((config, version))
+}
+
+/// Parses and, if older, migrates and backs up. A newer file loads best-effort and is marked
+/// read-only.
+fn parse_config(
+    paths: &AppPaths,
+    text: &str,
+    load: &mut ConfigLoad,
+) -> Result<(Config, Origin), String> {
+    let (config, version) = parse_migrated(text)?;
+    if version < CURRENT_SCHEMA {
         backup(
             &paths.config,
             &paths.root.join(format!("config.v{version}.bak")),
         );
-        load.migrated_from = Some(version);
+        return Ok((config, Origin::Migrated));
     }
-    let reserialized = toml::to_string(&table).map_err(|e| e.to_string())?;
-    let config: Config = toml::from_str(&reserialized).map_err(|e| e.to_string())?;
-    if load.migrated_from.is_some()
-        && let Err(e) = save_config(paths, &config)
-    {
-        tracing::warn!(error = %e, "could not save the migrated config");
+    if version > CURRENT_SCHEMA {
+        load.read_only = true;
+        load.issues.push(ConfigIssue::new(
+            Severity::Warning,
+            "schema_version",
+            format!(
+                "This config was written by a newer {APP_DISPLAY_NAME}; some settings may be \
+                 ignored and changes won't be saved."
+            ),
+        ));
     }
-    Ok(config)
+    Ok((config, Origin::Current))
 }
 
-/// Moves an unreadable file aside and continues with defaults.
+/// Continues with defaults after `config.toml` could not be read or parsed. The file is moved
+/// aside when possible; otherwise it stays where it is and is protected from saves.
 fn recover(paths: &AppPaths, mut load: ConfigLoad, reason: &str) -> ConfigLoad {
-    let moved = paths
-        .root
-        .join(format!("config.toml.corrupt-{}", unix_now()));
-    match std::fs::rename(&paths.config, &moved) {
-        Ok(()) => load.recovered = Some(moved.clone()),
-        Err(e) => tracing::warn!(error = %e, "could not move the unreadable config"),
-    }
     tracing::error!(reason, "config could not be read; using defaults");
-    load.issues.push(ConfigIssue::new(
-        Severity::Error,
-        "config.toml",
+    let message = if let Some(moved) = quarantine(&paths.config, &paths.root, "config.toml") {
         format!(
             "Your config could not be read and was moved to {}.",
             moved.display()
-        ),
-    ));
+        )
+    } else {
+        load.read_only = true;
+        "Your config could not be read; using defaults. The file was left in place and won't \
+         be overwritten."
+            .to_owned()
+    };
+    load.issues
+        .push(ConfigIssue::new(Severity::Error, "config.toml", message));
     load
+}
+
+/// Renames an unreadable file to `<root>/<name>.corrupt-<unix>`. Returns the new path, or
+/// `None` when the file could not be moved.
+fn quarantine(path: &Path, root: &Path, name: &str) -> Option<PathBuf> {
+    let moved = root.join(format!("{name}.corrupt-{}", unix_now()));
+    match std::fs::rename(path, &moved) {
+        Ok(()) => Some(moved),
+        Err(e) => {
+            tracing::warn!(error = %e, file = name, "could not move the unreadable file aside");
+            None
+        }
+    }
 }
 
 fn backup(from: &Path, to: &Path) {
@@ -190,6 +253,29 @@ fn unix_now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
+/// Reads a UTF-8 file, retrying briefly while another process holds it open.
+fn read_text(path: &Path) -> io::Result<String> {
+    let mut delays = PERSIST_RETRY_DELAYS.iter();
+    loop {
+        match std::fs::read_to_string(path) {
+            Err(e) if is_sharing_violation(&e) => {
+                let Some(delay) = delays.next() else {
+                    return Err(e);
+                };
+                std::thread::sleep(*delay);
+            }
+            result => return result,
+        }
+    }
+}
+
+fn is_sharing_violation(error: &io::Error) -> bool {
+    cfg!(windows)
+        && error
+            .raw_os_error()
+            .is_some_and(|code| WINDOWS_SHARING_ERRORS.contains(&code))
+}
+
 /// The result of loading `state.json`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StateLoad {
@@ -197,28 +283,31 @@ pub struct StateLoad {
     pub issue: Option<ConfigIssue>,
 }
 
-/// Missing: defaults. Corrupt or newer: backed up to `state.json.corrupt-<unix>`, then defaults.
+/// Missing: defaults. Unreadable, corrupt or newer: moved to `state.json.corrupt-<unix>` when
+/// possible, then defaults and an issue.
 pub fn load_state(paths: &AppPaths) -> StateLoad {
-    let Ok(text) = std::fs::read_to_string(&paths.state) else {
-        return StateLoad {
-            state: PersistedState::default(),
-            issue: None,
-        };
+    let text = match read_text(&paths.state) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return StateLoad {
+                state: PersistedState::default(),
+                issue: None,
+            };
+        }
+        Err(e) => return state_reset(paths, &e.to_string()),
     };
     match serde_json::from_str::<PersistedState>(&text) {
         Ok(state) if state.schema_version <= STATE_SCHEMA => StateLoad { state, issue: None },
-        Ok(_) => state_reset(paths, "it was written by a newer PR Monitor"),
+        Ok(_) => state_reset(
+            paths,
+            &format!("it was written by a newer {APP_DISPLAY_NAME}"),
+        ),
         Err(e) => state_reset(paths, &e.to_string()),
     }
 }
 
 fn state_reset(paths: &AppPaths, reason: &str) -> StateLoad {
-    let moved = paths
-        .root
-        .join(format!("state.json.corrupt-{}", unix_now()));
-    if let Err(e) = std::fs::rename(&paths.state, &moved) {
-        tracing::warn!(error = %e, "could not move the unreadable state");
-    }
+    quarantine(&paths.state, &paths.root, "state.json");
     tracing::warn!(reason, "state reset");
     StateLoad {
         state: PersistedState::default(),
@@ -247,7 +336,11 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
 }
 
 /// [`atomic_write`] with an injectable `persist`, so retries are testable.
-pub fn atomic_write_with<F>(path: &Path, bytes: &[u8], mut persist: F) -> Result<(), ConfigError>
+pub(crate) fn atomic_write_with<F>(
+    path: &Path,
+    bytes: &[u8],
+    mut persist: F,
+) -> Result<(), ConfigError>
 where
     F: FnMut(tempfile::NamedTempFile, &Path) -> Result<(), tempfile::PersistError>,
 {
@@ -263,7 +356,10 @@ where
     loop {
         match persist(tmp, path) {
             Ok(()) => return Ok(()),
-            Err(e) if e.error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Err(e)
+                if e.error.kind() == io::ErrorKind::PermissionDenied
+                    || is_sharing_violation(&e.error) =>
+            {
                 let Some(delay) = delays.next() else {
                     return Err(ConfigError::io(path, &e.error));
                 };
@@ -272,82 +368,6 @@ where
             }
             Err(e) => return Err(ConfigError::io(path, &e.error)),
         }
-    }
-}
-
-/// An in-memory [`StateRepo`] for tests: records saves and can fail the next one.
-#[cfg(any(test, feature = "test-support"))]
-#[derive(Debug, Default)]
-pub struct MemoryRepo {
-    saved: std::sync::Mutex<Vec<Saved>>,
-    fail_next: std::sync::Mutex<Option<ConfigError>>,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-#[derive(Clone, Debug, PartialEq)]
-pub enum Saved {
-    Config(Box<Config>),
-    State(Box<PersistedState>),
-    Catalog(OrgId),
-    Deleted(OrgId),
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl MemoryRepo {
-    pub fn saved(&self) -> Vec<Saved> {
-        self.saved
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-    }
-
-    pub fn last_state(&self) -> Option<PersistedState> {
-        self.saved().into_iter().rev().find_map(|s| match s {
-            Saved::State(state) => Some(*state),
-            Saved::Config(_) | Saved::Catalog(_) | Saved::Deleted(_) => None,
-        })
-    }
-
-    pub fn fail_next(&self, error: ConfigError) {
-        *self
-            .fail_next
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
-    }
-
-    fn record(&self, saved: Saved) -> Result<(), ConfigError> {
-        let failure = self
-            .fail_next
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(error) = failure {
-            return Err(error);
-        }
-        self.saved
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(saved);
-        Ok(())
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl StateRepo for MemoryRepo {
-    fn save_config(&self, cfg: &Config) -> Result<(), ConfigError> {
-        self.record(Saved::Config(Box::new(cfg.clone())))
-    }
-
-    fn save_state(&self, state: &PersistedState) -> Result<(), ConfigError> {
-        self.record(Saved::State(Box::new(state.clone())))
-    }
-
-    fn save_catalog(&self, org: &OrgId, _catalog: &Catalog) -> Result<(), ConfigError> {
-        self.record(Saved::Catalog(org.clone()))
-    }
-
-    fn delete_org_data(&self, org: &OrgId) -> Result<(), ConfigError> {
-        self.record(Saved::Deleted(org.clone()))
     }
 }
 

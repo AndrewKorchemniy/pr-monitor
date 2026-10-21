@@ -140,3 +140,6 @@ pub(crate) fn org_status(name: &str, auth: prm_service::AuthStateView) -> prm_se
         pat_expires_on: None,
     }
 }
+
+pub(crate) mod demo;
+pub(crate) mod screens;

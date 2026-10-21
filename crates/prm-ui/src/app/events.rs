@@ -1,8 +1,9 @@
 //! Service events: notices, activation, people search, sign-in and config results.
 
 use eframe::egui;
-use prm_domain::{Timestamp, uri::AppUri};
+use prm_domain::{PrKey, Timestamp, uri::AppUri};
 use prm_service::{AppEvent, Command};
+use zeroize::Zeroize as _;
 
 use super::PrMonitorApp;
 use crate::{
@@ -33,19 +34,16 @@ impl PrMonitorApp {
                 if let Err(error) = result
                     && !error.transient
                 {
-                    self.notices.info(&error.title, now);
+                    self.notices.error(&error.title, now);
                 }
             }
             AppEvent::PatResult { org, result } => self.on_pat_result(&org, result, now),
             AppEvent::ConfigApplied { saved, .. } => self.on_config_applied(saved, now),
             AppEvent::Changes(changes) => self.changes.record(&changes),
-            AppEvent::NotificationTestResult(result) => {
-                let text = match result {
-                    Ok(()) => copy::TEST_SENT.to_owned(),
-                    Err(error) => copy::test_failed(&error.title),
-                };
-                self.notices.info(&text, now);
-            }
+            AppEvent::NotificationTestResult(result) => match result {
+                Ok(()) => self.notices.info(copy::TEST_SENT, now),
+                Err(error) => self.notices.error(&copy::test_failed(&error.title), now),
+            },
             AppEvent::Stopped => self.on_service_stopped(),
         }
     }
@@ -58,12 +56,12 @@ impl PrMonitorApp {
         if !std::mem::take(&mut settings.confirm_pending) {
             return;
         }
-        let text = if saved {
-            copy::CHANGES_SAVED.to_owned()
+        if saved {
+            self.notices.info(copy::CHANGES_SAVED, now);
         } else {
-            copy::changes_not_saved(copy::SAVE_FAILED)
-        };
-        self.notices.info(&text, now);
+            let text = copy::changes_not_saved(copy::SAVE_FAILED);
+            self.notices.error(&text, now);
+        }
     }
 
     fn on_pat_result(
@@ -78,12 +76,12 @@ impl PrMonitorApp {
                 if pat_open {
                     self.overlay = Overlay::None;
                 }
-                self.pat_input.clear();
+                self.pat_input.zeroize();
                 self.notices
                     .info(&copy::token_saved(&person.display_name()), now);
             }
             Err(error) if pat_open => self.pat_error = Some(error.title),
-            Err(error) => self.notices.info(&error.title, now),
+            Err(error) => self.notices.error(&error.title, now),
         }
     }
 
@@ -94,11 +92,21 @@ impl PrMonitorApp {
                 self.window.show(ctx);
                 if let Some(key) = key {
                     self.close_settings_if_clean();
+                    self.reveal(&key);
                     self.dash.view.select_key(&key);
                 }
             }
             AppUri::Refresh => self.link.send(Command::RefreshNow),
         }
+    }
+
+    /// Clears the filters hiding an activated PR and expands its group, so the toast the user
+    /// clicked lands on a visible row.
+    fn reveal(&mut self, key: &PrKey) {
+        if self.dash.view.is_filtered_out(key) {
+            self.clear_filters();
+        }
+        self.dash.view.expand_group_of(key);
     }
 
     fn close_settings_if_clean(&mut self) {

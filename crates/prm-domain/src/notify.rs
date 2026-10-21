@@ -22,6 +22,8 @@ pub const GROUP_AUTH: &str = "auth";
 pub const TAG_SUMMARY: &str = "summary";
 /// Toasts per refresh are clamped to this range.
 pub const MAX_TOASTS_RANGE: std::ops::RangeInclusive<u8> = 1..=5;
+/// Toasts per refresh unless the user changes it.
+pub const DEFAULT_MAX_TOASTS: u8 = 3;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -148,7 +150,9 @@ pub enum WhenFocused {
 pub struct NotificationPrefs {
     pub enabled: bool,
     pub when_focused: WhenFocused,
-    /// Clamped to [`MAX_TOASTS_RANGE`].
+    /// Clamped to [`MAX_TOASTS_RANGE`]. A sign-in toast never takes the last slot, so PR
+    /// changes always get at least one toast.
+    #[serde(deserialize_with = "crate::lenient::saturating_u8")]
     pub max_per_refresh: u8,
     pub sound: bool,
     pub include_drafts: bool,
@@ -160,7 +164,7 @@ impl Default for NotificationPrefs {
         Self {
             enabled: true,
             when_focused: WhenFocused::Suppress,
-            max_per_refresh: 3,
+            max_per_refresh: DEFAULT_MAX_TOASTS,
             sound: true,
             include_drafts: false,
             events: EventToggles::default(),
@@ -201,7 +205,7 @@ impl Notification {
             tag: "test".into(),
             group: GROUP_SUMMARY.into(),
             title: text::TEST_TITLE.into(),
-            body: text::TEST_BODY.into(),
+            body: text::test_body(),
             detail: None,
             attribution: None,
             launch: AppUri::Show { key: None }.to_string(),
@@ -251,16 +255,25 @@ struct PrGroup<'a> {
 }
 
 pub fn plan_notifications(input: &PolicyInput<'_>) -> NotificationPlan {
-    let mut plan = NotificationPlan {
-        ops: closed_retractions(input),
-        suppressed: 0,
-    };
+    let (shows, suppressed) = plan_toasts(input);
+    let mut ops = closed_retractions(input.events, &shows);
+    ops.extend(shows.into_iter().map(NotifierOp::Show));
+    NotificationPlan { ops, suppressed }
+}
+
+/// The toasts to show, and how many events the gates suppressed.
+fn plan_toasts(input: &PolicyInput<'_>) -> (Vec<Notification>, u32) {
     let prefs = input.prefs;
+    let auth_problems: Vec<AuthProblem> = input
+        .auth_problems
+        .iter()
+        .filter(|p| !input.muted_orgs.contains(&p.org))
+        .cloned()
+        .collect();
     let focused_gate = input.ui_focused && prefs.when_focused == WhenFocused::Suppress;
     if !prefs.enabled || input.paused || focused_gate {
-        plan.suppressed =
-            u32::try_from(input.events.len() + input.auth_problems.len()).unwrap_or(u32::MAX);
-        return plan;
+        let gated = input.events.len() + auth_problems.len();
+        return (Vec::new(), u32::try_from(gated).unwrap_or(u32::MAX));
     }
     let groups = group_by_pr(input.events.iter().filter(|e| should_toast(e, input)));
     let mut budget = usize::from(
@@ -268,28 +281,31 @@ pub fn plan_notifications(input: &PolicyInput<'_>) -> NotificationPlan {
             .max_per_refresh
             .clamp(*MAX_TOASTS_RANGE.start(), *MAX_TOASTS_RANGE.end()),
     );
-    if prefs.events.auth_problem && !input.auth_problems.is_empty() {
-        plan.ops.push(NotifierOp::Show(auth_toast(
-            input.auth_problems,
-            prefs.sound,
-        )));
-        budget = budget.saturating_sub(1);
+    let mut shows = Vec::new();
+    if prefs.events.auth_problem && !auth_problems.is_empty() {
+        shows.push(auth_toast(&auth_problems, prefs.sound));
+        // why: the sign-in toast never takes the last slot, or PR changes would vanish unseen.
+        budget = budget.saturating_sub(1).max(1);
     }
-    plan.ops.extend(fit_to_budget(&groups, budget, input));
-    plan
+    shows.extend(fit_to_budget(&groups, budget, input));
+    (shows, 0)
 }
 
-/// A closed PR's earlier toast is withdrawn unless a "closed" toast will replace it.
-fn closed_retractions(input: &PolicyInput<'_>) -> Vec<NotifierOp> {
-    if input.prefs.events.closed {
-        return Vec::new();
-    }
-    input
-        .events
+/// A closed PR's earlier toast is withdrawn unless this plan shows one that replaces it
+/// (a "closed" toast with the same tag).
+fn closed_retractions(events: &[ChangeEvent], shows: &[Notification]) -> Vec<NotifierOp> {
+    let shown: HashSet<&str> = shows
+        .iter()
+        .filter(|n| n.kind == NotificationKind::Pr)
+        .map(|n| n.tag.as_str())
+        .collect();
+    events
         .iter()
         .filter(|e| matches!(e.kind, ChangeKind::Closed { .. }))
-        .map(|e| NotifierOp::Retract {
-            tag: e.pr.key.tag(),
+        .map(|e| e.pr.key.tag())
+        .filter(|tag| !shown.contains(tag.as_str()))
+        .map(|tag| NotifierOp::Retract {
+            tag,
             group: GROUP_PRS.into(),
         })
         .collect()
@@ -338,24 +354,21 @@ fn fit_to_budget(
     groups: &[PrGroup<'_>],
     budget: usize,
     input: &PolicyInput<'_>,
-) -> Vec<NotifierOp> {
-    if budget == 0 || groups.is_empty() {
+) -> Vec<Notification> {
+    if groups.is_empty() {
         return Vec::new();
     }
     let shown = if groups.len() <= budget {
         groups.len()
     } else {
-        budget - 1
+        budget.saturating_sub(1)
     };
     let (individual, rest) = groups.split_at(shown);
-    let mut ops: Vec<NotifierOp> = individual
-        .iter()
-        .map(|g| NotifierOp::Show(pr_toast(g, input)))
-        .collect();
+    let mut toasts: Vec<Notification> = individual.iter().map(|g| pr_toast(g, input)).collect();
     if !rest.is_empty() {
-        ops.push(NotifierOp::Show(summary_toast(rest, input.prefs.sound)));
+        toasts.push(summary_toast(rest, input.prefs.sound));
     }
-    ops
+    toasts
 }
 
 fn pr_toast(group: &PrGroup<'_>, input: &PolicyInput<'_>) -> Notification {

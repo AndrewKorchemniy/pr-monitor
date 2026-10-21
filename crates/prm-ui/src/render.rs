@@ -68,14 +68,13 @@ pub struct LaunchSpec {
     pub start_hidden: bool,
     /// Off-screen position as the start-hidden fallback (non-Windows; Windows cloaks).
     pub hide_offscreen: bool,
+    /// The saved window rect, only when it is worth restoring (plausible and on a monitor).
     pub window: Option<prm_config::WindowRect>,
-    pub rect_on_screen: bool,
     pub icon: Arc<egui::IconData>,
 }
 
 const DEFAULT_SIZE: [f32; 2] = [1280.0, 760.0];
 const MIN_SIZE: [f32; 2] = [720.0, 420.0];
-const OFFSCREEN: [f32; 2] = [-32_000.0, -32_000.0];
 
 pub fn native_options(spec: &LaunchSpec) -> eframe::NativeOptions {
     let mut viewport = egui::ViewportBuilder::default()
@@ -86,7 +85,7 @@ pub fn native_options(spec: &LaunchSpec) -> eframe::NativeOptions {
         .with_min_inner_size(MIN_SIZE)
         .with_drag_and_drop(false);
     let mut centered = true;
-    if let (Some(rect), true) = (spec.window, spec.rect_on_screen) {
+    if let Some(rect) = spec.window {
         viewport = viewport
             .with_position([rect.x, rect.y])
             .with_inner_size([rect.w, rect.h])
@@ -96,7 +95,7 @@ pub fn native_options(spec: &LaunchSpec) -> eframe::NativeOptions {
     if spec.start_hidden {
         viewport = viewport.with_active(false);
         if spec.hide_offscreen {
-            viewport = viewport.with_position(OFFSCREEN);
+            viewport = viewport.with_position(crate::window::OFFSCREEN);
             centered = false;
         }
     }

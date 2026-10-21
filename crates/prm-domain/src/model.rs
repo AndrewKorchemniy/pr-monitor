@@ -14,8 +14,6 @@ use crate::{
 pub struct Project {
     pub id: ProjectId,
     pub name: Arc<str>,
-    #[serde(default)]
-    pub state: Arc<str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

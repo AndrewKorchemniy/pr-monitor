@@ -72,10 +72,3 @@ fn url_identities_query_encoded() {
             .contains("filterValue=jane%40contoso.com")
     );
 }
-
-#[test]
-fn host_allowed_only_org_hosts() {
-    let ep = endpoint();
-    assert!(ep.host_allowed(&ep.threads(project(1), repo(1), PrNumber(1))));
-    assert!(!ep.host_allowed(&Url::parse("https://evil.example/").unwrap()));
-}

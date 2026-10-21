@@ -14,6 +14,10 @@ use crate::{build_info, copy, logging::redact::redact};
 
 /// Crash files written per run.
 const MAX_REPORTS: u32 = 5;
+/// Crash files kept in the logs folder across runs.
+pub(crate) const CRASH_LOGS_KEPT: usize = 10;
+/// Every crash file name starts with this (written and pruned by it).
+const CRASH_PREFIX: &str = "crash-";
 
 /// Where crash reports go; unset until the data folder exists (no reports before that).
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -27,6 +31,26 @@ pub(crate) struct CrashInfo<'a> {
     pub thread: &'a str,
     pub image_base: Option<usize>,
     pub backtrace: &'a str,
+}
+
+/// Where the process is: starting up, or past its first frame.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Phase {
+    /// Before the first frame.
+    Init,
+    /// The window has painted.
+    Running,
+}
+
+impl Phase {
+    /// From the flag `install` returns (true until the first frame).
+    pub(crate) fn of(init_phase: &AtomicBool) -> Self {
+        if init_phase.load(Ordering::Relaxed) {
+            Self::Init
+        } else {
+            Self::Running
+        }
+    }
 }
 
 /// Which dialog a panic shows.
@@ -56,18 +80,13 @@ pub(crate) fn crash_report(info: &CrashInfo<'_>) -> String {
 }
 
 /// Only main-thread panics show a dialog, and only the first one (`shown` is set by the call).
-pub(crate) fn panic_dialog(
-    in_init: bool,
-    on_main: bool,
-    shown: &AtomicBool,
-) -> Option<PanicDialog> {
+pub(crate) fn panic_dialog(phase: Phase, on_main: bool, shown: &AtomicBool) -> Option<PanicDialog> {
     if !on_main || shown.swap(true, Ordering::Relaxed) {
         return None;
     }
-    Some(if in_init {
-        PanicDialog::Startup
-    } else {
-        PanicDialog::Crashed
+    Some(match phase {
+        Phase::Init => PanicDialog::Startup,
+        Phase::Running => PanicDialog::Crashed,
     })
 }
 
@@ -91,24 +110,24 @@ pub(crate) fn install() -> Arc<AtomicBool> {
         let thread = std::thread::current();
         let name = thread.name().unwrap_or("unnamed");
         let message = panic.payload_as_str().unwrap_or("non-string panic payload");
-        let report = LOG_DIR
-            .get()
-            .filter(|_| count.fetch_add(1, Ordering::Relaxed) < MAX_REPORTS)
-            .and_then(|dir| {
-                write_report(
-                    dir,
-                    &CrashInfo {
-                        message,
-                        location: panic.location().map(ToString::to_string),
-                        thread: name,
-                        image_base: prm_platform::process::image_base(),
-                        backtrace: &std::backtrace::Backtrace::force_capture().to_string(),
-                    },
-                )
-            });
+        let report = LOG_DIR.get().and_then(|dir| {
+            let number = count.fetch_add(1, Ordering::Relaxed);
+            if number >= MAX_REPORTS {
+                return None;
+            }
+            let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+            let info = CrashInfo {
+                message,
+                location: panic.location().map(ToString::to_string),
+                thread: name,
+                image_base: prm_platform::process::image_base(),
+                backtrace: &backtrace,
+            };
+            write_report(dir, number, &info)
+        });
         tracing::error!(target: "panic", thread = name, message, "panic");
         show_dialog(
-            panic_dialog(in_init.load(Ordering::Relaxed), name == "main", &SHOWN),
+            panic_dialog(Phase::of(&in_init), name == "main", &SHOWN),
             message,
             report.as_deref(),
         );
@@ -132,12 +151,16 @@ fn show_dialog(dialog: Option<PanicDialog>, message: &str, report: Option<&Path>
     }
 }
 
-/// Writes one redacted report; the path when it was written.
-pub(crate) fn write_report(dir: &Path, info: &CrashInfo<'_>) -> Option<PathBuf> {
+/// Writes one redacted report; the path when it was written. `number` counts this run's panics,
+/// so two in the same second get separate files.
+pub(crate) fn write_report(dir: &Path, number: u32, info: &CrashInfo<'_>) -> Option<PathBuf> {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let path = dir.join(format!("crash-{secs}-{}.log", std::process::id()));
+    let path = dir.join(format!(
+        "{CRASH_PREFIX}{secs}-{}-{number}.log",
+        std::process::id()
+    ));
     std::fs::write(&path, redact(&crash_report(info)).as_bytes())
         .ok()
         .map(|()| path)
@@ -150,7 +173,7 @@ pub(crate) fn prune_crash_logs(dir: &Path, keep: usize) {
     };
     let mut crashes: Vec<(std::time::SystemTime, PathBuf)> = entries
         .flatten()
-        .filter(|e| e.file_name().to_string_lossy().starts_with("crash-"))
+        .filter(|e| e.file_name().to_string_lossy().starts_with(CRASH_PREFIX))
         .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
         .collect();
     crashes.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));

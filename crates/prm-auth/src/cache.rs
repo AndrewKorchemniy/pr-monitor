@@ -52,8 +52,9 @@ impl TokenCache {
             Slot::Token(token) if rejected != Some(token.id) && token.valid_for(now, self.skew) => {
                 return Ok(token.clone());
             }
+            // A stamp in the future (the clock went backwards) counts as expired.
             Slot::Failed { error, at }
-                if rejected.is_none() && now.since(*at) < self.negative_ttl =>
+                if rejected.is_none() && *at <= now && now.since(*at) < self.negative_ttl =>
             {
                 return Err(error.clone());
             }
@@ -62,9 +63,11 @@ impl TokenCache {
         let result = acquire().await;
         *slot = match &result {
             Ok(token) => Slot::Token(token.clone()),
+            // why: stamp when the acquisition ended; a slow `az` failure (60 s) would otherwise
+            // be cached already expired and every queued caller would spawn `az` again.
             Err(error) => Slot::Failed {
                 error: error.clone(),
-                at: now,
+                at: self.clock.now(),
             },
         };
         result
@@ -77,13 +80,6 @@ impl TokenCache {
 
     pub async fn invalidate(&self) {
         *self.slot.lock().await = Slot::Empty;
-    }
-
-    pub async fn expires_at(&self) -> Option<Timestamp> {
-        match &*self.slot.lock().await {
-            Slot::Token(token) => token.expires_at,
-            Slot::Empty | Slot::Failed { .. } => None,
-        }
     }
 }
 

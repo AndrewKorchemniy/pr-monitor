@@ -4,149 +4,23 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use egui_kittest::{Harness, kittest::Queryable as _};
-use prm_config::UiState;
-use prm_domain::{auth::SettingsSection, view::StatusFilter};
+use egui_kittest::kittest::Queryable as _;
+use prm_domain::view::StatusFilter;
 use prm_service::{AppState, AuthStateView, Command, UiError};
 
 use crate::{
-    actions::{Actions, UiAction},
-    commands::{
-        CommandId,
-        keymap::Keymap,
-        palette::{PaletteItem, PaletteSources, PaletteState},
-    },
+    actions::UiAction,
+    commands::{CommandId, palette::PaletteItem},
     copy,
-    deps::BuildInfo,
-    frame::FrameCx,
-    screens::{
-        dashboard::{DashboardUi, dashboard},
-        first_run::{FirstRun, first_run},
-        settings::{PAGES, Page, SettingsEnv, SettingsState, settings_screen},
+    screens::settings::{PAGES, Page},
+    testing::{
+        org_status, sample_rows,
+        screens::{Fixture, Shown, harness},
+        state_with,
     },
-    testing::{org_status, sample_rows, state_with},
-    theme::{ThemeRuntime, fonts},
-    ui_state::PeekLayout,
-    view::{DashboardView, changes::ChangeLog},
-    widgets::palette_view::{PaletteOutcome, palette_view},
 };
 
-enum Shown {
-    Dashboard,
-    Settings,
-    FirstRun,
-    Palette,
-}
-
-struct Fixture {
-    shown: Shown,
-    state: AppState,
-    dash: DashboardUi,
-    settings: SettingsState,
-    first_run: FirstRun,
-    palette: PaletteState,
-    palette_outcome: Option<PaletteItem>,
-    keymap: Keymap,
-    changes: ChangeLog,
-    actions: Actions,
-    theme: ThemeRuntime,
-}
-
-impl Fixture {
-    fn new(shown: Shown, state: AppState) -> Self {
-        let view = DashboardView::new(&UiState::default(), state.rows.clone(), 1, 24.0);
-        let policy = crate::render::policy::RenderPolicy {
-            low_power: false,
-            animations: false,
-        };
-        let theme = ThemeRuntime::new(
-            std::path::Path::new("no-such-themes-dir"),
-            &state.config.ui,
-            policy,
-        );
-        Self {
-            shown,
-            dash: DashboardUi::new(
-                view,
-                PeekLayout {
-                    open: false,
-                    width: None,
-                },
-            ),
-            settings: SettingsState::new(state.config.clone(), SettingsSection::General),
-            first_run: FirstRun::new(state.config.clone()),
-            palette: PaletteState::default(),
-            palette_outcome: None,
-            keymap: Keymap::defaults(),
-            changes: ChangeLog::default(),
-            actions: Actions::default(),
-            theme,
-            state,
-        }
-    }
-
-    fn draw(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        self.theme.apply(&ctx);
-        self.theme.install_frame(&ctx);
-        let mut cx = FrameCx {
-            theme: self.theme.current(&ctx).clone(),
-            state: &self.state,
-            now: prm_domain::testing::ts(1_792_411_500),
-            offset: time::UtcOffset::UTC,
-            keymap: &self.keymap,
-            changes: &self.changes,
-            actions: &mut self.actions,
-        };
-        match self.shown {
-            Shown::Dashboard => dashboard(ui, &mut cx, &mut self.dash, true),
-            Shown::FirstRun => first_run(ui, &mut cx, &mut self.first_run),
-            Shown::Settings => settings_screen(ui, &mut cx, &mut self.settings, &env()),
-            Shown::Palette => {
-                let rows = self.state.rows.clone();
-                let sources = PaletteSources {
-                    sign_in: Vec::new(),
-                    themes: Vec::new(),
-                    rows: &rows,
-                };
-                if let PaletteOutcome::Run(item) =
-                    palette_view(&ctx, &cx, &mut self.palette, &sources)
-                {
-                    self.palette_outcome = Some(item);
-                }
-            }
-        }
-    }
-
-    fn take_actions(&mut self) -> Vec<UiAction> {
-        self.actions.take()
-    }
-}
-
-fn env() -> SettingsEnv<'static> {
-    SettingsEnv {
-        themes: vec![
-            ("graphite".to_owned(), "Graphite".to_owned()),
-            ("vellum".to_owned(), "Vellum".to_owned()),
-        ],
-        themes_dir: std::path::PathBuf::from("themes"),
-        theme_issues: vec!["midnight: text.muted fails contrast".to_owned()],
-        build: BuildInfo {
-            version: "0.1.0",
-            git_sha: "0123456789ab",
-            target: "x86_64-pc-windows-msvc",
-        },
-        licenses: "Third-party license text.",
-        renderer_line: "Using OpenGL on Test GPU",
-    }
-}
-
-fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
-    Harness::builder()
-        .with_size(egui::vec2(1280.0, 760.0))
-        .with_context_setup(fonts::install)
-        .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture)
-}
+mod gallery;
 
 fn signed_out() -> AppState {
     let needs = AuthStateView::NeedsSignIn {
@@ -261,7 +135,7 @@ fn editing_settings_enables_save() {
 fn first_run_rejects_a_bad_url_and_connects_a_good_one() {
     let mut h = harness(Fixture::new(Shown::FirstRun, AppState::default()));
     h.run();
-    h.get_by_label(copy::FIRST_RUN_HEADLINE);
+    h.get_by_label(copy::APP_NAME);
     h.state_mut().first_run.settings.new_org_url = "not a url at all".to_owned();
     h.get_by_label(copy::CONNECT).click();
     h.run();

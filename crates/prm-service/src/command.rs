@@ -71,6 +71,7 @@ pub enum Command {
 pub struct CommandSender(UnboundedSender<Command>);
 
 impl CommandSender {
+    /// Wraps the sending half of the service's command channel.
     pub fn new(tx: UnboundedSender<Command>) -> Self {
         Self(tx)
     }

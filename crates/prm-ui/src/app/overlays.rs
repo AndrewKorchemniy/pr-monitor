@@ -91,8 +91,10 @@ impl PrMonitorApp {
                 let spec = ModalSpec {
                     id: "discard",
                     title: copy::DISCARD_TITLE,
+                    subtitle: None,
                     buttons: &[copy::DISCARD, copy::KEEP_EDITING],
                     danger: true,
+                    width: widgets::modal::WIDTH,
                 };
                 let outcome = modal(ctx, &theme, &spec, |ui| {
                     ui.label(copy::DISCARD_BODY);
@@ -108,8 +110,10 @@ impl PrMonitorApp {
                 let spec = ModalSpec {
                     id: "admin",
                     title: copy::ADMIN_TITLE,
+                    subtitle: None,
                     buttons: &[copy::COPY_MESSAGE, copy::CLOSE],
                     danger: false,
+                    width: widgets::modal::WIDTH,
                 };
                 let outcome = modal(ctx, &theme, &spec, |ui| {
                     ui.add(
@@ -146,8 +150,10 @@ impl PrMonitorApp {
         let spec = ModalSpec {
             id: "remove_org",
             title: &title,
+            subtitle: None,
             buttons: &[copy::REMOVE, copy::CANCEL],
             danger: true,
+            width: widgets::modal::WIDTH,
         };
         let outcome = modal(ctx, &theme, &spec, |ui| {
             ui.add(egui::Label::new(copy::REMOVE_ORG_BODY).wrap());
@@ -174,8 +180,10 @@ impl PrMonitorApp {
         let spec = ModalSpec {
             id: "pat",
             title: &title,
+            subtitle: None,
             buttons: &[copy::SAVE_TOKEN, copy::CANCEL],
             danger: false,
+            width: widgets::modal::WIDTH,
         };
         let mut docs = false;
         let input = &mut self.pat_input;
@@ -218,8 +226,10 @@ impl PrMonitorApp {
         let spec = ModalSpec {
             id: "auth_menu",
             title: copy::TRAY_SIGN_IN.trim_end_matches('…'),
+            subtitle: None,
             buttons: &[copy::CLOSE],
             danger: false,
+            width: widgets::modal::WIDTH,
         };
         let orgs: Vec<_> = self
             .state

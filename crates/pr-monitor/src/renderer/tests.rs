@@ -29,7 +29,7 @@ fn opengl_is_the_default_on_a_local_x64_session() {
         choose_renderer(&inputs(None)),
         RendererChoice {
             kind: RendererKind::Glow,
-            reason: "default"
+            reason: RendererReason::Default
         }
     );
 }
@@ -42,7 +42,7 @@ fn explicit_choices_win_cli_first() {
         remote: true,
         ..inputs(None)
     };
-    assert_eq!(choose_renderer(&both).reason, "cli");
+    assert_eq!(choose_renderer(&both).reason, RendererReason::Cli);
     let config = RendererInputs {
         config: RendererPref::Wgpu,
         ..inputs(None)
@@ -51,7 +51,7 @@ fn explicit_choices_win_cli_first() {
         choose_renderer(&config),
         RendererChoice {
             kind: RendererKind::Wgpu,
-            reason: "config"
+            reason: RendererReason::Config
         }
     );
 }
@@ -62,7 +62,7 @@ fn arm64_and_remote_sessions_use_wgpu() {
         arch: "aarch64",
         ..inputs(None)
     };
-    assert_eq!(choose_renderer(&arm).reason, "arm64");
+    assert_eq!(choose_renderer(&arm).reason, RendererReason::Arm64);
     let remote = RendererInputs {
         remote: true,
         ..inputs(None)
@@ -71,7 +71,7 @@ fn arm64_and_remote_sessions_use_wgpu() {
         choose_renderer(&remote),
         RendererChoice {
             kind: RendererKind::Wgpu,
-            reason: "remote session"
+            reason: RendererReason::RemoteSession
         }
     );
 }
@@ -117,16 +117,16 @@ fn the_marker_records_attempts_success_and_failure() {
     let dir = tempfile::tempdir().expect("temp dir");
     let file = MarkerFile::new(dir.path().join("renderer.json"), VERSION);
     assert_eq!(file.load(), None);
-    file.begin(RendererKind::Glow);
+    file.begin(None, RendererKind::Glow);
     let started = file.load().expect("written");
     assert_eq!(
         (started.attempt, started.ok),
         (Some(RendererKind::Glow), false)
     );
-    file.mark_ok();
+    file.record_ok();
     assert!(file.load().expect("written").ok);
     file.mark_failed(RendererKind::Glow);
-    file.begin(RendererKind::Wgpu);
+    file.begin(file.load().as_ref(), RendererKind::Wgpu);
     let after = file.load().expect("written");
     assert!(after.glow_failed, "a failure is remembered across attempts");
     assert_eq!(after.attempt, Some(RendererKind::Wgpu));
@@ -138,22 +138,58 @@ fn the_marker_records_attempts_success_and_failure() {
 fn renderer_marker_remembers_a_crashed_opengl_start_after_a_good_wgpu_run() {
     let dir = tempfile::tempdir().expect("temp dir");
     let file = MarkerFile::new(dir.path().join("renderer.json"), VERSION);
-    file.begin(RendererKind::Glow);
+    file.begin(None, RendererKind::Glow);
     let after_crash = file.load().expect("written");
     assert_eq!(
         choose_renderer(&inputs(Some(&after_crash))).kind,
         RendererKind::Wgpu,
         "{after_crash:?}"
     );
-    file.begin(RendererKind::Wgpu);
-    file.mark_ok();
+    file.begin(Some(&after_crash), RendererKind::Wgpu);
+    file.record_ok();
     let after_wgpu = file.load().expect("written");
     assert_eq!(
         choose_renderer(&inputs(Some(&after_wgpu))),
         RendererChoice {
             kind: RendererKind::Wgpu,
-            reason: "previous OpenGL failure"
+            reason: RendererReason::GlowFailed
         },
         "{after_wgpu:?}"
     );
+}
+
+/// Regression: once OpenGL was marked failed, a forced `--renderer glow` run that worked kept
+/// the flag, so every later Auto launch on this version still used wgpu.
+#[test]
+fn renderer_marker_clears_the_opengl_failure_after_a_good_opengl_run() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = MarkerFile::new(dir.path().join("renderer.json"), VERSION);
+    let failed = marker(RendererKind::Wgpu, true, true, VERSION);
+    file.begin(Some(&failed), RendererKind::Glow);
+    assert!(file.load().expect("written").glow_failed);
+    file.record_ok();
+    let after = file.load().expect("written");
+    assert!(!glow_broke(&after, VERSION), "{after:?}");
+}
+
+#[test]
+fn renderer_marker_keeps_the_opengl_failure_after_a_good_wgpu_run() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = MarkerFile::new(dir.path().join("renderer.json"), VERSION);
+    let failed = marker(RendererKind::Glow, false, true, VERSION);
+    file.begin(Some(&failed), RendererKind::Wgpu);
+    file.record_ok();
+    assert!(glow_broke(&file.load().expect("written"), VERSION));
+}
+
+#[test]
+fn renderer_marker_mark_ok_writes_off_the_calling_thread() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = Arc::new(MarkerFile::new(dir.path().join("renderer.json"), VERSION));
+    file.begin(None, RendererKind::Glow);
+    file.mark_ok()
+        .expect("writer started")
+        .join()
+        .expect("writer finished");
+    assert!(file.load().expect("written").ok);
 }

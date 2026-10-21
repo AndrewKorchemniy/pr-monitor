@@ -3,7 +3,10 @@ use std::{collections::BTreeMap, io};
 use prm_domain::testing::{PrBuilder, key, record};
 
 use super::*;
-use crate::state::{OrgPersisted, UiState};
+use crate::{
+    state::{OrgPersisted, UiState},
+    testing::MemoryRepo,
+};
 
 const CORRUPT: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -32,12 +35,37 @@ fn files_in(dir: &Path) -> Vec<String> {
 }
 
 #[test]
-fn load_missing_creates_defaults_first_run() {
+fn load_missing_creates_defaults() {
     let (_dir, paths) = temp_paths();
     let load = load_config(&paths);
-    assert!(load.first_run);
     assert_eq!(load.config, Config::default());
+    assert_eq!(load.issues, Vec::new());
+    assert!(!load.read_only);
     assert!(paths.config.exists());
+}
+
+#[test]
+fn read_config_lists_orgs_without_writing() {
+    let (dir, paths) = temp_paths();
+    assert_eq!(read_config(&paths), None, "missing");
+    let full = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/config_full.toml"
+    ));
+    std::fs::write(&paths.config, full).unwrap();
+    let before = files_in(dir.path());
+    let ids: Vec<String> = read_config(&paths)
+        .unwrap()
+        .org_ids()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(ids, ["contoso", "fabrikam"]);
+    assert_eq!(files_in(dir.path()), before, "nothing written");
+    assert_eq!(std::fs::read_to_string(&paths.config).unwrap(), full);
+    std::fs::write(&paths.config, CORRUPT).unwrap();
+    assert_eq!(read_config(&paths), None, "unreadable");
+    assert!(paths.config.exists(), "an unreadable file is left alone");
 }
 
 #[test]
@@ -47,25 +75,100 @@ fn load_corrupt_renames_and_defaults() {
     let load = load_config(&paths);
     assert_eq!(load.config, Config::default());
     assert_eq!(load.issues[0].severity, Severity::Error);
-    let moved = load.recovered.unwrap();
+    assert!(load.issues[0].message.contains("was moved to"));
+    assert!(!load.read_only);
     assert!(
-        moved
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with("config.toml.corrupt-")
+        files_in(&paths.root)
+            .iter()
+            .any(|n| n.starts_with("config.toml.corrupt-"))
     );
     assert!(!paths.config.exists());
 }
 
+/// A read error used to report "moved to …" even when the move failed, then let the next
+/// settings save overwrite the real file with defaults.
 #[test]
-fn load_future_schema_flagged_not_saved() {
+fn recover_unmovable_config_is_left_in_place_and_read_only() {
+    let (_dir, paths) = temp_paths();
+    let empty = ConfigLoad {
+        config: Config::default(),
+        issues: Vec::new(),
+        read_only: false,
+    };
+    // Nothing exists at the config path, so the move fails, as it does for a locked file.
+    let load = recover(&paths, empty, "locked");
+    assert!(load.read_only);
+    assert_eq!(load.issues[0].severity, Severity::Error);
+    assert!(
+        load.issues[0].message.contains("left in place"),
+        "{}",
+        load.issues[0].message
+    );
+}
+
+#[test]
+fn load_future_schema_is_read_only() {
     let (_dir, paths) = temp_paths();
     std::fs::write(&paths.config, FUTURE).unwrap();
     let load = load_config(&paths);
-    assert!(load.newer_schema);
+    assert!(load.read_only);
     assert_eq!(load.config.refresh.interval_minutes, 7);
     assert_eq!(std::fs::read_to_string(&paths.config).unwrap(), FUTURE);
+}
+
+/// A config from a newer version used to be saved back on the first settings change,
+/// dropping the keys this version doesn't know while keeping the newer schema number.
+#[test]
+fn file_repo_from_newer_schema_load_refuses_to_save_config() {
+    let (_dir, paths) = temp_paths();
+    std::fs::write(&paths.config, FUTURE).unwrap();
+    let load = load_config(&paths);
+    let repo = FileRepo::from_load(paths.clone(), &load);
+    assert_eq!(repo.save_config(&load.config), Err(ConfigError::ReadOnly));
+    assert_eq!(std::fs::read_to_string(&paths.config).unwrap(), FUTURE);
+    repo.save_state(&PersistedState::default()).unwrap();
+}
+
+#[test]
+fn file_repo_from_normal_load_saves_config() {
+    let (_dir, paths) = temp_paths();
+    let load = load_config(&paths);
+    let mut config = load.config.clone();
+    config.refresh.interval_minutes = 9;
+    FileRepo::from_load(paths.clone(), &load)
+        .save_config(&config)
+        .unwrap();
+    assert_eq!(load_config(&paths).config.refresh.interval_minutes, 9);
+}
+
+/// One number too wide for its type used to fail the whole file, which was then moved aside.
+#[test]
+fn load_oversized_number_clamps_instead_of_recovering() {
+    let (_dir, paths) = temp_paths();
+    let text = "[network]\nmax_concurrency = 300\n";
+    std::fs::write(&paths.config, text).unwrap();
+    let load = load_config(&paths);
+    assert_eq!(
+        load.config.network.max_concurrency,
+        *crate::limits::MAX_CONCURRENCY.end()
+    );
+    let paths_with_issues: Vec<&str> = load.issues.iter().map(|i| &*i.path).collect();
+    assert_eq!(paths_with_issues, vec!["network.max_concurrency"]);
+    assert_eq!(std::fs::read_to_string(&paths.config).unwrap(), text);
+}
+
+#[test]
+fn load_parse_error_points_into_the_users_file() {
+    let (_dir, paths) = temp_paths();
+    let text = "[refresh]\njitter_percent = 5\n\n\ninterval_minutes = \"five\"\n";
+    std::fs::write(&paths.config, text).unwrap();
+    let mut load = ConfigLoad {
+        config: Config::default(),
+        issues: Vec::new(),
+        read_only: false,
+    };
+    let error = parse_config(&paths, text, &mut load).unwrap_err();
+    assert!(error.contains("line 5"), "{error}");
 }
 
 #[test]
@@ -95,6 +198,26 @@ fn atomic_write_retries_permission_denied() {
     .unwrap();
     assert_eq!(attempts, 3);
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "data");
+}
+
+/// A Windows sharing violation (antivirus scanning the target) has an uncategorized error
+/// kind, so it used to fail the save at once instead of retrying.
+#[cfg(windows)]
+#[test]
+fn atomic_write_retries_sharing_violation() {
+    let (_dir, paths) = temp_paths();
+    let target = paths.root.join("file.txt");
+    let mut attempts = 0;
+    atomic_write_with(&target, b"data", |tmp, path| {
+        attempts += 1;
+        if attempts < 2 {
+            let error = io::Error::from_raw_os_error(WINDOWS_SHARING_ERRORS[0]);
+            return Err(tempfile::PersistError { error, file: tmp });
+        }
+        tmp.persist(path).map(|_| ())
+    })
+    .unwrap();
+    assert_eq!(attempts, 2);
 }
 
 #[test]
@@ -163,6 +286,43 @@ fn state_corrupt_backed_up_and_defaulted() {
         files_in(&paths.root)
             .iter()
             .any(|n| n.starts_with("state.json.corrupt-"))
+    );
+}
+
+/// Any read error used to count as "missing": defaults with no issue and no backup, after
+/// which the next save replaced the user's seen map, records and sign-out flags.
+#[test]
+fn state_unreadable_bytes_backed_up_with_issue() {
+    let (_dir, paths) = temp_paths();
+    std::fs::write(&paths.state, [0xff, 0xfe, 0x00, 0x7b]).unwrap();
+    let loaded = load_state(&paths);
+    assert_eq!(loaded.state, PersistedState::default());
+    assert!(loaded.issue.is_some());
+    assert!(
+        files_in(&paths.root)
+            .iter()
+            .any(|n| n.starts_with("state.json.corrupt-"))
+    );
+}
+
+#[test]
+fn state_read_error_reports_an_issue() {
+    let (_dir, paths) = temp_paths();
+    std::fs::create_dir(&paths.state).unwrap();
+    let loaded = load_state(&paths);
+    assert_eq!(loaded.state, PersistedState::default());
+    assert!(loaded.issue.is_some());
+}
+
+#[test]
+fn state_missing_is_silent() {
+    let (_dir, paths) = temp_paths();
+    assert_eq!(
+        load_state(&paths),
+        StateLoad {
+            state: PersistedState::default(),
+            issue: None
+        }
     );
 }
 

@@ -40,5 +40,4 @@ fn platform_secret_store_dpapi_selected_by_pref() {
     let dir = tempfile::tempdir().unwrap();
     let store = secret_store(dir.path(), SecretBackendPref::Dpapi);
     assert_eq!(store.backend(), "dpapi");
-    assert_eq!(store.max_value_len(), None);
 }

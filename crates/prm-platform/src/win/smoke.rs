@@ -125,5 +125,5 @@ fn smoke_autostart_roundtrip_test_value() {
     assert_eq!(autostart.state().unwrap(), AutostartState::Enabled);
     autostart.set_enabled(false).unwrap();
     assert_eq!(autostart.state().unwrap(), AutostartState::Disabled);
-    autostart.remove_all().unwrap();
+    super::autostart::remove_run_values("PRMonitorSmokeTest").unwrap();
 }

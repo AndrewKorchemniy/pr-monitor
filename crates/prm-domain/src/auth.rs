@@ -106,12 +106,17 @@ impl AuthHeader {
         }
     }
 
-    /// The full `Authorization` header value.
-    pub fn header_value(&self) -> String {
-        match self {
-            Self::Bearer(s) => format!("Bearer {}", s.expose()),
-            Self::Basic(s) => format!("Basic {}", s.expose()),
-        }
+    /// The full `Authorization` header value, zeroized when dropped. Sized up front so no
+    /// partial copy is left behind by a reallocation.
+    pub fn header_value(&self) -> zeroize::Zeroizing<String> {
+        let (scheme, secret) = match self {
+            Self::Bearer(s) => ("Bearer ", s),
+            Self::Basic(s) => ("Basic ", s),
+        };
+        let mut value = String::with_capacity(scheme.len() + secret.expose().len());
+        value.push_str(scheme);
+        value.push_str(secret.expose());
+        zeroize::Zeroizing::new(value)
     }
 }
 

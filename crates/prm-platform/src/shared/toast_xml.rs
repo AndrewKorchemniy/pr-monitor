@@ -2,6 +2,7 @@
 //! payload with protocol activation only.
 
 use prm_domain::{
+    app::is_openable_url,
     hash::fnv64,
     notify::{
         Notification,
@@ -10,9 +11,13 @@ use prm_domain::{
     view::text::truncate_chars,
 };
 
+/// Longest title, in chars.
 pub const MAX_TITLE: usize = 128;
+/// Longest body, in chars.
 pub const MAX_BODY: usize = 512;
+/// Longest detail line, in chars.
 pub const MAX_DETAIL: usize = 256;
+/// Longest attribution line, in chars.
 pub const MAX_ATTRIBUTION: usize = 128;
 /// Windows rejects longer tags and groups.
 pub const MAX_TAG_UTF16: usize = 64;
@@ -24,6 +29,7 @@ pub struct ToastAction {
     pub arguments: String,
 }
 
+/// Everything a toast shows, already clipped to the `MAX_*` limits (in chars).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToastSpec {
     pub launch: String,
@@ -35,13 +41,14 @@ pub struct ToastSpec {
     pub silent: bool,
 }
 
-/// Clipped fields; "Open PR" and "Show" buttons only when the PR link is https.
+/// Clipped fields; "Open PR" and "Show" buttons only when the PR link is openable
+/// (`is_openable_url`): Windows opens the button's link itself, bypassing `UrlOpener`.
 pub fn spec_from(n: &Notification) -> ToastSpec {
     let open_url = n
         .open_url
         .as_deref()
         .and_then(|u| url::Url::parse(u).ok())
-        .filter(|u| u.scheme() == "https");
+        .filter(is_openable_url);
     let actions = open_url.map_or_else(Vec::new, |url| {
         vec![
             ToastAction {

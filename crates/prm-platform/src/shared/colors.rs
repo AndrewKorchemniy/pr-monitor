@@ -1,5 +1,6 @@
 //! Title-bar colors for DWM.
 
+/// An sRGB color, 8 bits per channel.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Rgb {
     pub r: u8,
@@ -17,7 +18,7 @@ pub struct TitleBarColors {
 }
 
 /// Win32 `COLORREF`: 0x00BBGGRR.
-pub const fn colorref(c: Rgb) -> u32 {
+pub(crate) const fn colorref(c: Rgb) -> u32 {
     ((c.b as u32) << 16) | ((c.g as u32) << 8) | (c.r as u32)
 }
 

@@ -50,15 +50,13 @@ impl PatSource {
     }
 
     pub fn store(&self, pat: &Secret) -> Result<(), AuthError> {
-        self.secrets
-            .set(&self.key, pat.expose().trim().as_bytes())
-            .map_err(|e| AuthError::SecretStore(e.to_string().into()))
+        Ok(self
+            .secrets
+            .set(&self.key, pat.expose().trim().as_bytes())?)
     }
 
     pub fn delete(&self) -> Result<(), AuthError> {
-        self.secrets
-            .delete(&self.key)
-            .map_err(|e| AuthError::SecretStore(e.to_string().into()))
+        Ok(self.secrets.delete(&self.key)?)
     }
 
     pub fn is_stored(&self) -> bool {
@@ -73,11 +71,7 @@ impl TokenSource for PatSource {
     }
 
     async fn acquire(&self, _ctx: &AuthContext) -> Result<AccessToken, AuthError> {
-        let bytes = self
-            .secrets
-            .get(&self.key)
-            .map_err(|e| AuthError::SecretStore(e.to_string().into()))?
-            .ok_or(AuthError::PatMissing)?;
+        let bytes = self.secrets.get(&self.key)?.ok_or(AuthError::PatMissing)?;
         let pat = std::str::from_utf8(&bytes).map_err(|_| AuthError::PatFormat)?;
         let header = basic_header(&Secret::new(pat));
         Ok(AccessToken {

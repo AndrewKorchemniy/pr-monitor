@@ -8,7 +8,16 @@ use prm_config::{
 };
 use prm_theme::registry::SYSTEM;
 
-use crate::{actions::UiAction, copy, frame::FrameCx, screens::settings::SettingsEnv, widgets};
+use crate::{
+    actions::UiAction,
+    copy,
+    frame::FrameCx,
+    screens::settings::SettingsEnv,
+    widgets::{
+        card::section,
+        controls::{self, setting_row},
+    },
+};
 
 const TRISTATE: [(Tristate, &str); 3] = [
     (Tristate::Auto, "Automatic"),
@@ -18,7 +27,11 @@ const TRISTATE: [(Tristate, &str); 3] = [
 const RENDERERS: [(RendererPref, &str); 3] = [
     (RendererPref::Auto, "Automatic"),
     (RendererPref::Glow, "OpenGL"),
-    (RendererPref::Wgpu, "Direct3D 12 / Vulkan / Metal"),
+    (RendererPref::Wgpu, "Direct3D"),
+];
+const DENSITIES: [(Density, &str); 2] = [
+    (Density::Compact, "Compact"),
+    (Density::Comfortable, "Comfortable"),
 ];
 
 fn theme_name<'a>(env: &'a SettingsEnv<'_>, id: &'a str) -> &'a str {
@@ -35,42 +48,56 @@ pub(crate) fn page(
     env: &SettingsEnv<'_>,
 ) {
     let theme = cx.theme.clone();
-    let space = theme.tokens.metrics.space.lg;
     let prefs = &mut draft.ui;
-    widgets::field_label(ui, &theme, copy::THEME);
-    let before = prefs.theme.clone();
-    let system = copy::match_windows(
-        theme_name(env, &prefs.theme_dark),
-        theme_name(env, &prefs.theme_light),
-    );
-    ui.radio_value(&mut prefs.theme, SYSTEM.to_owned(), system);
-    for (id, name) in &env.themes {
-        ui.radio_value(&mut prefs.theme, id.clone(), name.as_str());
-    }
-    if prefs.theme != before {
-        cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
-    }
-    issues(ui, &theme, &env.theme_issues);
-    ui.add_space(space);
-    widgets::field_label(ui, &theme, copy::DENSITY);
-    ui.horizontal(|ui| {
-        ui.radio_value(&mut prefs.density, Density::Compact, "Compact");
-        ui.radio_value(&mut prefs.density, Density::Comfortable, "Comfortable");
+    section(ui, &theme, copy::THEME, None, |ui| {
+        let before = prefs.theme.clone();
+        let system = copy::match_windows(
+            theme_name(env, &prefs.theme_dark),
+            theme_name(env, &prefs.theme_light),
+        );
+        controls::radio(ui, &theme, &mut prefs.theme, SYSTEM.to_owned(), system);
+        for (id, name) in &env.themes {
+            controls::radio(ui, &theme, &mut prefs.theme, id.clone(), name.as_str());
+        }
+        if prefs.theme != before {
+            cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
+        }
+        issues(ui, &theme, &env.theme_issues);
     });
-    ui.add(egui::Slider::new(&mut prefs.font_scale, limits::FONT_SCALE).text(copy::TEXT_SIZE));
-    ui.add_space(space);
-    tristate(ui, &theme, copy::ANIMATIONS, &mut prefs.animations);
-    widgets::muted(ui, &theme, copy::ANIMATIONS_HELP);
-    tristate(ui, &theme, copy::LOW_POWER, &mut prefs.low_power);
-    ui.add_space(space);
-    widgets::field_label(ui, &theme, copy::RENDERER);
-    for (value, label) in RENDERERS {
-        ui.radio_value(&mut prefs.renderer, value, label);
-    }
-    widgets::muted(ui, &theme, env.renderer_line);
-    widgets::muted(ui, &theme, copy::RESTART_HELP);
-    ui.add_space(space);
-    authoring(ui, cx, env);
+    section(ui, &theme, copy::SECTION_LAYOUT, None, |ui| {
+        setting_row(ui, &theme, (copy::DENSITY, None), |ui| {
+            controls::segmented(ui, &theme, &mut prefs.density, &DENSITIES);
+        });
+        ui.separator();
+        let label = copy::text_size(prefs.font_scale);
+        setting_row(ui, &theme, (&label, None), |ui| {
+            controls::slider(
+                ui,
+                &theme,
+                &mut prefs.font_scale,
+                limits::FONT_SCALE,
+                &label,
+            );
+        });
+    });
+    section(ui, &theme, copy::SECTION_PERFORMANCE, None, |ui| {
+        tristate(
+            ui,
+            &theme,
+            (copy::ANIMATIONS, Some(copy::ANIMATIONS_HELP)),
+            &mut prefs.animations,
+        );
+        ui.separator();
+        tristate(ui, &theme, (copy::LOW_POWER, None), &mut prefs.low_power);
+        ui.separator();
+        let help = format!("{}. {}", env.renderer_line, copy::RESTART_HELP);
+        setting_row(ui, &theme, (copy::RENDERER, Some(&help)), |ui| {
+            controls::segmented(ui, &theme, &mut prefs.renderer, &RENDERERS);
+        });
+    });
+    section(ui, &theme, copy::SECTION_CUSTOM_THEMES, None, |ui| {
+        authoring(ui, cx, env);
+    });
 }
 
 /// Theme files that failed to load or to pass the contrast checks.
@@ -81,12 +108,14 @@ fn issues(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, issues: &[String]) {
     }
 }
 
-fn tristate(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, label: &str, value: &mut Tristate) {
-    widgets::field_label(ui, theme, label);
-    ui.horizontal(|ui| {
-        for (option, text) in TRISTATE {
-            ui.radio_value(value, option, text);
-        }
+fn tristate(
+    ui: &mut egui::Ui,
+    theme: &crate::theme::UiTheme,
+    text: (&str, Option<&str>),
+    value: &mut Tristate,
+) {
+    setting_row(ui, theme, text, |ui| {
+        controls::segmented(ui, theme, value, &TRISTATE);
     });
 }
 

@@ -68,13 +68,18 @@ fn protocol_command_format() {
 }
 
 #[test]
-fn run_value_name_default_and_isolated() {
-    assert_eq!(
-        run_value_name(InstanceScope::Default, "abcd1234"),
+fn autostart_entry_name_default_and_isolated() {
+    let base = if cfg!(windows) {
         "PRMonitor"
+    } else {
+        "pr-monitor"
+    };
+    assert_eq!(
+        autostart_entry_name(InstanceScope::Default, "abcd1234"),
+        base
     );
     assert_eq!(
-        run_value_name(InstanceScope::Isolated, "abcd1234"),
-        "PRMonitor-abcd1234"
+        autostart_entry_name(InstanceScope::Isolated, "abcd1234"),
+        format!("{base}-abcd1234")
     );
 }

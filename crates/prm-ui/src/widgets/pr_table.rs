@@ -3,7 +3,7 @@
 
 use eframe::egui::{self, Align, Layout, Rect, RichText, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBody, TableBuilder, TableRow};
-use prm_domain::view::{PrRow, age::AgeCache};
+use prm_domain::view::{GroupBy, PrRow, age::AgeCache};
 
 use crate::{
     actions::UiAction,
@@ -58,14 +58,20 @@ pub(crate) fn pr_table(
 ) -> TableOut {
     let theme = cx.theme.clone();
     let metrics = &theme.tokens.metrics.row;
-    let columns = visible_columns(ui.available_width(), input.show_org, &view.hidden_columns);
+    let mut columns = visible_columns(ui.available_width(), input.show_org, &view.hidden_columns);
+    if view.group == GroupBy::Status {
+        compact_status(&mut columns);
+    }
+    let span = ui.available_rect_before_wrap().x_range();
+    // why: column resize lines show only while hovered or dragged, not as permanent rules.
+    ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::NONE;
     let builder = table_builder(ui, &theme, &columns, view);
     let mut pending = Vec::new();
     let mut widths: Vec<f32> = Vec::new();
     let row_height = metrics.row_height;
     let output = builder
         .header(metrics.header_height, |mut header| {
-            header_row(&mut header, &theme, &columns, view, &mut pending);
+            header_row(&mut header, (&theme, span), &columns, view, &mut pending);
         })
         .body(|body| {
             widths = body.widths().to_vec();
@@ -97,6 +103,34 @@ pub(crate) fn pr_table(
             row_height,
             ppp,
         )),
+    }
+}
+
+/// Grouped by status, the group header already names it: the status cell shows only its glyph.
+fn compact_status(columns: &mut [ColumnSpec]) {
+    for spec in columns.iter_mut() {
+        match spec.id {
+            ColumnId::Status => {
+                spec.key = "status_glyph";
+                spec.header = "";
+                spec.width = Width::Initial(24.0);
+                spec.min = 24.0;
+                spec.sort = None;
+            }
+            ColumnId::Number => {
+                spec.key = "number_left";
+                spec.align_right = false;
+                spec.width = Width::Initial(56.0);
+            }
+            ColumnId::Margin
+            | ColumnId::Title
+            | ColumnId::Repo
+            | ColumnId::Author
+            | ColumnId::Reviews
+            | ColumnId::Comments
+            | ColumnId::Age
+            | ColumnId::Org => {}
+        }
     }
 }
 
@@ -150,18 +184,36 @@ fn remember_widths(view: &mut DashboardView, columns: &[ColumnSpec], widths: &[f
 
 fn header_row(
     header: &mut TableRow<'_, '_>,
-    theme: &UiTheme,
+    (theme, span): (&UiTheme, egui::Rangef),
     columns: &[ColumnSpec],
     view: &DashboardView,
     pending: &mut Vec<UiAction>,
 ) {
-    for spec in columns {
+    for (index, spec) in columns.iter().enumerate() {
         let mut clicked = false;
-        header.col(|ui| clicked = header_cell(ui, theme, spec, view));
+        header.col(|ui| {
+            if index == 0 {
+                header_rule(ui, theme, span);
+            }
+            clicked = header_cell(ui, theme, spec, view);
+        });
         if clicked && let Some(key) = spec.sort {
             pending.push(UiAction::Sort(key));
         }
     }
+}
+
+/// A hairline under the whole header row, painted from its first cell.
+fn header_rule(ui: &egui::Ui, theme: &UiTheme, span: egui::Rangef) {
+    let cell = ui.max_rect();
+    let mut painter = ui.painter().clone();
+    painter.set_clip_rect(Rect::from_x_y_ranges(span, cell.y_range().expand(4.0)));
+    let y = cell.bottom() + ui.spacing().item_spacing.y / 2.0;
+    let stroke = Stroke::new(
+        theme.tokens.metrics.stroke.hairline,
+        theme.colors.border_subtle,
+    );
+    painter.hline(span, y, stroke);
 }
 
 /// The column title with a sort arrow on the sorted column; true when clicked.
@@ -200,7 +252,7 @@ fn header_cell(
     };
     ui.with_layout(layout, |ui| {
         let clicked = ui.add(label).clicked();
-        if sorted {
+        if sorted && !spec.header.is_empty() {
             icons::show(ui, arrow, 8.0, theme.colors.text_secondary);
         }
         clicked
@@ -250,41 +302,13 @@ fn group_row(
         .view
         .collapsed
         .contains(&crate::view::display::group_id(&group.key));
+    // why: striped rows fill each cell as it is added, so paint from the last cell, on top.
+    let last = bcx.columns.len().saturating_sub(1);
     for (i, _) in bcx.columns.iter().enumerate() {
         row.col(|ui| {
-            if i != 0 {
-                return;
+            if i == last {
+                group_label(ui, theme, group, collapsed, (full, clip));
             }
-            let cell = ui.max_rect();
-            let line = Rect::from_x_y_ranges(full.x_range(), cell.y_range()).intersect(clip);
-            let painter = ui.painter().with_clip_rect(line);
-            let chevron = if collapsed {
-                Icon::ChevronRight
-            } else {
-                Icon::ChevronDown
-            };
-            let icon = Rect::from_center_size(
-                egui::pos2(line.left() + 10.0, line.center().y),
-                egui::vec2(10.0, 10.0),
-            );
-            icons::paint(&painter, icon, chevron, theme.colors.text_muted);
-            let text = format!("{}  {}", group.label, group.len);
-            let galley = painter.layout_no_wrap(
-                text,
-                theme.fonts.body_strong.clone(),
-                theme.colors.text_primary,
-            );
-            painter.galley(
-                egui::pos2(line.left() + 22.0, line.center().y - galley.size().y / 2.0),
-                galley,
-                theme.colors.text_primary,
-            );
-            let rule_y = line.center().y;
-            painter.hline(
-                (line.left() + 160.0)..=line.right() - 8.0,
-                rule_y,
-                Stroke::new(1.0, theme.colors.border_subtle),
-            );
         });
     }
     let response = row.response();
@@ -294,6 +318,55 @@ fn group_row(
     if response.clicked() {
         pending.push(UiAction::ToggleGroup(span));
     }
+}
+
+/// Paints a group header across the whole row from inside one of its cells.
+fn group_label(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    group: &prm_domain::view::group::GroupSpan,
+    collapsed: bool,
+    (full, clip): (Rect, Rect),
+) {
+    let cell = ui.max_rect();
+    let line = Rect::from_x_y_ranges(full.x_range(), cell.y_range()).intersect(clip);
+    let mut painter = ui.painter().clone();
+    painter.set_clip_rect(line);
+    let chevron = if collapsed {
+        Icon::ChevronRight
+    } else {
+        Icon::ChevronDown
+    };
+    let y = line.center().y;
+    let icon = Rect::from_center_size(egui::pos2(line.left() + 12.0, y), egui::vec2(9.0, 9.0));
+    icons::paint(&painter, icon, chevron, theme.colors.text_muted);
+    let label = painter.layout_no_wrap(
+        group.label.to_string(),
+        theme.fonts.body_strong.clone(),
+        theme.colors.text_primary,
+    );
+    let label_w = label.size().x;
+    let x = line.left() + 26.0;
+    painter.galley(
+        egui::pos2(x, y - label.size().y / 2.0),
+        label,
+        theme.colors.text_primary,
+    );
+    let count = painter.layout_no_wrap(
+        group.len.to_string(),
+        theme.fonts.small.clone(),
+        theme.colors.text_muted,
+    );
+    let at = egui::pos2(x + label_w + 8.0, y - count.size().y / 2.0);
+    painter.galley(at, count, theme.colors.text_muted);
+    painter.hline(
+        line.x_range(),
+        line.bottom() - 0.5,
+        Stroke::new(
+            theme.tokens.metrics.stroke.hairline,
+            theme.colors.border_subtle,
+        ),
+    );
 }
 
 fn pr_row(
@@ -374,9 +447,7 @@ fn cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, spec: &ColumnSpec, pr: &PrRow, 
                 pr.active_threads,
             ));
         }
-        ColumnId::Number => right(ui, |ui| {
-            ui.label(mono(&pr.number_text));
-        }),
+        ColumnId::Number => number_cell(ui, spec, mono(&pr.number_text)),
         ColumnId::Title => title_cell(ui, bcx, pr),
         ColumnId::Repo => {
             ui.add(egui::Label::new(text(&pr.repo_name)).truncate());
@@ -387,6 +458,7 @@ fn cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, spec: &ColumnSpec, pr: &PrRow, 
         ColumnId::Reviews => {
             vote_tally(ui, theme, &pr.reviewers);
         }
+        ColumnId::Comments if pr.total_threads == 0 => {}
         ColumnId::Comments => right(ui, |ui| {
             let color = if pr.active_threads > 0 {
                 theme.colors.tone(crate::theme::Tone::ActiveComments).fg
@@ -411,6 +483,17 @@ fn cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, spec: &ColumnSpec, pr: &PrRow, 
         ColumnId::Org => {
             ui.add(egui::Label::new(text(&pr.org_label)).truncate());
         }
+    }
+}
+
+/// "!4711", right-aligned unless the column says otherwise (glyph-only status mode).
+fn number_cell(ui: &mut egui::Ui, spec: &ColumnSpec, text: RichText) {
+    if spec.align_right {
+        right(ui, |ui| {
+            ui.label(text);
+        });
+    } else {
+        ui.label(text);
     }
 }
 
@@ -475,14 +558,14 @@ fn change_bar(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow) {
     }
     let cell = ui.max_rect();
     let width = theme.tokens.metrics.row.revision_bar;
-    let top = cell.top() + 2.0;
-    let bottom = top + (cell.height() - 4.0) * t;
+    let top = cell.top() + 4.0;
+    let bottom = top + (cell.height() - 8.0) * t;
     let bar = Rect::from_min_max(
         egui::pos2(cell.left() + 1.0, top),
         egui::pos2(cell.left() + 1.0 + width, bottom),
     );
     ui.painter()
-        .rect_filled(bar, 1.0, theme.colors.signature_revision);
+        .rect_filled(bar, width / 2.0, theme.colors.signature_revision);
     let _ = ui
         .allocate_rect(bar, Sense::hover())
         .on_hover_text(copy::CHANGED_TOOLTIP);

@@ -18,6 +18,7 @@ use prm_domain::{
 
 use crate::errors::UiError;
 
+/// One event from the service to the UI, delivered in order and never coalesced.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppEvent {
     Notice(Notice),
@@ -75,7 +76,9 @@ pub struct Notice {
 
 /// Where the service sends events. `wake` asks the UI to run its logic (a repaint request).
 pub trait EventSink: Send + Sync + 'static {
+    /// Delivers the event (in order) and wakes the UI.
     fn emit(&self, event: AppEvent);
+    /// Asks the UI to run its logic without an event (a new state was published).
     fn wake(&self);
 }
 

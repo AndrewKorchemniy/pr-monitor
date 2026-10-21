@@ -71,8 +71,13 @@ fn toast_xml_silent_emits_audio_silent() {
 }
 
 #[test]
-fn toast_xml_drops_non_https_open_url() {
-    for url in ["http://dev.azure.com/x", "javascript:alert(1)", "not a url"] {
+fn toast_xml_drops_unopenable_open_url() {
+    for url in [
+        "http://dev.azure.com/x",
+        "javascript:alert(1)",
+        "not a url",
+        "https://evil.example.com/pullrequest/22",
+    ] {
         let mut toast = pr_toast();
         toast.open_url = Some(url.into());
         let spec = spec_from(&toast);

@@ -128,8 +128,9 @@ impl Entry {
     }
 }
 
-/// Whether a name carries any visible text.
-fn non_blank(s: &str) -> bool {
+/// Whether text carries anything but whitespace. The workspace's single "blank string" rule:
+/// names, unique names, paths and configured tenants all use it.
+pub fn non_blank(s: &str) -> bool {
     !s.trim().is_empty()
 }
 
@@ -181,41 +182,26 @@ impl PeopleCache {
         if q.is_empty() || limit == 0 {
             return Vec::new();
         }
-        let mut scored: Vec<(u8, &Entry)> = self
+        // The lowercase name is kept for the sort, so it is computed once per entry.
+        let mut scored: Vec<(u8, String, &Entry)> = self
             .entries
             .values()
             .filter_map(|e| {
                 let name = e.person.name.to_lowercase();
-                let unique = e
-                    .person
-                    .unique_name
-                    .as_deref()
-                    .unwrap_or_default()
-                    .to_lowercase();
-                if word_prefix(&name, &q) || word_prefix(&unique, &q) {
-                    Some((0, e))
-                } else if name.contains(&q) || unique.contains(&q) {
-                    Some((1, e))
-                } else {
-                    None
-                }
+                let rank = match_rank(&name, e.person.unique_name.as_deref(), &q)?;
+                Some((rank, name, e))
             })
             .collect();
-        scored.sort_by(|(ra, a), (rb, b)| {
+        scored.sort_by(|(ra, na, a), (rb, nb, b)| {
             ra.cmp(rb)
                 .then(b.hits.cmp(&a.hits))
-                .then_with(|| {
-                    a.person
-                        .name
-                        .to_lowercase()
-                        .cmp(&b.person.name.to_lowercase())
-                })
+                .then_with(|| na.cmp(nb))
                 .then(a.person.id.cmp(&b.person.id))
         });
         scored
             .into_iter()
             .take(limit)
-            .map(|(_, e)| e.person.to_candidate(CandidateSource::Harvested))
+            .map(|(_, _, e)| e.person.to_candidate(CandidateSource::Harvested))
             .collect()
     }
 
@@ -247,6 +233,18 @@ impl PeopleCache {
             .take(cap)
             .map(|e| e.person.clone())
             .collect()
+    }
+}
+
+/// 0 for a word-prefix match of the lowercase name or unique name, 1 for a substring match.
+fn match_rank(name: &str, unique_name: Option<&str>, q: &str) -> Option<u8> {
+    let unique = unique_name.unwrap_or_default().to_lowercase();
+    if word_prefix(name, q) || word_prefix(&unique, q) {
+        Some(0)
+    } else if name.contains(q) || unique.contains(q) {
+        Some(1)
+    } else {
+        None
     }
 }
 

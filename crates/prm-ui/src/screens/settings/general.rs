@@ -6,55 +6,92 @@ use prm_config::{
     schema::{OrgColumn, ProxyConfig},
 };
 
-use crate::{copy, frame::FrameCx, widgets};
+use crate::{
+    copy,
+    frame::FrameCx,
+    theme::UiTheme,
+    widgets::{
+        card::section,
+        controls::{self, setting_row, toggle_row},
+    },
+};
 
 const ORG_COLUMN: [(OrgColumn, &str); 3] = [
-    (OrgColumn::Auto, "When watching more than one organization"),
+    (OrgColumn::Auto, "Automatic"),
     (OrgColumn::Always, "Always"),
     (OrgColumn::Never, "Never"),
 ];
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) {
     let theme = cx.theme.clone();
-    let space = theme.tokens.metrics.space.lg;
-    let label = copy::refresh_every(draft.refresh.interval_minutes);
-    ui.add(
-        egui::Slider::new(
-            &mut draft.refresh.interval_minutes,
-            limits::INTERVAL_MINUTES,
-        )
-        .text(label.trim()),
-    );
-    widgets::muted(ui, &theme, copy::REFRESH_HELP);
-    ui.add_space(space);
+    section(ui, &theme, copy::SECTION_REFRESH, None, |ui| {
+        let interval = &mut draft.refresh.interval_minutes;
+        let label = copy::refresh_every(*interval);
+        setting_row(ui, &theme, (label.trim(), Some(copy::REFRESH_HELP)), |ui| {
+            controls::slider(ui, &theme, interval, limits::INTERVAL_MINUTES, label.trim());
+        });
+    });
     let prefs = &mut draft.ui;
-    ui.checkbox(&mut prefs.start_minimized, copy::START_MINIMIZED);
-    ui.checkbox(&mut prefs.close_to_tray, copy::CLOSE_TO_TRAY);
-    ui.checkbox(&mut prefs.minimize_to_tray, copy::MINIMIZE_TO_TRAY);
-    ui.checkbox(&mut prefs.launch_at_login, copy::LAUNCH_AT_LOGIN);
-    if let Some(error) = &cx.state.autostart.error {
-        widgets::muted(ui, &theme, error);
-    }
-    ui.add_space(space);
-    widgets::field_label(ui, &theme, copy::ORG_COLUMN);
-    for (value, label) in ORG_COLUMN {
-        ui.radio_value(&mut prefs.show_org_column, value, label);
-    }
-    ui.checkbox(&mut prefs.relative_times, copy::RELATIVE_TIMES);
-    ui.add_space(space);
-    proxy(ui, &theme, &mut draft.network.proxy);
+    section(ui, &theme, copy::SECTION_WINDOW, None, |ui| {
+        toggle_row(
+            ui,
+            &theme,
+            &mut prefs.start_minimized,
+            (copy::START_MINIMIZED, None),
+        );
+        ui.separator();
+        toggle_row(
+            ui,
+            &theme,
+            &mut prefs.close_to_tray,
+            (copy::CLOSE_TO_TRAY, None),
+        );
+        ui.separator();
+        toggle_row(
+            ui,
+            &theme,
+            &mut prefs.minimize_to_tray,
+            (copy::MINIMIZE_TO_TRAY, None),
+        );
+        ui.separator();
+        let error = cx.state.autostart.error.as_deref();
+        toggle_row(
+            ui,
+            &theme,
+            &mut prefs.launch_at_login,
+            (copy::LAUNCH_AT_LOGIN, error),
+        );
+    });
+    section(ui, &theme, copy::SECTION_TABLE, None, |ui| {
+        let help = Some(copy::ORG_COLUMN_HELP);
+        setting_row(ui, &theme, (copy::ORG_COLUMN, help), |ui| {
+            controls::segmented(ui, &theme, &mut prefs.show_org_column, &ORG_COLUMN);
+        });
+        ui.separator();
+        toggle_row(
+            ui,
+            &theme,
+            &mut prefs.relative_times,
+            (copy::RELATIVE_TIMES, None),
+        );
+    });
+    section(ui, &theme, copy::SECTION_NETWORK, None, |ui| {
+        setting_row(ui, &theme, (copy::PROXY, Some(copy::RESTART_HELP)), |ui| {
+            proxy(ui, &theme, &mut draft.network.proxy);
+        });
+    });
 }
 
-fn proxy(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, proxy: &mut ProxyConfig) {
-    widgets::field_label(ui, theme, "Proxy");
+fn proxy(ui: &mut egui::Ui, theme: &UiTheme, proxy: &mut ProxyConfig) {
     let id = ui.make_persistent_id("proxy_text");
     let mut text: String = ui
         .data_mut(|d| d.get_temp(id))
         .unwrap_or_else(|| proxy.to_string());
     let response = ui.add(
         egui::TextEdit::singleline(&mut text)
-            .hint_text("system, none, pac or http://proxy:8080")
-            .desired_width(320.0),
+            .hint_text(copy::PROXY_HINT)
+            .font(theme.fonts.body.clone())
+            .desired_width(260.0),
     );
     if response.changed() {
         if let Ok(parsed) = text.parse() {
@@ -62,5 +99,4 @@ fn proxy(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, proxy: &mut ProxyConf
         }
         ui.data_mut(|d| d.insert_temp(id, text));
     }
-    widgets::muted(ui, theme, copy::RESTART_HELP);
 }

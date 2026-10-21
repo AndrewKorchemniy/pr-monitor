@@ -2,7 +2,11 @@
 //! fastest start); wgpu (DirectX 12, WARP without a GPU) over remote desktops, on arm64, and
 //! after OpenGL failed on this version.
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex, PoisonError},
+    thread::JoinHandle,
+};
 
 use prm_config::schema::RendererPref;
 use prm_ui::RendererKind;
@@ -28,10 +32,36 @@ pub(crate) struct RendererInputs<'a> {
     pub version: &'a str,
 }
 
+/// Why `choose_renderer` picked what it did.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RendererReason {
+    Cli,
+    Config,
+    Arm64,
+    RemoteSession,
+    /// OpenGL failed on this version (logged at warn with the marker).
+    GlowFailed,
+    Default,
+}
+
+impl RendererReason {
+    /// For the log.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Config => "config",
+            Self::Arm64 => "arm64",
+            Self::RemoteSession => "remote session",
+            Self::GlowFailed => "previous OpenGL failure",
+            Self::Default => "default",
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RendererChoice {
     pub kind: RendererKind,
-    pub reason: &'static str,
+    pub reason: RendererReason,
 }
 
 const fn explicit(pref: RendererPref) -> Option<RendererKind> {
@@ -49,28 +79,25 @@ pub(crate) fn glow_broke(m: &GpuMarker, version: &str) -> bool {
     m.version == version && (m.glow_failed || (m.attempt == Some(RendererKind::Glow) && !m.ok))
 }
 
-/// The reason when OpenGL failed on this version (logged at warn with the marker).
-pub(crate) const GLOW_FAILED: &str = "previous OpenGL failure";
-
 /// The first rule that applies wins.
 pub(crate) fn choose_renderer(input: &RendererInputs<'_>) -> RendererChoice {
     let choice = |kind, reason| RendererChoice { kind, reason };
     if let Some(kind) = input.cli.and_then(explicit) {
-        return choice(kind, "cli");
+        return choice(kind, RendererReason::Cli);
     }
     if let Some(kind) = explicit(input.config) {
-        return choice(kind, "config");
+        return choice(kind, RendererReason::Config);
     }
     if input.arch == "aarch64" {
-        return choice(RendererKind::Wgpu, "arm64");
+        return choice(RendererKind::Wgpu, RendererReason::Arm64);
     }
     if input.remote {
-        return choice(RendererKind::Wgpu, "remote session");
+        return choice(RendererKind::Wgpu, RendererReason::RemoteSession);
     }
     if input.marker.is_some_and(|m| glow_broke(m, input.version)) {
-        return choice(RendererKind::Wgpu, GLOW_FAILED);
+        return choice(RendererKind::Wgpu, RendererReason::GlowFailed);
     }
-    choice(RendererKind::Glow, "default")
+    choice(RendererKind::Glow, RendererReason::Default)
 }
 
 /// Errors that mean "this renderer cannot start here" (worth one relaunch with the other).
@@ -88,15 +115,21 @@ pub(crate) fn is_renderer_init_error(error: &eframe::Error, tried: RendererKind)
     }
 }
 
-/// Reads and writes the marker; failures are logged and otherwise ignored.
+/// Reads and writes the marker; failures are logged and otherwise ignored. It remembers what
+/// `begin` wrote, so later updates never read the file back.
 pub(crate) struct MarkerFile {
     path: PathBuf,
     version: &'static str,
+    written: Mutex<Option<GpuMarker>>,
 }
 
 impl MarkerFile {
     pub(crate) const fn new(path: PathBuf, version: &'static str) -> Self {
-        Self { path, version }
+        Self {
+            path,
+            version,
+            written: Mutex::new(None),
+        }
     }
 
     pub(crate) fn load(&self) -> Option<GpuMarker> {
@@ -104,32 +137,64 @@ impl MarkerFile {
         serde_json::from_str(&text).ok()
     }
 
-    /// Before the window opens: an attempt that never reaches `mark_ok` counts as a failure.
-    pub(crate) fn begin(&self, kind: RendererKind) {
-        let glow_failed = self.load().is_some_and(|m| glow_broke(&m, self.version));
-        self.save(&GpuMarker {
+    /// Before the window opens (`previous` is what `load` returned): an attempt that never
+    /// reaches `mark_ok` counts as a failure.
+    pub(crate) fn begin(&self, previous: Option<&GpuMarker>, kind: RendererKind) {
+        let marker = GpuMarker {
             version: self.version.to_owned(),
             attempt: Some(kind),
             pid: std::process::id(),
             ok: false,
-            glow_failed,
-        });
-    }
-
-    /// The first frame was painted.
-    pub(crate) fn mark_ok(&self) {
-        if let Some(mut marker) = self.load() {
-            marker.ok = true;
-            self.save(&marker);
-        }
-    }
-
-    pub(crate) fn mark_failed(&self, kind: RendererKind) {
-        let mut marker = self.load().unwrap_or_default();
-        self.version.clone_into(&mut marker.version);
-        marker.ok = false;
-        marker.glow_failed |= kind == RendererKind::Glow;
+            glow_failed: previous.is_some_and(|m| glow_broke(m, self.version)),
+        };
         self.save(&marker);
+        *self.lock() = Some(marker);
+    }
+
+    /// The first frame was painted. Called on the UI thread before that frame is presented, so
+    /// the write (fsync, retries) happens on a short-lived thread instead; the caller may detach
+    /// the returned handle.
+    pub(crate) fn mark_ok(self: &Arc<Self>) -> Option<JoinHandle<()>> {
+        let marker = Arc::clone(self);
+        std::thread::Builder::new()
+            .name("marker".into())
+            .spawn(move || marker.record_ok())
+            .inspect_err(|error| tracing::warn!(%error, "couldn't start the renderer marker write"))
+            .ok()
+    }
+
+    /// What `mark_ok` writes: the attempt worked, and an OpenGL run that worked clears an
+    /// earlier OpenGL failure.
+    pub(crate) fn record_ok(&self) {
+        let marker = {
+            let mut written = self.lock();
+            let Some(marker) = written.as_mut() else {
+                return;
+            };
+            marker.ok = true;
+            if marker.attempt == Some(RendererKind::Glow) {
+                marker.glow_failed = false;
+            }
+            marker.clone()
+        };
+        self.save(&marker);
+    }
+
+    /// Only before the first frame, so it never races `mark_ok`.
+    pub(crate) fn mark_failed(&self, kind: RendererKind) {
+        let marker = {
+            let mut written = self.lock();
+            let marker = written.get_or_insert_with(GpuMarker::default);
+            self.version.clone_into(&mut marker.version);
+            marker.ok = false;
+            marker.glow_failed |= kind == RendererKind::Glow;
+            marker.clone()
+        };
+        self.save(&marker);
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<GpuMarker>> {
+        self.written.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn save(&self, marker: &GpuMarker) {

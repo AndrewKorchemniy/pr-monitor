@@ -95,6 +95,76 @@ fn collapsing_the_selected_group_hides_its_rows() {
     assert_eq!(v.display.rows.len(), before);
 }
 
+/// `ArrowLeft` collapsed the group and hid the selection, after which `ArrowRight` could not find
+/// the group and did nothing.
+#[test]
+fn group_collapse_then_expand_by_keyboard_keeps_and_shows_the_selection() {
+    let mut v = view(GroupBy::Status);
+    v.select_key(&needs_review());
+    v.set_selected_group_collapsed(true);
+    assert_eq!(v.selected, Some(needs_review()));
+    assert_eq!(v.selected_display(), None, "hidden while collapsed");
+    v.set_selected_group_collapsed(false);
+    assert_eq!(v.selected, Some(needs_review()));
+    let shown = v.selected_display().expect("visible again");
+    assert_eq!(v.scroll, ScrollIntent::ToRow(shown, None));
+}
+
+#[test]
+fn nav_from_a_selection_hidden_in_a_collapsed_group_starts_at_its_header() {
+    let mut v = view(GroupBy::Status);
+    v.select_key(&active_comments());
+    v.set_selected_group_collapsed(true);
+    v.nav(1);
+    assert_eq!(
+        v.selected,
+        Some(reviewed()),
+        "the first PR below the header"
+    );
+    let mut v = view(GroupBy::Status);
+    v.select_key(&active_comments());
+    v.set_selected_group_collapsed(true);
+    v.nav(-1);
+    assert_eq!(
+        v.selected_display(),
+        Some(2),
+        "the last PR above the header"
+    );
+}
+
+/// Ctrl+Up behind a collapsed group reselected the current PR, so earlier groups were
+/// unreachable.
+#[test]
+fn nav_group_backward_skips_a_collapsed_group() {
+    let mut v = view(GroupBy::Status);
+    v.select_key(&active_comments());
+    v.set_selected_group_collapsed(true);
+    v.select_key(&reviewed());
+    v.nav_group(false);
+    assert_eq!(v.selected_group(), Some(0));
+    assert_eq!(
+        v.selected_display(),
+        Some(1),
+        "the first PR of the first group"
+    );
+    v.nav_group(true);
+    assert_eq!(v.selected, Some(reviewed()), "forward skips it too");
+}
+
+#[test]
+fn reveal_helpers_find_filtered_out_and_collapsed_prs() {
+    let mut v = view(GroupBy::Status);
+    v.set_status(StatusFilter::NeedsReview);
+    assert!(v.is_filtered_out(&reviewed()));
+    assert!(!v.is_filtered_out(&needs_review()));
+    v.clear_filters();
+    v.select_key(&needs_review());
+    v.set_selected_group_collapsed(true);
+    v.select_key(&active_comments());
+    v.expand_group_of(&needs_review());
+    assert!(v.display.index_of.contains_key(&needs_review()));
+}
+
 #[test]
 fn new_rows_keep_the_selected_key() {
     let mut v = view(GroupBy::None);

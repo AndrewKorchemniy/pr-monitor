@@ -43,9 +43,7 @@ pub fn token_spec(az: &Path, tenant: Option<uuid::Uuid>) -> ProcessSpec {
         program: az.to_path_buf(),
         args: command,
         env: base_env(),
-        cwd: None,
         timeout: AZ_TOKEN_TIMEOUT,
-        hide_window: true,
     }
 }
 
@@ -75,8 +73,6 @@ pub fn login_spec(az: &Path, tenant: Option<uuid::Uuid>, broker: AzBroker) -> Pr
         program: az.to_path_buf(),
         args: command,
         env,
-        cwd: None,
         timeout: AZ_LOGIN_TIMEOUT,
-        hide_window: true,
     }
 }

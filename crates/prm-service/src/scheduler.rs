@@ -10,8 +10,8 @@ use tokio::time::Instant;
 
 use crate::{
     consts::{
-        COALESCE_WINDOW, DEFAULT_RETRY_AFTER, FAILURE_BACKOFF_BASE, HEADROOM_LOW, HEADROOM_OK,
-        MAX_RATE_MULTIPLIER, RESUME_GAP,
+        AUTH_PROBE_INTERVAL, COALESCE_WINDOW, DEFAULT_RETRY_AFTER, FAILURE_BACKOFF_BASE,
+        HEADROOM_LOW, HEADROOM_OK, MAX_RATE_MULTIPLIER, RESUME_GAP,
     },
     state::PauseReason,
 };
@@ -44,15 +44,18 @@ impl Moment {
         }
     }
 
-    fn after(self, delay: Duration) -> (Instant, Timestamp) {
-        (self.mono + delay, self.wall.saturating_add(delay))
+    fn after(self, delay: Duration) -> Self {
+        Self {
+            mono: self.mono + delay,
+            wall: self.wall.saturating_add(delay),
+        }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Schedule {
-    pub due: Option<Instant>,
-    pub due_wall: Option<Timestamp>,
+    /// The next refresh, on both clocks (monotonic for the timer, wall for display).
+    pub due: Option<Moment>,
     /// 1..=`MAX_RATE_MULTIPLIER`; stretches the interval while rate-limit headroom is low.
     pub multiplier: u32,
     pub failures: u32,
@@ -64,7 +67,6 @@ impl Default for Schedule {
     fn default() -> Self {
         Self {
             due: None,
-            due_wall: None,
             multiplier: 1,
             failures: 0,
             paused: None,
@@ -75,9 +77,22 @@ impl Default for Schedule {
 
 impl Schedule {
     pub(crate) fn due_at(&mut self, now: Moment, delay: Duration) {
-        let (mono, wall) = now.after(delay);
-        self.due = Some(mono);
-        self.due_wall = Some(wall);
+        self.due = Some(now.after(delay));
+    }
+
+    /// Nothing scheduled (paused, disabled, or refreshing now).
+    pub(crate) const fn clear_due(&mut self) {
+        self.due = None;
+    }
+
+    /// When the timer fires.
+    pub(crate) fn due_mono(&self) -> Option<Instant> {
+        self.due.map(|due| due.mono)
+    }
+
+    /// When the refresh is shown as due.
+    pub(crate) fn due_wall(&self) -> Option<Timestamp> {
+        self.due.map(|due| due.wall)
     }
 
     pub(crate) fn due_now(&mut self, now: Moment) {
@@ -86,7 +101,7 @@ impl Schedule {
 
     /// Pulls the deadline in to `now + delay` if it is later (or unset).
     pub(crate) fn due_no_later_than(&mut self, now: Moment, delay: Duration) {
-        if self.due.is_none_or(|due| due > now.mono + delay) {
+        if self.due_mono().is_none_or(|due| due > now.mono + delay) {
             self.due_at(now, delay);
         }
     }
@@ -101,9 +116,14 @@ pub(crate) struct Policy {
 impl Policy {
     pub(crate) fn from_config(cfg: &RefreshConfig) -> Self {
         Self {
-            interval: Duration::from_secs(u64::from(cfg.interval_minutes) * 60),
+            interval: Duration::from_mins(u64::from(cfg.interval_minutes)),
             jitter_pct: cfg.jitter_percent,
         }
+    }
+
+    /// How often an org paused for sign-in is probed: never more often than it would refresh.
+    pub(crate) fn probe_interval(self) -> Duration {
+        self.interval.max(AUTH_PROBE_INTERVAL)
     }
 }
 
@@ -213,18 +233,21 @@ pub(crate) fn due_orgs<'a>(
         .filter(|c| c.schedule.paused.is_none() && !c.in_flight)
         .filter(|c| {
             c.schedule
-                .due
+                .due_mono()
                 .is_some_and(|due| due <= now + COALESCE_WINDOW)
         })
         .map(|c| c.org.clone())
         .collect()
 }
 
-/// Wall time ran ahead of monotonic time by more than `RESUME_GAP`: the machine slept.
-pub(crate) fn detect_resume(previous: Moment, now: Moment) -> bool {
+/// The machine slept since `previous`: wall time ran ahead of monotonic time by more than
+/// `RESUME_GAP` (a monotonic clock that stops in suspend), or the timer that was due at
+/// `deadline` fired more than `RESUME_GAP` late (one that keeps counting, as on Windows).
+pub(crate) fn detect_resume(previous: Moment, now: Moment, deadline: Instant) -> bool {
     let wall_gap = now.wall.since(previous.wall);
     let mono_gap = now.mono.saturating_duration_since(previous.mono);
-    wall_gap.saturating_sub(mono_gap) > RESUME_GAP
+    let overslept = now.mono.saturating_duration_since(deadline);
+    wall_gap.saturating_sub(mono_gap) > RESUME_GAP || overslept > RESUME_GAP
 }
 
 #[cfg(test)]

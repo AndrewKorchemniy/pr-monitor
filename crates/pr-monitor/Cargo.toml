@@ -1,6 +1,6 @@
 [package]
 name = "pr-monitor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Tiny, fast tray app that tracks your team's Azure DevOps pull requests"
 edition.workspace = true
 rust-version.workspace = true
@@ -52,4 +52,5 @@ bytes = { workspace = true }
 [build-dependencies]
 winresource = { workspace = true }
 png = { workspace = true }
+prm-domain = { workspace = true }
 prm-theme = { workspace = true }

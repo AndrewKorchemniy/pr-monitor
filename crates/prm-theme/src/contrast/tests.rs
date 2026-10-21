@@ -43,3 +43,17 @@ fn ensure_contrast_unreachable_returns_extreme() {
     let dark = Rgba8::rgb(0x20, 0x20, 0x20);
     assert_eq!(ensure_contrast(dark, dark, 21.0), Rgba8::WHITE);
 }
+
+#[test]
+fn is_dark_splits_at_the_dark_background_luminance() {
+    let cases = [
+        (Rgba8::rgb(0x16, 0x18, 0x1C), true),
+        (Rgba8::rgb(0x70, 0x70, 0x70), true),
+        (Rgba8::rgb(0x80, 0x80, 0x80), false),
+        (Rgba8::rgb(0xEE, 0xF1, 0xF4), false),
+        (Rgba8::BLACK.with_alpha(0), true),
+    ];
+    for (color, dark) in cases {
+        assert_eq!(is_dark(color), dark, "{color:?}");
+    }
+}

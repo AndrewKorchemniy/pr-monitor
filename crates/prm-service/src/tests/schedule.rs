@@ -8,7 +8,10 @@ use prm_domain::testing::{BASE_TIME_SECS, org, record, ts};
 use tokio::time::Instant;
 
 use super::support::{CONTOSO, FABRIKAM, config, list_calls, pr, profile, refreshed, setup};
-use crate::{handle::initial_state, state::OrgHealth, testing::ServiceHarness};
+use crate::{
+    command::Command, consts::RESUME_SETTLE, handle::initial_state, state::OrgHealth,
+    testing::ServiceHarness,
+};
 
 #[tokio::test(start_paused = true)]
 async fn startup_refreshes_each_enabled_org() {
@@ -104,6 +107,58 @@ async fn resume_after_sleep_refreshes_within_60s() {
 
     let waited = resumed.elapsed();
     assert!(waited <= Duration::from_secs(65), "{waited:?}");
+    h.stop().await;
+}
+
+/// Windows' monotonic clock keeps counting through suspend, so both clocks jump together; the
+/// overdue refresh used to fire at once, before the network was back.
+#[tokio::test(start_paused = true)]
+async fn resume_with_monotonic_jump_settles_first() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+
+    h.advance(Duration::from_hours(2)).await;
+    let resumed = Instant::now();
+    assert_eq!(list_calls(&h, CONTOSO), 1, "waits for the network");
+    refreshed(&mut h, CONTOSO, 2).await;
+
+    assert_eq!(resumed.elapsed(), RESUME_SETTLE);
+    h.stop().await;
+}
+
+/// An org listed twice used to get two runtimes; the empty second one overwrote the org's
+/// saved PRs and sign-out on the next save.
+#[tokio::test(start_paused = true)]
+async fn duplicate_org_keeps_persisted_data() {
+    let mut start = setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]);
+    start.config.orgs.push(OrgProfile {
+        url: format!("https://{CONTOSO}.visualstudio.com"),
+        ..profile(CONTOSO)
+    });
+    let cached = pr(CONTOSO, 7);
+    start.persisted.orgs.insert(
+        org(CONTOSO),
+        OrgPersisted {
+            baseline: true,
+            signed_out: true,
+            records: [(cached.key.clone(), record(cached.clone(), Vec::new()))].into(),
+            ..OrgPersisted::default()
+        },
+    );
+    let mut h = ServiceHarness::start(start);
+    assert_eq!(h.snapshot().orgs.len(), 1, "first frame");
+
+    h.send(Command::MarkAllSeen);
+    let repo = h.repo.clone();
+    let state = h
+        .wait_for("state saved", move |_| repo.last_state().is_some())
+        .await;
+
+    assert_eq!(state.orgs.len(), 1);
+    let saved = h.repo.last_state().unwrap();
+    let contoso = &saved.orgs[&org(CONTOSO)];
+    assert!(contoso.signed_out);
+    assert_eq!(contoso.records.len(), 1);
     h.stop().await;
 }
 

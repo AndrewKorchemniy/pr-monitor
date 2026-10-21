@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use prm_auth::AuthAvailability;
 use prm_domain::{
     auth::{AuthError, SettingsSection},
@@ -153,14 +155,4 @@ fn notice_log_dedupes_within_window() {
     assert!(!log.admit(&text, Some(&a), start + Duration::from_secs(29)));
     assert!(log.admit(&text, None, start + Duration::from_secs(29)));
     assert!(log.admit(&text, Some(&a), start + Duration::from_secs(31)));
-}
-
-#[test]
-fn parse_date_accepts_iso_only() {
-    assert_eq!(
-        parse_date("2026-11-03"),
-        Some(time::macros::date!(2026 - 11 - 03))
-    );
-    assert_eq!(parse_date("11/03/2026"), None);
-    assert_eq!(parse_date(""), None);
 }

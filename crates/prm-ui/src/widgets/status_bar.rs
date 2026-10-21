@@ -91,6 +91,11 @@ fn orgs(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
 fn counts(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, query: &ViewQuery) {
     let theme = cx.theme.clone();
     let summary = cx.state.summary;
+    let total = summary.needs_review + summary.active_comments + summary.reviewed;
+    // why: with nothing tracked, zero-count filters only compete with the empty state.
+    if total == 0 && query.status == StatusFilter::default() && !query.unread_only {
+        return;
+    }
     for (status, filter) in STATUSES {
         let count = match status {
             PrStatus::NeedsReview => summary.needs_review,

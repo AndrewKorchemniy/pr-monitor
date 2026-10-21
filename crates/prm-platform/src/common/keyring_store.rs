@@ -20,6 +20,8 @@ pub struct KeyringSecretStore {
 }
 
 impl KeyringSecretStore {
+    /// `target_prefix` and `persistence` are Credential Manager modifiers (`None` elsewhere);
+    /// `max` is the largest value one slot holds, in bytes.
     pub fn new(
         store: Arc<CredentialStore>,
         target_prefix: Option<&'static str>,
@@ -73,10 +75,6 @@ impl SecretStore for KeyringSecretStore {
             Ok(()) | Err(Error::NoEntry) => Ok(()),
             Err(error) => Err(map_keyring_error(&error, 0)),
         }
-    }
-
-    fn max_value_len(&self) -> Option<usize> {
-        self.max
     }
 }
 

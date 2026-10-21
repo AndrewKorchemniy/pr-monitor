@@ -56,6 +56,6 @@ fn compare_key(a: &PrRow, b: &PrRow, key: SortKey) -> Ordering {
         SortKey::Age => b.created_at.cmp(&a.created_at),
         SortKey::Activity => b.last_activity.cmp(&a.last_activity),
         SortKey::Comments => b.active_threads.cmp(&a.active_threads),
-        SortKey::Org => a.org_label.to_lowercase().cmp(&b.org_label.to_lowercase()),
+        SortKey::Org => a.org_key.cmp(&b.org_key),
     }
 }

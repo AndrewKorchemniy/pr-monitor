@@ -16,10 +16,16 @@ pub(crate) enum ModalOutcome {
 pub(crate) struct ModalSpec<'a> {
     pub id: &'a str,
     pub title: &'a str,
+    /// A muted line under the title, such as the organization being edited.
+    pub subtitle: Option<&'a str>,
     /// Button labels; the first is the primary action.
     pub buttons: &'a [&'a str],
     pub danger: bool,
+    pub width: f32,
 }
+
+/// The usual dialog width.
+pub(crate) const WIDTH: f32 = 420.0;
 
 pub(crate) fn modal(
     ctx: &egui::Context,
@@ -29,12 +35,17 @@ pub(crate) fn modal(
 ) -> ModalOutcome {
     let mut outcome = ModalOutcome::Open;
     let response = egui::Modal::new(egui::Id::unique(spec.id))
-        .frame(crate::theme::adapter::frame_popup(theme, theme.policy))
+        .frame(crate::theme::adapter::frame_dialog(theme, theme.policy))
         .show(ctx, |ui| {
-            ui.set_width(420.0);
-            widgets::heading(ui, theme, spec.title);
-            ui.add_space(theme.tokens.metrics.space.md);
+            ui.set_width(spec.width);
+            if header(ui, theme, spec) {
+                outcome = ModalOutcome::Dismissed;
+            }
+            ui.add_space(theme.tokens.metrics.space.lg);
             body(ui);
+            if spec.buttons.is_empty() {
+                return;
+            }
             ui.add_space(theme.tokens.metrics.space.lg);
             let right = egui::Layout::right_to_left(egui::Align::Center);
             if let Some(index) = ui.with_layout(right, |ui| buttons(ui, theme, spec)).inner {
@@ -45,6 +56,24 @@ pub(crate) fn modal(
         outcome = ModalOutcome::Dismissed;
     }
     outcome
+}
+
+/// The title (and subtitle) with a close button on the right; true when closed.
+fn header(ui: &mut egui::Ui, theme: &UiTheme, spec: &ModalSpec<'_>) -> bool {
+    let mut closed = false;
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
+            widgets::heading(ui, theme, spec.title);
+            if let Some(subtitle) = spec.subtitle {
+                widgets::muted(ui, theme, subtitle);
+            }
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            closed = widgets::controls::close_button(ui, theme, crate::copy::CLOSE).clicked();
+        });
+    });
+    closed
 }
 
 /// The clicked button's index, if any.

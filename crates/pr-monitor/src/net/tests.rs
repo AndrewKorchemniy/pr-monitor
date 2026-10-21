@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    Mutex, PoisonError,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use prm_ado::http::{HttpRequest, HttpResponse};
 
@@ -77,7 +80,6 @@ fn request() -> HttpRequest {
         url: url::Url::parse("https://dev.azure.com/contoso").expect("url"),
         headers: http::HeaderMap::new(),
         body: None,
-        timeout: None,
     }
 }
 
@@ -97,7 +99,8 @@ fn recording_build(
 async fn the_transport_waits_for_the_resolved_proxy_and_builds_once() {
     let (builds, seen) = (Arc::new(AtomicUsize::new(0)), Arc::new(Mutex::new(None)));
     let (tx, rx) = oneshot::channel();
-    let transport = DeferredTransport::new(None, Some(rx), recording_build(&builds, &seen));
+    let transport =
+        DeferredTransport::new(ProxySource::pending(rx), recording_build(&builds, &seen));
     let manual = url::Url::parse("http://pac-proxy:3128").expect("url");
     tx.send(ProxySetting::Manual(manual.clone()))
         .expect("receiver alive");
@@ -114,7 +117,8 @@ async fn the_transport_waits_for_the_resolved_proxy_and_builds_once() {
 async fn a_slow_resolver_falls_back_to_the_system_proxy() {
     let (builds, seen) = (Arc::new(AtomicUsize::new(0)), Arc::new(Mutex::new(None)));
     let (_tx, rx) = oneshot::channel::<ProxySetting>();
-    let transport = DeferredTransport::new(None, Some(rx), recording_build(&builds, &seen));
+    let transport =
+        DeferredTransport::new(ProxySource::pending(rx), recording_build(&builds, &seen));
     transport
         .send(request())
         .await
@@ -122,5 +126,52 @@ async fn a_slow_resolver_falls_back_to_the_system_proxy() {
     assert_eq!(
         *seen.lock().unwrap_or_else(PoisonError::into_inner),
         Some(ProxySetting::System)
+    );
+}
+
+/// Regression: a first request aborted while it waited for PAC resolution (a people search
+/// cancelled by the next keystroke) dropped the resolver's answer, and every later request
+/// used the system proxy until restart.
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_first_request_keeps_the_pending_proxy() {
+    let (builds, seen) = (Arc::new(AtomicUsize::new(0)), Arc::new(Mutex::new(None)));
+    let (tx, rx) = oneshot::channel();
+    let transport =
+        DeferredTransport::new(ProxySource::pending(rx), recording_build(&builds, &seen));
+    let cancelled =
+        tokio::time::timeout(Duration::from_millis(10), transport.send(request())).await;
+    assert!(cancelled.is_err(), "still waiting for the resolver");
+    let manual = url::Url::parse("http://pac-proxy:3128").expect("url");
+    tx.send(ProxySetting::Manual(manual.clone()))
+        .expect("receiver alive");
+    transport.send(request()).await.expect("sent");
+    assert_eq!(builds.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        *seen.lock().unwrap_or_else(PoisonError::into_inner),
+        Some(ProxySetting::Manual(manual))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_build_keeps_the_resolved_proxy() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let attempts = Arc::clone(&seen);
+    let build: Box<Build> = Box::new(move |setting| {
+        let mut attempts = attempts.lock().unwrap_or_else(PoisonError::into_inner);
+        attempts.push(setting);
+        if attempts.len() == 1 {
+            return Err(TransportError::Tls("no TLS backend".into()));
+        }
+        Ok(Arc::new(Answer) as Arc<dyn HttpTransport>)
+    });
+    let (tx, rx) = oneshot::channel();
+    let transport = DeferredTransport::new(ProxySource::pending(rx), build);
+    let manual = ProxySetting::Manual(url::Url::parse("http://pac-proxy:3128").expect("url"));
+    tx.send(manual.clone()).expect("receiver alive");
+    assert!(transport.send(request()).await.is_err());
+    transport.send(request()).await.expect("sent on retry");
+    assert_eq!(
+        *seen.lock().unwrap_or_else(PoisonError::into_inner),
+        [manual.clone(), manual]
     );
 }

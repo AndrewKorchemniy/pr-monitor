@@ -182,7 +182,7 @@ fn visuals(theme: &UiTheme, policy: RenderPolicy) -> Visuals {
     v.window_shadow = shadow;
     v.popup_shadow = shadow;
     v.selection.bg_fill = c.selection_text_bg;
-    v.selection.stroke = Stroke::new(1.0, c.text_primary);
+    v.selection.stroke = Stroke::new(1.0, c.border_focus);
     v.widgets.noninteractive = widget(theme, c.surface_canvas, c.border_subtle, c.text_primary);
     v.widgets.inactive = widget(theme, c.control_bg, c.border_default, c.text_primary);
     v.widgets.hovered = widget(theme, c.control_hover, c.border_focus, c.text_primary);
@@ -208,6 +208,13 @@ pub(crate) fn frame_chrome(theme: &UiTheme) -> egui::Frame {
         .inner_margin(Margin::symmetric(px(m.space.md), 0))
 }
 
+/// The settings footer: the canvas, inset like the page column.
+pub(crate) fn frame_footer(theme: &UiTheme) -> egui::Frame {
+    egui::Frame::NONE
+        .fill(theme.colors.surface_canvas)
+        .inner_margin(Margin::symmetric(px(theme.tokens.metrics.space.lg), 0))
+}
+
 /// The peek drawer and settings cards.
 pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;
@@ -220,6 +227,39 @@ pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
 /// The table area.
 pub(crate) fn frame_sunken(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE.fill(theme.colors.surface_sunken)
+}
+
+/// The window background behind content (the dashboard body, settings pages).
+pub(crate) fn frame_canvas(theme: &UiTheme) -> egui::Frame {
+    egui::Frame::NONE.fill(theme.colors.surface_canvas)
+}
+
+/// The table area: the canvas, with room on the right so the last column clears the edge.
+pub(crate) fn frame_table(theme: &UiTheme) -> egui::Frame {
+    frame_canvas(theme).inner_margin(Margin {
+        right: px(theme.tokens.metrics.space.md),
+        ..Margin::ZERO
+    })
+}
+
+/// A standalone card with a hairline border, like a dialog (first run).
+pub(crate) fn frame_card(theme: &UiTheme) -> egui::Frame {
+    let m = &theme.tokens.metrics;
+    egui::Frame::NONE
+        .fill(theme.colors.surface_raised)
+        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_default))
+        .corner_radius(CornerRadius::same(m.radius.lg))
+        .inner_margin(Margin::same(px(m.space.xxl)))
+}
+
+/// One group of settings: a bordered box under its title.
+pub(crate) fn frame_section(theme: &UiTheme) -> egui::Frame {
+    let m = &theme.tokens.metrics;
+    egui::Frame::NONE
+        .fill(theme.colors.surface_raised)
+        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_subtle))
+        .corner_radius(CornerRadius::same(m.radius.lg))
+        .inner_margin(Margin::symmetric(px(m.space.xl), px(m.space.lg)))
 }
 
 /// A banner strip in the given tone.
@@ -243,6 +283,18 @@ pub(crate) fn frame_popup(theme: &UiTheme, policy: RenderPolicy) -> egui::Frame 
         .corner_radius(CornerRadius::same(theme.tokens.metrics.radius.lg))
         .shadow(v.popup_shadow)
         .inner_margin(Margin::same(px(theme.tokens.metrics.space.lg)))
+}
+
+/// Dialogs: the popup surface with roomier padding and a deeper shadow.
+pub(crate) fn frame_dialog(theme: &UiTheme, policy: RenderPolicy) -> egui::Frame {
+    let m = &theme.tokens.metrics;
+    let mut frame =
+        frame_popup(theme, policy).inner_margin(Margin::same(px(m.space.xl + m.space.xs)));
+    if !policy.low_power {
+        frame.shadow.blur = frame.shadow.blur.saturating_add(8);
+        frame.shadow.offset = [0, m.elevation.popup_offset[1].saturating_mul(2)];
+    }
+    frame
 }
 
 /// Ensures nothing outside this module builds colors from literals.

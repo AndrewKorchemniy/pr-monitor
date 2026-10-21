@@ -1,14 +1,13 @@
 //! Desktop notifications via notify-rust. On Linux a later toast with the same tag replaces
-//! the earlier one; macOS cannot replace or retract.
+//! the earlier one; neither Linux nor macOS retracts (a retracted toast stays until it times
+//! out or is dismissed), and macOS cannot replace either.
 
 use std::sync::Mutex;
 
-use prm_domain::{
-    app::APP_DISPLAY_NAME,
-    notify::Notification,
-    ports::{PortError, PortErrorKind},
-};
+use prm_domain::{app::APP_DISPLAY_NAME, notify::Notification, ports::PortError};
 use prm_service::ports::{Notifier, NotifierCapability};
+
+use crate::common::failed;
 
 /// Most recent notification ids kept for replacement (oldest dropped first).
 #[cfg(not(target_os = "macos"))]
@@ -21,10 +20,6 @@ pub(crate) struct NotifyRustNotifier {
     ids: Mutex<Vec<(String, u32)>>,
     #[cfg(target_os = "macos")]
     ids: Mutex<()>,
-}
-
-fn failed(error: impl std::fmt::Display) -> PortError {
-    PortError::new(PortErrorKind::Failed, error.to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -73,11 +68,10 @@ impl Notifier for NotifyRustNotifier {
         }
     }
 
-    fn retract(&self, tag: &str, _group: &str) -> Result<(), PortError> {
-        #[cfg(not(target_os = "macos"))]
-        self.ids().retain(|(t, _)| t != tag);
-        #[cfg(target_os = "macos")]
-        let _ = tag;
+    /// Not supported: closing needs the D-Bus handle (a connection per toast), which we do not
+    /// keep. The id stays remembered, so the next toast with this tag still replaces the old one
+    /// instead of stacking a second.
+    fn retract(&self, _tag: &str, _group: &str) -> Result<(), PortError> {
         Ok(())
     }
 

@@ -45,7 +45,6 @@ fn authorize_url_snapshot() {
         redirect_uri: "http://localhost:51234",
         pkce: &pkce,
         state: "state-1",
-        login_hint: Some("jane@contoso.com"),
     };
     insta::assert_snapshot!(authorize_url(&config(), &request).as_str());
 }
@@ -92,6 +91,64 @@ fn token_error_mapping() {
     assert!(matches!(parsed, Err(AuthError::ConsentRequired { .. })));
 }
 
+/// Declining consent at the account picker came back as a transient `Other` with a Retry
+/// action instead of a cancel.
+#[test]
+fn token_error_user_declined_is_cancelled() {
+    assert_eq!(
+        map_oauth_error(
+            "access_denied",
+            "AADSTS65004: User declined to consent.",
+            &[]
+        ),
+        AuthError::Cancelled
+    );
+    assert_eq!(
+        map_oauth_error("access_denied", "", &[]),
+        AuthError::Cancelled
+    );
+    assert!(matches!(
+        map_oauth_error("access_denied", "AADSTS53003: blocked", &[]),
+        AuthError::ConditionalAccessBlocked(_)
+    ));
+}
+
+/// A gateway's HTML error page used to read "Sign-in failed ()." with nothing in the brackets.
+#[test]
+fn token_non_json_error_names_the_status() {
+    let parsed = parse_token_response(502, b"<html>Bad Gateway</html>");
+    assert_eq!(
+        parsed.err(),
+        Some(AuthError::Other("Sign-in failed (HTTP 502).".into()))
+    );
+}
+
+/// A response without `expires_in` used to yield a token that was already stale.
+#[tokio::test]
+async fn refresh_without_expires_in_uses_fallback_lifetime() {
+    let secrets = Arc::new(InMemorySecretStore::default());
+    let key = SecretKey::entra_refresh(&org("contoso"));
+    secrets.set(&key, b"refresh-1").unwrap();
+    let transport = Arc::new(FakeTransport::new([Scripted::json(
+        200,
+        r#"{"access_token":"at"}"#,
+    )]));
+    let deps = EntraDeps {
+        transport,
+        secrets,
+        opener: Arc::new(RecordingUrlOpener::default()),
+        clock: Arc::new(ManualClock::new(ts(1_000))),
+    };
+    let source = EntraSource::new(Some(config()), deps, key);
+    let ctx = AuthContext {
+        org: org("contoso"),
+        tenant: None,
+    };
+    let token = source.acquire(&ctx).await.unwrap();
+    let fallback = i64::try_from(ENTRA_FALLBACK_LIFETIME.as_secs()).unwrap();
+    assert_eq!(token.expires_at, Some(ts(1_000 + fallback)));
+}
+
 async fn send_callback(port: u16, path: &str) -> String {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
@@ -119,8 +176,10 @@ async fn loopback_accepts_code_on_127_0_0_1() {
     assert_eq!(waiter.await.unwrap(), Ok("the-code".to_owned()));
 }
 
+/// A request with the wrong `state` (or an `error` from anyone) used to abort the sign-in; it
+/// is now answered 400 and the real callback that follows still completes it.
 #[tokio::test]
-async fn loopback_state_mismatch_rejected() {
+async fn loopback_state_mismatch_ignored() {
     let loopback = Loopback::bind().await.unwrap();
     let port = loopback.port();
     let waiter = tokio::spawn(loopback.wait_for_code(
@@ -128,8 +187,49 @@ async fn loopback_state_mismatch_rejected() {
         CancellationToken::new(),
         Duration::from_secs(10),
     ));
-    send_callback(port, "/?code=x&state=forged").await;
-    assert!(matches!(waiter.await.unwrap(), Err(AuthError::Other(_))));
+    let forged = send_callback(port, "/?code=x&state=forged").await;
+    assert!(forged.starts_with("HTTP/1.1 400"), "{forged}");
+    let error = send_callback(port, "/?error=interaction_required").await;
+    assert!(error.starts_with("HTTP/1.1 400"), "{error}");
+    let reply = send_callback(port, "/?code=real&state=expected").await;
+    assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+    assert_eq!(waiter.await.unwrap(), Ok("real".to_owned()));
+}
+
+/// A silent connection (a browser preconnect) used to block the real callback until the
+/// browser closed it.
+#[tokio::test]
+async fn loopback_idle_connection_does_not_block_callback() {
+    let loopback = Loopback::bind().await.unwrap();
+    let port = loopback.port();
+    let waiter = tokio::spawn(loopback.wait_for_code(
+        "s1",
+        CancellationToken::new(),
+        Duration::from_secs(10),
+    ));
+    let _idle = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let reply = send_callback(port, "/?code=the-code&state=s1").await;
+    assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+    assert_eq!(waiter.await.unwrap(), Ok("the-code".to_owned()));
+}
+
+/// Cancel used to go unnoticed while a silent connection was open.
+#[tokio::test]
+async fn loopback_cancel_with_idle_connection() {
+    let loopback = Loopback::bind().await.unwrap();
+    let port = loopback.port();
+    let cancel = CancellationToken::new();
+    let waiter =
+        tokio::spawn(loopback.wait_for_code("s1", cancel.clone(), Duration::from_secs(10)));
+    let mut idle = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    // Part of a request, so the handler is mid-read when cancel arrives.
+    idle.write_all(b"GET /?code=x").await.unwrap();
+    cancel.cancel();
+    assert_eq!(waiter.await.unwrap(), Err(AuthError::Cancelled));
 }
 
 #[tokio::test]

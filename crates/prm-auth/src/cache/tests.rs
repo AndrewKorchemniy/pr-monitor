@@ -105,3 +105,39 @@ async fn cache_negative_ttl_30s() {
     clock.set(ts(31));
     assert!(cache.get(None, || source.acquire(&ctx)).await.is_ok());
 }
+
+/// A failure that took longer than the negative TTL (an `az` timeout is 60 s) must still be
+/// reused: stamping it with the start time made every queued caller spawn `az` again.
+#[tokio::test]
+async fn cache_slow_failure_is_reused() {
+    let clock = Arc::new(ManualClock::new(ts(0)));
+    let cache = cache(clock.clone());
+    let ctx = ctx();
+    let source = FakeTokenSource::new(
+        AuthMethod::AzureCli,
+        [Err(AuthError::AzTimeout), Ok(token("t"))],
+    );
+    let slow = || async {
+        clock.advance(Duration::from_secs(60));
+        source.acquire(&ctx).await
+    };
+    assert!(cache.get(None, slow).await.is_err());
+    assert!(cache.get(None, || source.acquire(&ctx)).await.is_err());
+    assert_eq!(source.acquired(), 1, "the slow failure is reused");
+}
+
+/// A failure stamped in the future (the wall clock jumped back) is treated as expired.
+#[tokio::test]
+async fn cache_future_dated_failure_expires() {
+    let clock = Arc::new(ManualClock::new(ts(1_000)));
+    let cache = cache(clock.clone());
+    let ctx = ctx();
+    let source = FakeTokenSource::new(
+        AuthMethod::AzureCli,
+        [Err(AuthError::AzTimeout), Ok(token("t"))],
+    );
+    assert!(cache.get(None, || source.acquire(&ctx)).await.is_err());
+    clock.set(ts(10));
+    assert!(cache.get(None, || source.acquire(&ctx)).await.is_ok());
+    assert_eq!(source.acquired(), 2);
+}

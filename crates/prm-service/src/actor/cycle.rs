@@ -1,7 +1,10 @@
 //! Notification cycles: refreshes started together are toasted together, once all of them
 //! finish. State is persisted before any toast is shown.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use prm_domain::{
     OrgId,
@@ -10,7 +13,6 @@ use prm_domain::{
 };
 
 use super::Service;
-use crate::state::AuthStateView;
 
 #[derive(Default)]
 pub(super) struct Cycle {
@@ -73,20 +75,14 @@ impl Service {
 
     /// The org newly needs sign-in: one toast, merged into the running cycle if there is one.
     pub(super) fn add_auth_problem(&mut self, idx: usize) {
-        let data = &self.orgs[idx].data;
-        let message = match self.orgs[idx].live.auth_state.view() {
-            AuthStateView::NeedsSignIn { error } | AuthStateView::Blocked { error } => error.title,
-            AuthStateView::Unknown
-            | AuthStateView::Checking
-            | AuthStateView::SignedIn
-            | AuthStateView::SigningIn { .. }
-            | AuthStateView::SignedOut
-            | AuthStateView::Disabled => return,
+        let Some(error) = self.orgs[idx].live.auth_state.problem() else {
+            return;
         };
+        let data = &self.orgs[idx].data;
         let problem = AuthProblem {
             org: data.id.clone(),
             org_label: data.label.clone(),
-            message,
+            message: Arc::from(error.to_string()),
         };
         match self.current_cycle(idx) {
             Some(cycle) => cycle.auth_problems.push(problem),

@@ -99,6 +99,21 @@ impl KeyChord {
     fn is_copy(self) -> bool {
         self.ctrl && !self.shift && !self.alt && self.key == Key::C
     }
+
+    /// Without Ctrl or Alt the press may also type a character.
+    const fn may_type(self) -> bool {
+        !self.ctrl && !self.alt
+    }
+
+    /// Safe to fire while a text field has focus: Ctrl or Alt held, or a function key.
+    fn is_global_safe(self) -> bool {
+        let function_key = self
+            .key
+            .name()
+            .strip_prefix('F')
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+        !self.may_type() || function_key
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -138,10 +153,23 @@ impl ActiveScope {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Keymap {
+    /// Registry order (hints show the first chord of a command).
     bindings: Vec<Binding>,
+    /// `bindings`, most modifiers first, for matching (built once, not per frame).
+    dispatch_order: Vec<Binding>,
 }
 
 impl Keymap {
+    fn new(bindings: Vec<Binding>) -> Self {
+        let mut dispatch_order = bindings.clone();
+        // why: logical matching ignores an unrequested Shift, so "Shift+M" must be tried before "M".
+        dispatch_order.sort_by_key(|b| std::cmp::Reverse(b.chord.modifier_count()));
+        Self {
+            bindings,
+            dispatch_order,
+        }
+    }
+
     pub(crate) fn defaults() -> Self {
         let bindings = COMMANDS
             .iter()
@@ -155,11 +183,11 @@ impl Keymap {
                 })
             })
             .collect();
-        Self { bindings }
+        Self::new(bindings)
     }
 
     /// `[bindings] "refresh.now" = ["F5"]`; an empty list unbinds.
-    pub(crate) fn with_overrides(mut self, toml_src: &str) -> (Self, Vec<KeymapIssue>) {
+    pub(crate) fn with_overrides(self, toml_src: &str) -> (Self, Vec<KeymapIssue>) {
         #[derive(serde::Deserialize, Default)]
         #[serde(default)]
         struct File {
@@ -173,38 +201,35 @@ impl Keymap {
                 return (self, issues);
             }
         };
+        let mut bindings = self.bindings;
         for (key, chords) in file.bindings {
             let Some(command) = CommandId::from_key(&key) else {
                 issues.push(KeymapIssue(format!("keymap.toml: unknown command “{key}”")));
                 continue;
             };
-            let scope = command
-                .spec()
-                .keys
-                .first()
-                .map_or(Scope::Global, |(_, s)| *s);
-            self.bindings.retain(|b| b.command != command);
+            bindings.retain(|b| b.command != command);
             let (good, bad): (Vec<_>, Vec<_>) = chords
                 .into_iter()
                 .partition(|t| t.parse::<KeyChord>().is_ok());
             let parsed = good.iter().filter_map(|t| t.parse().ok());
-            self.bindings.extend(parsed.map(|chord| Binding {
+            bindings.extend(parsed.map(|chord| Binding {
                 chord,
                 command,
-                scope,
+                scope: override_scope(command, chord),
             }));
             issues.extend(
                 bad.iter()
                     .map(|t| KeymapIssue(format!("keymap.toml: “{t}” is not a key"))),
             );
         }
-        for (a, _) in self.conflicts() {
+        let keymap = Self::new(bindings);
+        for (a, _) in keymap.conflicts() {
             issues.push(KeymapIssue(format!(
                 "keymap.toml: {} is used twice",
                 a.chord
             )));
         }
-        (self, issues)
+        (keymap, issues)
     }
 
     /// Bindings sharing a chord in overlapping scopes.
@@ -235,30 +260,52 @@ impl Keymap {
 
     /// Consumes matched input and returns the commands in order. Navigation keys repeat.
     pub(crate) fn dispatch(&self, ctx: &egui::Context, scope: ActiveScope) -> Vec<CommandId> {
-        let mut active: Vec<&Binding> = self
-            .bindings
-            .iter()
-            .filter(|b| scope.allows(b.scope))
-            .collect();
-        // why: logical matching ignores an unrequested Shift, so "Shift+M" must be tried before "M".
-        active.sort_by_key(|b| std::cmp::Reverse(b.chord.modifier_count()));
         ctx.input_mut(|input| {
-            active
-                .iter()
-                .flat_map(|binding| fire(input, **binding))
-                .collect()
+            if !input.events.iter().any(is_command_event) {
+                return Vec::new();
+            }
+            let mut fired = Vec::new();
+            let mut typed = false;
+            for binding in self.dispatch_order.iter().filter(|b| scope.allows(b.scope)) {
+                let count = press_count(input, *binding);
+                typed |= count > 0 && binding.chord.may_type();
+                fired.extend(std::iter::repeat_n(binding.command, count));
+            }
+            if typed && scope != ActiveScope::TextInput {
+                // why: the same press's `Event::Text` would land in a field the command focuses
+                // this frame ("/" focuses the filter and would type "/" into it).
+                input.events.retain(|e| !matches!(e, egui::Event::Text(_)));
+            }
+            fired
         })
     }
 }
 
-/// The binding's command once per matching key press (consumed).
-fn fire(input: &mut egui::InputState, binding: Binding) -> std::iter::RepeatN<CommandId> {
-    let count = if binding.chord.is_copy() {
+/// The scope for a `keymap.toml` chord: the command's default scope, or for a command with
+/// no default keys, Global only when the chord cannot type into a text field.
+fn override_scope(command: CommandId, chord: KeyChord) -> Scope {
+    match command.spec().keys.first() {
+        Some((_, scope)) => *scope,
+        None if chord.is_global_safe() => Scope::Global,
+        None => Scope::Table,
+    }
+}
+
+/// A key press or a copy: the only input a binding can match.
+const fn is_command_event(event: &egui::Event) -> bool {
+    matches!(
+        event,
+        egui::Event::Key { pressed: true, .. } | egui::Event::Copy
+    )
+}
+
+/// How many presses of the binding's chord this frame had (consumed).
+fn press_count(input: &mut egui::InputState, binding: Binding) -> usize {
+    if binding.chord.is_copy() {
         usize::from(consume_copy(input))
     } else {
         input.count_and_consume_key(binding.chord.modifiers(), binding.chord.key)
-    };
-    std::iter::repeat_n(binding.command, count)
+    }
 }
 
 /// Removes `Event::Copy` (egui turns Ctrl+C into it); true when there was one.

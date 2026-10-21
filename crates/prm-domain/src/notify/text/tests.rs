@@ -81,6 +81,25 @@ fn summary_body_caps_titles_and_length() {
     assert!(summary_body([&*"x".repeat(500)]).chars().count() <= MAX_SUMMARY_CHARS);
 }
 
+/// "and N more" used to count extra comments as extra people: one author with five comments
+/// read "Ann and 4 more".
+#[test]
+fn comments_detail_counts_people_not_comments() {
+    for (authors, expected) in [
+        (&["Ann"][..], "Ann"),
+        (&["Ann", "Bob"][..], "Ann, Bob"),
+        (&["Ann", "Bob", "Cat"][..], "Ann, Bob and others"),
+    ] {
+        let detail = headline(&comments(5, authors, None), 1, 0).detail;
+        assert_eq!(detail.as_deref(), Some(expected), "{authors:?}");
+    }
+}
+
+#[test]
+fn test_body_names_the_app() {
+    assert!(test_body().starts_with(APP_DISPLAY_NAME));
+}
+
 #[test]
 fn auth_title_singular_plural() {
     assert_eq!(auth_title(1), "Sign-in needed");

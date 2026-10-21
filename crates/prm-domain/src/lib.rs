@@ -8,6 +8,7 @@ pub mod classify;
 pub mod diff;
 pub mod hash;
 pub mod ids;
+pub mod lenient;
 pub mod model;
 pub mod notify;
 pub mod person;

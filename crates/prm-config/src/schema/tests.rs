@@ -54,6 +54,39 @@ fn defaults_follow_user_decisions() {
 }
 
 #[test]
+fn pat_expiry_accepts_real_iso_dates_only() {
+    for (text, expected) in [
+        (
+            "2026-11-03",
+            time::Date::from_calendar_date(2026, time::Month::November, 3).ok(),
+        ),
+        (
+            " 2026-11-03 ",
+            time::Date::from_calendar_date(2026, time::Month::November, 3).ok(),
+        ),
+        ("2025-02-30", None),
+        ("2026-13-01", None),
+        ("11/03/2026", None),
+        ("", None),
+    ] {
+        let org = OrgProfile {
+            pat_expires_on: text.into(),
+            ..OrgProfile::default()
+        };
+        assert_eq!(org.pat_expiry(), expected, "{text:?}");
+    }
+}
+
+/// One out-of-range number (wider than its type) used to fail the whole file, so the config
+/// was moved aside and the user lost every org.
+#[test]
+fn oversized_numbers_saturate_instead_of_failing() {
+    let config = parse("[network]\nmax_concurrency = 300\n[refresh]\nstartup_delay_secs = -1\n");
+    assert_eq!(config.network.max_concurrency, u8::MAX);
+    assert_eq!(config.refresh.startup_delay_secs, 0);
+}
+
+#[test]
 fn unknown_fields_ignored() {
     let config = parse("future_key = 1\n[ui]\nunknown = true\ndensity = \"comfortable\"\n");
     assert_eq!(config.ui.density, Density::Comfortable);

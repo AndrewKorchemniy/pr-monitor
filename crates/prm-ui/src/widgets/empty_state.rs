@@ -80,7 +80,7 @@ pub(crate) fn empty_state(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, kind: &EmptyK
         ui.add_space((ui.available_height() / 3.0).max(24.0));
         ui.label(
             RichText::new(&content.headline)
-                .font(theme.fonts.display.clone())
+                .font(egui::FontId::new(18.0, theme.fonts.title.family.clone()))
                 .color(theme.colors.text_primary),
         );
         ui.add_space(theme.tokens.metrics.space.md);

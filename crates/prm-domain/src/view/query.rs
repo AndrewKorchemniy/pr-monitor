@@ -105,7 +105,7 @@ fn filter_matches(row: &PrRow, filter: &ParsedFilter) -> bool {
     filter.number.is_none_or(|n| n == row.key.number.0)
         && contains(&row.author_key, &filter.author)
         && contains(&row.repo_key, &filter.repo)
-        && contains(&row.org_label.to_lowercase(), &filter.org)
+        && contains(&row.org_key, &filter.org)
         && filter.is_draft.is_none_or(|d| d == row.draft)
         && (!filter.is_unread || row.unread)
         && (!filter.is_conflict || row.conflicts)

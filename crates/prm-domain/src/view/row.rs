@@ -78,6 +78,8 @@ pub struct PrRow {
     pub title_key: Box<str>,
     pub repo_key: Box<str>,
     pub author_key: Box<str>,
+    /// Lowercase `org_label`, for the `org:` filter and the org sort.
+    pub org_key: Box<str>,
     pub fingerprint: Fingerprint,
     /// Changed since the user last looked (fingerprint differs from the seen one).
     pub unread: bool,
@@ -158,6 +160,7 @@ fn build_row(
         title_key: header.title.to_lowercase().into(),
         repo_key: header.repo_name.to_lowercase().into(),
         author_key: author_name.to_lowercase().into(),
+        org_key: org.org_label.to_lowercase().into(),
         fingerprint: classified.fingerprint,
         unread: seen.get(&header.key) != Some(&classified.fingerprint),
         stale: classified.stale || org.org_stale,

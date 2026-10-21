@@ -160,11 +160,18 @@ impl Query<'_> {
         let _bypass = GlobalString(info.lpszProxyBypass);
         Ok(match info.dwAccessType {
             WINHTTP_ACCESS_TYPE_NO_PROXY => ProxyDecision::Direct,
-            WINHTTP_ACCESS_TYPE_NAMED_PROXY => proxy
-                .text()
-                .and_then(|list| parse_proxy_list(&list))
-                .map_or(ProxyDecision::Direct, ProxyDecision::Proxy),
+            WINHTTP_ACCESS_TYPE_NAMED_PROXY => named_proxy(proxy.text()),
             _ => ProxyDecision::SystemStatic,
         })
     }
+}
+
+/// The system said "use a proxy": one we can parse, else leave it to the static settings
+/// (going direct could fail on a network that blocks direct egress, e.g. a SOCKS-only PAC).
+fn named_proxy(list: Option<String>) -> ProxyDecision {
+    if let Some(url) = list.as_deref().and_then(parse_proxy_list) {
+        return ProxyDecision::Proxy(url);
+    }
+    tracing::debug!(list = ?list, "unparsed proxy list; using the static settings");
+    ProxyDecision::SystemStatic
 }

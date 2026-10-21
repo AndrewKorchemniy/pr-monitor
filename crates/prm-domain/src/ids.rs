@@ -130,7 +130,15 @@ impl OrgId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The canonical org URL, `https://dev.azure.com/{org}`, as stored in the config.
+    pub fn web_url(&self) -> String {
+        format!("{ADO_WEB_ORIGIN}/{}", self.0)
+    }
 }
+
+/// The Azure DevOps web origin that canonical org URLs use.
+const ADO_WEB_ORIGIN: &str = "https://dev.azure.com";
 
 impl fmt::Display for OrgId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

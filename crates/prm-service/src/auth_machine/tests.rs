@@ -86,7 +86,7 @@ fn auth_pat_stored_resumes() {
     };
     let (state, effects) = step(&paused, AuthInput::PatStored);
     assert_eq!(state, AuthState::Checking);
-    assert_eq!(effects, vec![AuthEffect::ResumeRefresh { immediate: true }]);
+    assert_eq!(effects, vec![AuthEffect::ResumeRefresh]);
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn auth_ok_after_problem_resumes_immediately() {
     };
     let (state, effects) = step(&paused, AuthInput::AuthOk { method: AZ });
     assert_eq!(state, signed_in());
-    assert_eq!(effects, vec![AuthEffect::ResumeRefresh { immediate: true }]);
+    assert_eq!(effects, vec![AuthEffect::ResumeRefresh]);
 
     let (_, effects) = step(&AuthState::Checking, AuthInput::AuthOk { method: AZ });
     assert_eq!(effects, Vec::new());
@@ -160,4 +160,47 @@ fn auth_view_carries_ui_error() {
     };
     assert_eq!(error.title.as_ref(), needs_sign_in().to_string());
     assert!(error.action.is_some());
+}
+
+/// Editing a disabled org's auth settings used to resume it, leaving it due but never refreshed
+/// (a busy loop).
+#[test]
+fn auth_reset_keeps_disabled() {
+    let (state, effects) = step(&AuthState::Disabled, AuthInput::Reset);
+    assert_eq!(state, AuthState::Disabled);
+    assert_eq!(effects, Vec::new());
+
+    let (state, effects) = step(&signed_in(), AuthInput::Reset);
+    assert_eq!(state, AuthState::Unknown);
+    assert_eq!(effects, vec![AuthEffect::ResumeRefresh]);
+}
+
+/// A cancelled sign-in used to restore its old state over a later sign-out, disable or reset.
+#[test]
+fn auth_sign_in_cancel_ignored_once_no_longer_signing_in() {
+    for state in [
+        AuthState::SignedOut,
+        AuthState::Disabled,
+        AuthState::Unknown,
+    ] {
+        let restore = Box::new(signed_in());
+        let (after, effects) = step(&state, AuthInput::SignInCancelled { restore });
+        assert_eq!(after, state, "{state:?}");
+        assert_eq!(effects, Vec::new(), "{state:?}");
+    }
+}
+
+#[test]
+fn auth_problem_only_for_problem_states() {
+    let blocked = AuthState::Blocked {
+        error: AuthError::ConditionalAccessBlocked("AADSTS53003".into()),
+    };
+    let needs = AuthState::NeedsSignIn {
+        error: needs_sign_in(),
+    };
+    assert_eq!(needs.problem(), Some(&needs_sign_in()));
+    assert!(blocked.problem().is_some());
+    for state in [signed_in(), AuthState::Checking, AuthState::SignedOut] {
+        assert_eq!(state.problem(), None, "{state:?}");
+    }
 }

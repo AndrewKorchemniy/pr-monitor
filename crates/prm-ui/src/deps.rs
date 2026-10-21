@@ -9,7 +9,8 @@ use prm_service::{AppEvent, AppState, CommandSender};
 
 use crate::render::{RenderEnv, hover_bands::HoverBands};
 
-/// Title-bar colors (DWM caption, text and border; the dark flag is egui's job).
+/// Title-bar colors (DWM caption, text and border); the host derives the dark-glyph flag from
+/// the caption.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ChromeColors {
     pub caption: [u8; 3],
@@ -64,6 +65,12 @@ pub struct UiInit {
     pub paths: AppPaths,
     pub render: RenderEnv,
     pub start_hidden: bool,
+    /// Same as `LaunchSpec::hide_offscreen`: a start-hidden window waits off-screen (platforms
+    /// that cannot cloak) and moves back on first show.
+    pub hide_offscreen: bool,
+    /// Where that window moves back to: the saved position when it was judged on screen
+    /// (unzoomed points); `None` centers it.
+    pub restore_position: Option<[f32; 2]>,
     /// `--activate` on first launch, handled in the first `logic`.
     pub activation: Option<AppUri>,
     /// Set by a second launch asking to quit or `--unregister`; polled every `logic`.

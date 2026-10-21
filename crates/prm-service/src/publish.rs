@@ -1,7 +1,7 @@
 //! Builds `AppState` from the org runtimes (pure), derives banners, and de-duplicates notices.
 //! The same code builds the very first state from `state.json`, so frame one shows cached rows.
 
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use prm_config::{Config, ConfigIssue, Severity, UiState};
 use prm_domain::{
@@ -16,7 +16,7 @@ use crate::{
     consts::{NOTICE_DEDUPE, PAT_EXPIRY_WARNING_DAYS},
     org::{OrgData, OrgLive},
     ports::{AutostartState, NotifierCapability},
-    scheduler::Moment,
+    scheduler::{Moment, Policy},
     state::{
         AppState, AuthStatus, AutostartStatus, Banner, NotificationsStatus, OrgHealth, OrgStatus,
         RateHeadroom, RefreshProgress, RefreshStatus,
@@ -114,7 +114,7 @@ fn org_status(view: &OrgView<'_>, rows: &[PrRow], now: Moment) -> OrgStatus {
         },
         health: live.health.clone(),
         last_ok: data.last_ok,
-        next_due: schedule.due_wall.filter(|_| schedule.paused.is_none()),
+        next_due: schedule.due_wall().filter(|_| schedule.paused.is_none()),
         rate: RateHeadroom {
             #[expect(
                 clippy::cast_possible_truncation,
@@ -129,13 +129,8 @@ fn org_status(view: &OrgView<'_>, rows: &[PrRow], now: Moment) -> OrgStatus {
         counts: summarize(rows.iter().filter(|r| r.key.org == data.id)),
         catalog: data.catalog.clone(),
         last_error: live.last_error.clone(),
-        pat_expires_on: parse_date(&data.profile.pat_expires_on),
+        pat_expires_on: data.profile.pat_expiry(),
     }
-}
-
-fn parse_date(text: &str) -> Option<time::Date> {
-    let format = time::macros::format_description!("[year]-[month]-[day]");
-    time::Date::parse(text.trim(), format).ok()
 }
 
 fn refresh_status(
@@ -150,9 +145,9 @@ fn refresh_status(
         last_completed: enabled().filter_map(|o| o.data.last_ok).max(),
         next_due: enabled()
             .filter(|o| o.live.schedule.paused.is_none())
-            .filter_map(|o| o.live.schedule.due_wall)
+            .filter_map(|o| o.live.schedule.due_wall())
             .min(),
-        interval: Duration::from_secs(u64::from(config.refresh.interval_minutes) * 60),
+        interval: Policy::from_config(&config.refresh).interval,
         slowed: enabled().any(|o| o.live.schedule.multiplier > 1),
     }
 }
@@ -219,16 +214,7 @@ fn banner(id: &str, severity: Severity, org: Option<&OrgId>, title: &str) -> Ban
 }
 
 fn auth_banner(org: &OrgStatus) -> Option<Banner> {
-    use crate::state::AuthStateView;
-    let error = match &org.auth.state {
-        AuthStateView::NeedsSignIn { error } | AuthStateView::Blocked { error } => error,
-        AuthStateView::Unknown
-        | AuthStateView::Checking
-        | AuthStateView::SignedIn
-        | AuthStateView::SigningIn { .. }
-        | AuthStateView::SignedOut
-        | AuthStateView::Disabled => return None,
-    };
+    let error = org.auth.state.problem()?;
     Some(Banner {
         detail: Some(error.title.clone()),
         action: error.action.clone(),

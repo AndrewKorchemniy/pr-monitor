@@ -112,6 +112,67 @@ fn scopes_gate_bindings_and_navigation_repeats() {
     assert_eq!(fired, Vec::<CommandId>::new());
 }
 
+/// Pressing "/" focused the filter and the same press's text event typed "/" into it.
+#[test]
+fn keymap_slash_focuses_the_filter_without_typing_into_it() {
+    let keymap = Keymap::defaults();
+    let slash = vec![
+        key_event(Key::Slash, Modifiers::NONE),
+        Event::Text("/".to_owned()),
+    ];
+    let (fired, left) = dispatch(&keymap, ActiveScope::Table, slash);
+    assert_eq!(fired, vec![CommandId::FilterFocus]);
+    assert!(
+        !left.iter().any(|e| matches!(e, Event::Text(_))),
+        "the typed slash is dropped: {left:?}"
+    );
+}
+
+#[test]
+fn keymap_text_typed_into_a_field_survives_a_global_shortcut() {
+    let keymap = Keymap::defaults();
+    let events = vec![
+        key_event(Key::F5, Modifiers::NONE),
+        Event::Text("a".to_owned()),
+    ];
+    let (fired, left) = dispatch(&keymap, ActiveScope::TextInput, events);
+    assert_eq!(fired, vec![CommandId::RefreshNow]);
+    assert!(left.contains(&Event::Text("a".to_owned())));
+}
+
+/// An unmodified chord on a command with no default keys became Global, so typing "t" in the
+/// filter cycled the theme.
+#[test]
+fn keymap_override_without_a_modifier_stays_out_of_text_fields() {
+    let toml = r#"
+        [bindings]
+        "theme.cycle" = ["T"]
+        "view.sort.title" = ["Ctrl+Alt+S"]
+        "notifications.test" = ["F9"]
+    "#;
+    let (keymap, issues) = Keymap::defaults().with_overrides(toml);
+    assert!(issues.is_empty(), "{issues:?}");
+    let t = || key_event(Key::T, Modifiers::NONE);
+    let (fired, _) = dispatch(&keymap, ActiveScope::TextInput, vec![t()]);
+    assert_eq!(fired, Vec::<CommandId>::new());
+    let (fired, _) = dispatch(&keymap, ActiveScope::Table, vec![t()]);
+    assert_eq!(fired, vec![CommandId::ThemeCycle]);
+    let ctrl_alt_s = key_event(Key::S, Modifiers::COMMAND | Modifiers::ALT);
+    let (fired, _) = dispatch(&keymap, ActiveScope::TextInput, vec![ctrl_alt_s]);
+    assert_eq!(fired, vec![CommandId::SortTitle]);
+    let f9 = key_event(Key::F9, Modifiers::NONE);
+    let (fired, _) = dispatch(&keymap, ActiveScope::TextInput, vec![f9]);
+    assert_eq!(fired, vec![CommandId::NotificationsTest]);
+}
+
+#[test]
+fn keymap_overrides_keep_shifted_chords_first() {
+    let (keymap, _) = Keymap::defaults().with_overrides("[bindings]\n\"pr.mark_seen\" = [\"M\"]\n");
+    let shift_m = key_event(Key::M, Modifiers::SHIFT);
+    let (fired, _) = dispatch(&keymap, ActiveScope::Table, vec![shift_m]);
+    assert_eq!(fired, vec![CommandId::PrMarkAllSeen]);
+}
+
 #[test]
 fn shifted_chords_win_over_their_unshifted_key() {
     let keymap = Keymap::defaults();

@@ -112,10 +112,14 @@ async fn refresh(ctx: RefreshCtx) -> Result<RefreshOutput, RefreshFailure> {
     let me = who_am_i(&ctx).await?;
     let (catalog, refetched) = load_catalog(&ctx).await?;
     let scope = resolve_scope(&ctx.profile.scope, &catalog);
-    let org_wide = org_wide_probe(&ctx, &catalog).await;
-    let mode = match org_wide {
-        Some(probe) if probe.ok && ctx.profile.org_wide_query => QueryMode::OrgWide,
-        _ => QueryMode::PerProject,
+    let OrgWide {
+        cache: org_wide,
+        usable,
+    } = org_wide_probe(&ctx, &catalog).await;
+    let mode = if usable {
+        QueryMode::OrgWide
+    } else {
+        QueryMode::PerProject
     };
     let listed = list_prs(&ctx, &plan_queries(&scope, mode)).await?;
     let track = ctx.profile.track_spec(Some(&me));
@@ -133,7 +137,7 @@ async fn refresh(ctx: RefreshCtx) -> Result<RefreshOutput, RefreshFailure> {
     scope_stats.repos_failed = failed_repo_count(&scope, &listed.failed);
     let fetched = Fetched {
         me,
-        tenant: ctx.auth.snapshot().tenant,
+        tenant: ctx.auth.tenant(),
         catalog: refetched.then_some(catalog),
         scope_stats,
         scope_issues: scope.issues,
@@ -185,23 +189,66 @@ pub(crate) async fn fetch_catalog(api: &dyn AdoApi, now: Timestamp) -> Result<Ca
     })
 }
 
-/// The org-wide query is used only when opted in and a probe passed within the last day.
-async fn org_wide_probe(ctx: &RefreshCtx, catalog: &Catalog) -> Option<ProbeCache> {
+/// The org-wide probe result to keep, and whether this refresh may use the org-wide query.
+struct OrgWide {
+    cache: Option<ProbeCache>,
+    usable: bool,
+}
+
+/// The org-wide query is used only when opted in and a probe passed within the last day. Only
+/// a definite answer is cached; after a transient failure this refresh queries per project
+/// and the next one probes again.
+async fn org_wide_probe(ctx: &RefreshCtx, catalog: &Catalog) -> OrgWide {
+    let keep = OrgWide {
+        cache: ctx.org_wide,
+        usable: false,
+    };
     if !ctx.profile.org_wide_query {
-        return ctx.org_wide;
+        return keep;
     }
     let now = ctx.clock.now();
     if let Some(cached) = ctx
         .org_wide
         .filter(|p| p.at <= now && now.since(p.at) < ORG_WIDE_PROBE_TTL)
     {
-        return Some(cached);
+        return OrgWide {
+            cache: Some(cached),
+            usable: cached.ok,
+        };
     }
     let probe = ctx.api.probe_org_wide(catalog.projects.len()).await;
-    Some(ProbeCache {
-        ok: matches!(probe, Ok(OrgWideProbe::Supported)),
-        at: now,
-    })
+    let Some(ok) = probe_answer(&probe) else {
+        tracing::debug!(org = %ctx.org, "org-wide probe failed; retrying next refresh");
+        return keep;
+    };
+    OrgWide {
+        cache: Some(ProbeCache { ok, at: now }),
+        usable: ok,
+    }
+}
+
+/// Whether the org supports the org-wide query; `None` when the probe failed for a reason
+/// that may pass (throttling, network, server trouble, auth).
+const fn probe_answer(probe: &Result<OrgWideProbe, AdoError>) -> Option<bool> {
+    match probe {
+        Ok(OrgWideProbe::Supported) => Some(true),
+        Ok(OrgWideProbe::Unsupported)
+        | Err(
+            AdoError::Forbidden { .. }
+            | AdoError::NotFound { .. }
+            | AdoError::Http { .. }
+            | AdoError::Decode(_),
+        ) => Some(false),
+        Err(
+            AdoError::Auth(_)
+            | AdoError::RateLimited { .. }
+            | AdoError::Server { .. }
+            | AdoError::ProxyAuthRequired
+            | AdoError::Network(_)
+            | AdoError::Timeout
+            | AdoError::Cancelled,
+        ) => None,
+    }
 }
 
 struct Listed {
@@ -407,3 +454,6 @@ fn failed_repo_count(scope: &ResolvedScope, failed: &[(PrQuery, AdoError)]) -> u
         .count();
     count(failed_repos)
 }
+
+#[cfg(test)]
+mod tests;

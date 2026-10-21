@@ -96,7 +96,9 @@ pub(crate) fn dashboard(
             d.peek.width = Some(width);
         }
     }
-    egui::CentralPanel::no_frame().show(ui, |ui| body(ui, cx, d, window_focused));
+    egui::CentralPanel::no_frame()
+        .frame(adapter::frame_table(&theme))
+        .show(ui, |ui| body(ui, cx, d, window_focused));
 }
 
 fn body(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, d: &mut DashboardUi, window_focused: bool) {

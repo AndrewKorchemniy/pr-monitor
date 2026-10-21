@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use prm_ado::ClientPolicy;
 use prm_config::{Config, ConfigIssue, PersistedState};
 use prm_domain::{OrgId, Timestamp, model::Catalog};
 use tokio::sync::{mpsc, watch};
@@ -17,7 +18,7 @@ use crate::{
     actor::Service,
     command::{Command, CommandSender},
     consts::MAX_BLOCKING_THREADS,
-    org::{OrgData, OrgLive},
+    org::{Connectors, OrgLive, startup_orgs},
     ports::{
         AdoConnector, AuthFactory, Autostart, Clock, EventSink, Notifier, StateRepo, UrlOpener,
     },
@@ -37,6 +38,17 @@ pub struct ServiceDeps {
     pub opener: Arc<dyn UrlOpener>,
     pub autostart: Arc<dyn Autostart>,
     pub repo: Arc<dyn StateRepo>,
+}
+
+impl ServiceDeps {
+    /// The ports an org's clients are built from.
+    pub(crate) fn connectors<'a>(&'a self, policy: &'a ClientPolicy) -> Connectors<'a> {
+        Connectors {
+            auth: self.auth.as_ref(),
+            ado: self.ado.as_ref(),
+            policy,
+        }
+    }
 }
 
 /// What the service starts from (loaded by the bin before any thread starts).
@@ -61,10 +73,12 @@ pub struct ServiceHandle {
 }
 
 impl ServiceHandle {
+    /// A sender for commands; clones are cheap and may outlive the handle.
     pub fn sender(&self) -> CommandSender {
         self.commands.clone()
     }
 
+    /// The latest published state; `changed()` fires on each publish.
     pub fn state(&self) -> watch::Receiver<Arc<AppState>> {
         self.state.clone()
     }
@@ -131,20 +145,11 @@ pub fn initial_state(
     catalogs: &HashMap<OrgId, Catalog>,
     now: Timestamp,
 ) -> AppState {
-    let orgs: Vec<(OrgData, OrgLive)> = config
-        .orgs
-        .iter()
-        .filter_map(|profile| {
-            let id = profile.org_id()?.clone();
-            let saved = persisted.orgs.get(&id).cloned();
-            let catalog = catalogs.get(&id).cloned();
-            let data = OrgData::new(id, profile.clone(), saved, catalog, now);
-            let live = OrgLive::initial(&data);
-            Some((data, live))
-        })
-        .collect();
+    let orgs = startup_orgs(config, |id| persisted.orgs.get(id).cloned(), catalogs, now);
+    let lives: Vec<OrgLive> = orgs.iter().map(OrgLive::initial).collect();
     let views: Vec<OrgView<'_>> = orgs
         .iter()
+        .zip(&lives)
         .map(|(data, live)| OrgView { data, live })
         .collect();
     let config = Arc::new(config.clone());

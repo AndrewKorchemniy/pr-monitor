@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Mutex, MutexGuard, PoisonError,
+        Arc, Condvar, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -16,7 +16,7 @@ use std::{
 
 use prm_ado::testing::{FakeAdoApi, FakeConnector, FakeOrg};
 use prm_auth::testing::FakeAuthFactory;
-use prm_config::{Config, PersistedState, store::MemoryRepo};
+use prm_config::{Config, ConfigError, PersistedState, StateRepo, testing::MemoryRepo};
 use prm_domain::{
     OrgId, Timestamp,
     model::Catalog,
@@ -225,6 +225,104 @@ impl Clock for TokioClock {
     }
 }
 
+/// Holds `state.json` saves until released, and records how many ran at once.
+#[derive(Default)]
+pub struct SaveGate {
+    held: Mutex<bool>,
+    /// Signalled when a save starts and when the gate is released.
+    signal: Condvar,
+    running: AtomicUsize,
+    peak: AtomicUsize,
+    started: AtomicUsize,
+}
+
+impl SaveGate {
+    /// Later state saves wait for `release`.
+    pub fn hold(&self) {
+        *lock(&self.held) = true;
+    }
+
+    pub fn release(&self) {
+        *lock(&self.held) = false;
+        self.signal.notify_all();
+    }
+
+    /// Blocks until `count` state saves have started (they run on the blocking pool).
+    pub fn wait_started(&self, count: usize) {
+        let held = lock(&self.held);
+        let (_held, waited) = self
+            .signal
+            .wait_timeout_while(held, SAVE_START_LIMIT, |_| self.started() < count)
+            .unwrap_or_else(PoisonError::into_inner);
+        assert!(!waited.timed_out(), "{count} state saves never started");
+    }
+
+    /// State saves started so far (held or not).
+    pub fn started(&self) -> usize {
+        self.started.load(Ordering::SeqCst)
+    }
+
+    /// The most state saves that ever ran at the same time.
+    pub fn peak(&self) -> usize {
+        self.peak.load(Ordering::SeqCst)
+    }
+
+    fn enter(&self) {
+        let held = lock(&self.held);
+        self.started.fetch_add(1, Ordering::SeqCst);
+        let running = self.running.fetch_add(1, Ordering::SeqCst) + 1;
+        self.peak.fetch_max(running, Ordering::SeqCst);
+        self.signal.notify_all();
+        let _released = self
+            .signal
+            .wait_while(held, |held| *held)
+            .unwrap_or_else(PoisonError::into_inner);
+    }
+
+    fn leave(&self) {
+        self.running.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// A bound on real time for a blocking-pool save to start; a safety net, not a timing.
+const SAVE_START_LIMIT: Duration = Duration::from_secs(10);
+
+/// Releases the gate when the harness goes away, so a failed test cannot hang the runtime.
+struct ReleaseOnDrop(Arc<SaveGate>);
+
+impl Drop for ReleaseOnDrop {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+/// A `MemoryRepo` whose state saves pass through a `SaveGate`.
+struct GatedRepo {
+    inner: Arc<MemoryRepo>,
+    gate: Arc<SaveGate>,
+}
+
+impl StateRepo for GatedRepo {
+    fn save_config(&self, cfg: &Config) -> Result<(), ConfigError> {
+        self.inner.save_config(cfg)
+    }
+
+    fn save_state(&self, state: &PersistedState) -> Result<(), ConfigError> {
+        self.gate.enter();
+        let result = self.inner.save_state(state);
+        self.gate.leave();
+        result
+    }
+
+    fn save_catalog(&self, org: &OrgId, catalog: &Catalog) -> Result<(), ConfigError> {
+        self.inner.save_catalog(org, catalog)
+    }
+
+    fn delete_org_data(&self, org: &OrgId) -> Result<(), ConfigError> {
+        self.inner.delete_org_data(org)
+    }
+}
+
 /// What a harness starts from.
 pub struct HarnessSetup {
     pub config: Config,
@@ -258,10 +356,13 @@ pub struct ServiceHarness {
     pub connector: Arc<FakeConnector>,
     pub auth: Arc<FakeAuthFactory>,
     pub repo: Arc<MemoryRepo>,
+    /// Every state save passes through it.
+    pub gate: Arc<SaveGate>,
     pub opener: Arc<RecordingUrlOpener>,
     pub autostart: Arc<FakeAutostart>,
     pub clock: Arc<TokioClock>,
     task: JoinHandle<()>,
+    _release: ReleaseOnDrop,
 }
 
 /// The first published state for which `ready` holds; `None` if the service stopped.
@@ -291,6 +392,7 @@ impl ServiceHarness {
         let notifier = Arc::new(RecordingNotifier::default());
         let auth = Arc::new(FakeAuthFactory::default());
         let repo = Arc::new(MemoryRepo::default());
+        let gate = Arc::new(SaveGate::default());
         let opener = Arc::new(RecordingUrlOpener::default());
         let autostart = Arc::new(FakeAutostart::default());
         let clock = Arc::new(TokioClock::new(setup.base_wall));
@@ -302,7 +404,10 @@ impl ServiceHarness {
             clock: clock.clone(),
             opener: opener.clone(),
             autostart: autostart.clone(),
-            repo: repo.clone(),
+            repo: Arc::new(GatedRepo {
+                inner: repo.clone(),
+                gate: gate.clone(),
+            }),
         };
         let (config, config_issues) = prm_config::normalize(setup.config);
         let init = InitialData {
@@ -322,6 +427,8 @@ impl ServiceHarness {
             connector,
             auth,
             repo,
+            _release: ReleaseOnDrop(gate.clone()),
+            gate,
             opener,
             autostart,
             clock,

@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Microsoft first-party app ids. Allowed, but the user should know sign-in logs show that app.
-pub const FIRST_PARTY_CLIENT_IDS: [&str; 3] = [
+const FIRST_PARTY_CLIENT_IDS: [&str; 3] = [
     "04b07795-8ddb-461a-bbee-02f9e1bf7b46", // Azure CLI
     "872cd9fa-d31f-45e0-9eab-6e460a02d1f1", // Visual Studio
     "d735b71b-9eee-4a4f-ad23-421660877ba6", // Git Credential Manager
@@ -74,7 +74,12 @@ fn clamp_numbers(cfg: &mut Config, issues: &mut Vec<ConfigIssue>) {
         &mut cfg.network.max_concurrency,
         limits::MAX_CONCURRENCY,
     );
-    clamp.float("ui.font_scale", &mut cfg.ui.font_scale, limits::FONT_SCALE);
+    clamp.float(
+        "ui.font_scale",
+        &mut cfg.ui.font_scale,
+        limits::FONT_SCALE,
+        limits::DEFAULT_FONT_SCALE,
+    );
 }
 
 /// Clamps values into range and records a warning for each change.
@@ -96,13 +101,14 @@ impl Clamper<'_> {
         }
     }
 
-    fn float(&mut self, path: &str, value: &mut f32, range: RangeInclusive<f32>) {
+    /// Like [`Self::ord`]; a non-finite value (NaN, infinity) becomes `default`.
+    fn float(&mut self, path: &str, value: &mut f32, range: RangeInclusive<f32>, default: f32) {
         let clamped = if value.is_finite() {
             value.clamp(*range.start(), *range.end())
         } else {
-            limits::DEFAULT_FONT_SCALE
+            default
         };
-        if (clamped - *value).abs() > f32::EPSILON || !value.is_finite() {
+        if clamped.to_bits() != value.to_bits() {
             self.warn(path, &value.to_string(), &clamped.to_string());
             *value = clamped;
         }
@@ -127,7 +133,7 @@ fn normalize_org(org: &mut OrgProfile, path: &str, issues: &mut Vec<ConfigIssue>
                     format!("The id doesn't match the URL; using “{id}”."),
                 ));
             }
-            org.url = format!("https://dev.azure.com/{id}");
+            org.url = id.web_url();
             org.id = Some(id);
         }
         Err(e) => {
@@ -159,17 +165,12 @@ fn normalize_ids(org: &mut OrgProfile, path: &str, issues: &mut Vec<ConfigIssue>
         org.tenant.clear();
     }
     check_client_id(org, path, issues);
-    if !org.pat_expires_on.trim().is_empty() && !is_iso_date(org.pat_expires_on.trim()) {
+    if !org.pat_expires_on.trim().is_empty() && org.pat_expiry().is_none() {
         issues.push(warning(
             &format!("{path}.pat_expires_on"),
-            "The date isn't YYYY-MM-DD and is ignored.",
+            "The date isn't a real YYYY-MM-DD date and is ignored.",
         ));
         org.pat_expires_on.clear();
-    }
-    if org.label.trim().is_empty()
-        && let Some(id) = &org.id
-    {
-        org.label = id.to_string();
     }
 }
 
@@ -212,25 +213,6 @@ fn dedupe(people: &mut Vec<Person>) {
 
 fn warning(path: &str, message: &str) -> ConfigIssue {
     ConfigIssue::new(Severity::Warning, path, message)
-}
-
-/// `YYYY-MM-DD` with a plausible month and day.
-pub fn is_iso_date(s: &str) -> bool {
-    let parts: Vec<&str> = s.split('-').collect();
-    let [year, month, day] = parts.as_slice() else {
-        return false;
-    };
-    let number = |p: &str, len: usize| {
-        if p.len() == len {
-            p.parse::<u32>().ok()
-        } else {
-            None
-        }
-    };
-    matches!(
-        (number(year, 4), number(month, 2), number(day, 2)),
-        (Some(_), Some(1..=12), Some(1..=31))
-    )
 }
 
 #[cfg(test)]

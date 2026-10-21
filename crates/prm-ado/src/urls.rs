@@ -45,11 +45,6 @@ impl OrgEndpoint {
         self.dev.clone()
     }
 
-    /// Hosts this endpoint talks to.
-    pub fn host_allowed(&self, url: &Url) -> bool {
-        url.host_str() == self.dev.host_str() || url.host_str() == self.vssps.host_str()
-    }
-
     pub fn connection_data(&self) -> Url {
         dev_api(
             &self.dev,

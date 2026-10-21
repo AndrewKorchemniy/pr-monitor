@@ -82,15 +82,7 @@ fn no_rows(state: &AppState) -> EmptyKind {
                 .map_or_else(|| Arc::from(""), |o| o.label.clone()),
         };
     }
-    let signed_out = !enabled.is_empty()
-        && enabled.iter().all(|o| {
-            matches!(
-                o.auth.state,
-                AuthStateView::NeedsSignIn { .. }
-                    | AuthStateView::Blocked { .. }
-                    | AuthStateView::SignedOut
-            )
-        });
+    let signed_out = !enabled.is_empty() && enabled.iter().all(|o| o.needs_sign_in());
     if signed_out {
         return EmptyKind::SignedOut;
     }

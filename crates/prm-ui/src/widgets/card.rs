@@ -1,0 +1,88 @@
+//! Containers: a dialog-like card in the middle of the window, titled settings sections and a
+//! breadcrumb trail.
+
+use eframe::egui::{self, Rect, RichText, UiBuilder, pos2, vec2};
+
+use crate::theme::{
+    UiTheme, adapter,
+    icons::{self, Icon},
+};
+
+/// A bordered card of at most `width`, centered horizontally with its top at a fixed share of
+/// the window height (so steps of different heights don't jump), scrolling when it doesn't fit.
+pub(crate) fn anchored_card(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    salt: &str,
+    width: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let m = &theme.tokens.metrics;
+    let top = (ui.available_height() * 0.16).max(m.space.xxl);
+    egui::ScrollArea::vertical()
+        .id_salt(("anchored_card", salt))
+        .auto_shrink(false)
+        .show(ui, |ui| {
+            ui.add_space(top);
+            let width = width.min(ui.available_width() - 2.0 * m.space.xl);
+            let left = ui.max_rect().center().x - width / 2.0;
+            let rect =
+                Rect::from_min_size(pos2(left, ui.cursor().top()), vec2(width, f32::INFINITY));
+            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                adapter::frame_card(theme).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    add(ui);
+                });
+            });
+            ui.add_space(m.space.xxl);
+        });
+}
+
+/// A titled group of settings: the title (and an optional muted line) above a bordered box.
+pub(crate) fn section<R>(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    title: &str,
+    description: Option<&str>,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let m = &theme.tokens.metrics;
+    ui.label(
+        RichText::new(title)
+            .font(theme.fonts.body_strong.clone())
+            .color(theme.colors.text_primary),
+    );
+    if let Some(description) = description {
+        crate::widgets::muted(ui, theme, description);
+    }
+    ui.add_space(m.space.xs);
+    let inner = adapter::frame_section(theme)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner;
+    ui.add_space(m.space.xl);
+    inner
+}
+
+/// "Organizations › contoso": muted ancestors, then the current crumb. Lays out inline, so call
+/// it inside a horizontal layout.
+pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, crumbs: &[&str]) {
+    let last = crumbs.len().saturating_sub(1);
+    for (index, crumb) in crumbs.iter().enumerate() {
+        let color = if index == last {
+            theme.colors.text_primary
+        } else {
+            theme.colors.text_muted
+        };
+        ui.label(
+            RichText::new(*crumb)
+                .font(crate::widgets::page_title_font(theme))
+                .color(color),
+        );
+        if index != last {
+            icons::show(ui, Icon::ChevronRight, 9.0, theme.colors.text_muted);
+        }
+    }
+}

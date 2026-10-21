@@ -9,7 +9,7 @@ pub(crate) mod orgs;
 
 use std::{path::PathBuf, sync::Arc};
 
-use eframe::egui::{self, RichText};
+use eframe::egui;
 use prm_config::Config;
 use prm_domain::auth::SettingsSection;
 use prm_service::AppEvent;
@@ -19,8 +19,12 @@ use crate::{
     copy,
     deps::BuildInfo,
     frame::FrameCx,
-    widgets::{self, people_picker::PeoplePicker, scope_picker::ScopeFilter},
+    theme::{UiTheme, icons::Icon},
+    widgets::{self, controls, people_picker::PeoplePicker, scope_picker::ScopeFilter},
 };
+
+/// The widest the page column grows.
+const CONTENT_WIDTH: f32 = 720.0;
 
 /// The pages in the sidebar (org sub-sections all open Organizations).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -69,6 +73,16 @@ impl Page {
     }
 }
 
+/// A dialog open over the Organizations page.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Editor {
+    AddOrg,
+    Repositories,
+    Tracked,
+    Reviewers,
+    Ignored,
+}
+
 /// People pickers per org page: tracked authors, reviewers, ignored comment authors.
 pub(crate) struct Pickers {
     pub tracked: PeoplePicker,
@@ -95,6 +109,7 @@ pub(crate) struct SettingsState {
     pub scope_filter: ScopeFilter,
     pub new_org_url: String,
     pub url_error: bool,
+    pub editing: Option<Editor>,
     /// A save is in flight; the base updates when the service confirms.
     pub saving: bool,
     /// A save waits for the service's confirmation notice.
@@ -112,6 +127,7 @@ impl SettingsState {
             scope_filter: ScopeFilter::default(),
             new_org_url: String::new(),
             url_error: false,
+            editing: None,
             saving: false,
             confirm_pending: false,
         }
@@ -177,17 +193,24 @@ pub(crate) fn settings_screen(
         .resizable(false)
         .frame(crate::theme::adapter::frame_chrome(&theme))
         .show(ui, |ui| nav(ui, cx, st));
-    egui::Panel::bottom("settings_footer")
-        .exact_size(48.0)
-        .frame(crate::theme::adapter::frame_chrome(&theme))
-        .show(ui, |ui| footer(ui, cx, st));
+    // why: Save and Discard only mean something with unsaved changes.
+    if st.dirty() {
+        egui::Panel::bottom("settings_footer")
+            .exact_size(52.0)
+            .frame(crate::theme::adapter::frame_footer(&theme))
+            .show(ui, |ui| footer(ui, cx, st));
+    }
     egui::CentralPanel::default_margins().show(ui, |ui| {
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
-                ui.set_max_width(720.0);
-                widgets::heading(ui, &theme, st.page.title());
-                ui.add_space(theme.tokens.metrics.space.lg);
+                ui.set_max_width(CONTENT_WIDTH);
+                ui.add_space(theme.tokens.metrics.space.sm);
+                // why: Organizations shows a breadcrumb with the selected org instead.
+                if st.page != Page::Organizations {
+                    widgets::page_title(ui, &theme, st.page.title());
+                    ui.add_space(theme.tokens.metrics.space.lg);
+                }
                 match st.page {
                     Page::General => general::page(ui, cx, &mut st.draft),
                     Page::Organizations => orgs::page(ui, cx, st),
@@ -197,37 +220,63 @@ pub(crate) fn settings_screen(
                 }
             });
     });
+    orgs::editor(ui.ctx(), cx, st);
 }
 
 fn nav(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
-    ui.add_space(theme.tokens.metrics.space.md);
-    if ui.button(copy::BACK).clicked() {
+    let m = &theme.tokens.metrics;
+    let width = ui.available_width();
+    ui.add_space(m.space.md);
+    if controls::icon_text_button(ui, &theme, Icon::ArrowLeft, copy::BACK, Some(width)).clicked() {
         cx.push(UiAction::LeaveSettings);
     }
-    ui.add_space(theme.tokens.metrics.space.lg);
+    ui.add_space(m.space.lg);
+    ui.spacing_mut().item_spacing.y = m.space.xxs;
     for page in PAGES {
-        let text = RichText::new(page.title()).font(theme.fonts.body.clone());
-        if ui
-            .add_sized(
-                [180.0, 28.0],
-                egui::Button::selectable(st.page == page, text),
-            )
-            .clicked()
-        {
+        if nav_item(ui, &theme, page.title(), st.page == page).clicked() {
             st.page = page;
         }
     }
 }
 
+/// A full-width sidebar entry; the current page gets the accent tint and a bolder label.
+fn nav_item(ui: &mut egui::Ui, theme: &UiTheme, title: &str, selected: bool) -> egui::Response {
+    let m = &theme.tokens.metrics;
+    let size = egui::vec2(ui.available_width(), m.row.control_height);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let fill = if selected {
+        Some(theme.colors.accent_subtle)
+    } else if response.hovered() {
+        Some(theme.colors.control_hover)
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(rect, m.radius.md, fill);
+    }
+    let (font, color) = if selected {
+        (theme.fonts.body_strong.clone(), theme.colors.text_primary)
+    } else {
+        (theme.fonts.body.clone(), theme.colors.text_secondary)
+    };
+    let galley = ui.painter().layout_no_wrap(title.to_owned(), font, color);
+    let at = egui::pos2(
+        rect.left() + m.space.md + 2.0,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(at, galley, color);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, title));
+    response
+}
+
 fn footer(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &SettingsState) {
     let theme = cx.theme.clone();
+    ui.set_max_width(CONTENT_WIDTH);
     ui.horizontal_centered(|ui| {
-        if st.dirty() {
-            widgets::muted(ui, &theme, copy::UNSAVED);
-        }
+        widgets::muted(ui, &theme, copy::UNSAVED);
         let right = egui::Layout::right_to_left(egui::Align::Center);
-        let enabled = st.dirty() && !st.saving;
+        let enabled = !st.saving;
         ui.with_layout(right, |ui| {
             ui.add_enabled_ui(enabled, |ui| footer_buttons(ui, cx))
         });
