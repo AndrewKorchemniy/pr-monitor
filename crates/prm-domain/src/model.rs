@@ -253,6 +253,7 @@ pub struct PrRecord {
     pub pr: PullRequest,
     #[serde(default)]
     pub threads: Vec<ThreadDigest>,
+    /// When the threads were last read; `pr` may come from a later listing.
     pub fetched_at: Timestamp,
 }
 

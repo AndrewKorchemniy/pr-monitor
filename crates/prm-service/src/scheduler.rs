@@ -10,8 +10,8 @@ use tokio::time::Instant;
 
 use crate::{
     consts::{
-        AUTH_PROBE_INTERVAL, COALESCE_WINDOW, DEFAULT_RETRY_AFTER, FAILURE_BACKOFF_BASE,
-        HEADROOM_LOW, HEADROOM_OK, MAX_RATE_MULTIPLIER, RESUME_GAP,
+        AUTH_PROBE_INTERVAL, CATCH_UP_DELAY, COALESCE_WINDOW, DEFAULT_RETRY_AFTER,
+        FAILURE_BACKOFF_BASE, HEADROOM_LOW, HEADROOM_OK, MAX_RATE_MULTIPLIER, RESUME_GAP,
     },
     state::PauseReason,
 };
@@ -124,6 +124,18 @@ impl Policy {
     /// How often an org paused for sign-in is probed: never more often than it would refresh.
     pub(crate) fn probe_interval(self) -> Duration {
         self.interval.max(AUTH_PROBE_INTERVAL)
+    }
+
+    /// The policy for the refresh after a successful one that left `held_back` new PRs to the
+    /// next refreshes: `CATCH_UP_DELAY` at most while any wait.
+    pub(crate) fn with_backlog(self, held_back: usize) -> Self {
+        if held_back == 0 {
+            return self;
+        }
+        Self {
+            interval: self.interval.min(CATCH_UP_DELAY),
+            ..self
+        }
     }
 }
 

@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use eframe::egui;
-use egui_kittest::kittest::Queryable as _;
-use prm_domain::view::StatusFilter;
+use eframe::egui::{self, accesskit::Toggled};
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
+use prm_domain::view::{SortKey, StatusFilter};
 use prm_service::{AppState, AuthStateView, Command, UiError};
 
 use crate::{
@@ -14,13 +14,21 @@ use crate::{
     copy,
     screens::settings::{PAGES, Page},
     testing::{
+        demo::demo_state,
         org_status, sample_rows,
-        screens::{Fixture, Shown, harness},
+        screens::{Fixture, Shown, WINDOW, harness},
         state_with,
     },
 };
 
+mod cards;
+mod dashboard;
 mod gallery;
+mod people;
+mod small_windows;
+mod status_bar;
+mod table;
+mod tracking;
 
 fn signed_out() -> AppState {
     let needs = AuthStateView::NeedsSignIn {
@@ -49,7 +57,7 @@ fn the_dashboard_lists_pull_requests_and_counts() {
 }
 
 #[test]
-fn clicking_a_count_chip_asks_for_that_status_filter() {
+fn clicking_a_status_count_asks_for_that_status_filter() {
     let mut h = harness(Fixture::new(Shown::Dashboard, state_with(sample_rows())));
     h.run();
     h.get_by_label("1 Active comments").click();
@@ -61,6 +69,23 @@ fn clicking_a_count_chip_asks_for_that_status_filter() {
             .any(|a| matches!(a, UiAction::SetStatus(StatusFilter::ActiveComments))),
         "{actions:?}"
     );
+}
+
+#[test]
+fn status_counts_report_which_filter_is_on() {
+    let mut fixture = Fixture::new(Shown::Dashboard, state_with(sample_rows()));
+    fixture.dash.view.set_status(StatusFilter::ActiveComments);
+    let mut h = harness(fixture);
+    h.run();
+    for (label, on) in [
+        ("2 Needs review", false),
+        ("1 Active comments", true),
+        ("1 Reviewed", false),
+    ] {
+        let toggled = h.get_by_label(label).accesskit_node().toggled();
+        let expected = if on { Toggled::True } else { Toggled::False };
+        assert_eq!(toggled, Some(expected), "{label}");
+    }
 }
 
 #[test]
@@ -80,7 +105,7 @@ fn clicking_a_row_selects_it_and_a_header_sorts() {
     assert!(
         actions
             .iter()
-            .any(|a| matches!(a, UiAction::Sort(prm_domain::view::SortKey::Title))),
+            .any(|a| matches!(a, UiAction::Sort(SortKey::Title))),
         "{actions:?}"
     );
 }
@@ -129,6 +154,122 @@ fn editing_settings_enables_save() {
         actions.iter().any(|a| matches!(a, UiAction::SaveSettings)),
         "{actions:?}"
     );
+}
+
+/// A save that was applied but not written used to show only as a passing message.
+#[test]
+fn a_save_that_was_not_written_keeps_the_save_bar_with_the_reason() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    let reason = copy::changes_not_saved(copy::SAVE_FAILED);
+    fixture.settings.save_error = Some(Arc::from(reason.as_str()));
+    let mut h = harness(fixture);
+    h.run();
+
+    h.get_by_label(&reason);
+    assert!(
+        h.query_by_label(copy::DISCARD).is_none(),
+        "nothing to discard"
+    );
+    h.get_by_label(copy::SAVE_CHANGES).click();
+    h.run();
+
+    let actions = h.state_mut().take_actions();
+    assert!(
+        actions.iter().any(|a| matches!(a, UiAction::SaveSettings)),
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn the_test_notification_result_shows_beside_its_button() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    fixture.settings.page = Page::Notifications;
+    let failed = copy::test_failed("Notifications are off");
+    fixture.settings.test_result = Some(Err(Arc::from(failed.as_str())));
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(&failed);
+
+    // why: the test button sits at the bottom of the page, below the fold.
+    h.get_by_label(copy::SEND_TEST).scroll_to_me();
+    h.run();
+    h.get_by_label(copy::SEND_TEST).click();
+    h.run();
+    assert!(
+        h.query_by_label(&failed).is_none(),
+        "a new test clears the result"
+    );
+    h.state_mut().settings.test_result = Some(Ok(()));
+    h.run();
+    h.get_by_label(copy::TEST_SENT);
+}
+
+/// "Send a test notification" from the palette opens this page scrolled to the button, so the
+/// result shows without scrolling.
+#[test]
+fn a_test_sent_from_the_palette_shows_its_button() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    fixture.settings.page = Page::Notifications;
+    fixture.settings.reveal_test = true;
+    let mut h = harness(fixture);
+    h.run();
+    h.run();
+
+    let button = h.get_by_label(copy::SEND_TEST).rect();
+    let window = egui::Rect::from_min_size(egui::Pos2::ZERO, WINDOW);
+    assert!(window.contains_rect(button), "{button:?} is off screen");
+    assert!(!h.state().settings.reveal_test, "it scrolls once");
+}
+
+/// A failed project list used to leave the picker saying it was loading, forever.
+#[test]
+fn a_failed_project_list_says_so_and_offers_a_reload() {
+    let mut state = demo_state();
+    let mut orgs = state.orgs.to_vec();
+    orgs[0].catalog = None;
+    orgs[0].catalog_error = Some(UiError::new("Can't reach Azure DevOps"));
+    state.orgs = orgs.into();
+    let mut fixture = Fixture::new(Shown::Settings, state);
+    fixture.settings.page = Page::Organizations;
+    fixture.settings.editing = Some(crate::screens::settings::Editor::Repositories);
+    let mut h = harness(fixture);
+    h.run();
+
+    assert_eq!(h.query_all_by_label(copy::PROJECTS_FAILED).count(), 2);
+    assert!(h.query_by_label(copy::LOADING_PROJECTS).is_none());
+    h.get_by_label(copy::REFRESH_LIST).click();
+    h.run();
+    let actions = h.state_mut().take_actions();
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, UiAction::Send(Command::LoadCatalog { force: true, .. }))),
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn a_stopped_service_shows_a_banner_on_the_dashboard() {
+    let mut fixture = Fixture::new(Shown::Dashboard, state_with(sample_rows()));
+    fixture.dash.show_service_stopped();
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(copy::SERVICE_STOPPED);
+    assert!(
+        h.query_by_label(copy::CLOSE).is_none(),
+        "it cannot be dismissed"
+    );
+}
+
+/// Setup cannot finish without the service, so first run says so too.
+#[test]
+fn a_stopped_service_shows_a_banner_during_first_run() {
+    let mut fixture = Fixture::new(Shown::FirstRun, AppState::default());
+    fixture.dash.show_service_stopped();
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_label(copy::SERVICE_STOPPED);
+    h.get_by_label(copy::APP_NAME);
 }
 
 #[test]

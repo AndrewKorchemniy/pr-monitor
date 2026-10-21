@@ -37,15 +37,14 @@ pub(crate) enum UiAction {
     /// Settings picked a theme to preview live; None reverts.
     PreviewTheme(Option<String>),
     SetFilterText(String),
-    Copy {
-        text: String,
-        notice: &'static str,
-    },
+    /// Puts the text on the clipboard.
+    Copy(String),
     DismissBanner(Arc<str>),
-    DismissNotice(usize),
     /// The table's header clicked a sortable column.
     Sort(prm_domain::view::SortKey),
     ToggleGroup(u32),
+    /// The column menu or the settings checklist showed or hid a column.
+    ToggleColumn(crate::view::columns::ColumnId),
 }
 
 /// Collected during a frame, run afterwards.

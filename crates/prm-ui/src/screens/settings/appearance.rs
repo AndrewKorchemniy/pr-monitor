@@ -112,22 +112,17 @@ fn tristate(
     });
 }
 
+/// Reloading and copying themes, on as many lines as the page needs.
 fn authoring(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, env: &SettingsEnv<'_>) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.button(copy::RELOAD_THEMES).clicked() {
             cx.push(UiAction::ReloadThemes);
         }
         if ui.button(copy::COPY_THEME_TOML).clicked() {
-            cx.push(UiAction::Copy {
-                text: cx.theme.tokens.file_toml.to_string(),
-                notice: copy::COPY_THEME_TOML,
-            });
+            cx.push(UiAction::Copy(cx.theme.tokens.file_toml.to_string()));
         }
         if ui.button(copy::COPY_THEMES_FOLDER).clicked() {
-            cx.push(UiAction::Copy {
-                text: env.themes_dir.display().to_string(),
-                notice: copy::COPY_THEMES_FOLDER,
-            });
+            cx.push(UiAction::Copy(env.themes_dir.display().to_string()));
         }
     });
 }

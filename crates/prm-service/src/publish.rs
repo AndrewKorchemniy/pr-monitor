@@ -1,7 +1,7 @@
-//! Builds `AppState` from the org runtimes (pure), derives banners, and de-duplicates notices.
+//! Builds `AppState` from the org runtimes (pure) and derives the banners.
 //! The same code builds the very first state from `state.json`, so frame one shows cached rows.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use prm_config::{Config, ConfigIssue, Severity, UiState};
 use prm_domain::{
@@ -10,10 +10,9 @@ use prm_domain::{
     snapshot::SeenMap,
     view::{PrRow, RowBuildInput, build_rows, summarize},
 };
-use tokio::time::Instant;
 
 use crate::{
-    consts::{NOTICE_DEDUPE, PAT_EXPIRY_WARNING_DAYS},
+    consts::PAT_EXPIRY_WARNING_DAYS,
     org::{OrgData, OrgLive},
     ports::{AutostartState, NotifierCapability},
     scheduler::{Moment, Policy},
@@ -42,6 +41,8 @@ pub(crate) struct Composition<'a> {
     pub notifications: NotificationsStatus,
     pub ui_state: &'a Arc<UiState>,
     pub autostart: &'a AutostartStatus,
+    /// The last `state.json` save failed.
+    pub state_not_saved: bool,
     pub shutting_down: bool,
     pub now: Moment,
 }
@@ -58,6 +59,7 @@ pub(crate) fn compose(c: Composition<'_>) -> AppState {
         issues: c.config_issues,
         notifications: &c.notifications,
         autostart: c.autostart,
+        state_not_saved: c.state_not_saved,
         today: c.now.wall.inner().date(),
     });
     AppState {
@@ -128,8 +130,10 @@ fn org_status(view: &OrgView<'_>, rows: &[PrRow], now: Moment) -> OrgStatus {
         scope_issues: data.scope_issues.iter().map(text::scope_issue).collect(),
         counts: summarize(rows.iter().filter(|r| r.key.org == data.id)),
         catalog: data.catalog.clone(),
+        catalog_error: live.catalog_error.clone(),
         last_error: live.last_error.clone(),
         pat_expires_on: data.profile.pat_expiry(),
+        loading_more: u32::try_from(data.loading_more).unwrap_or(u32::MAX),
     }
 }
 
@@ -158,6 +162,7 @@ pub(crate) struct BannerInput<'a> {
     pub issues: &'a [ConfigIssue],
     pub notifications: &'a NotificationsStatus,
     pub autostart: &'a AutostartStatus,
+    pub state_not_saved: bool,
     pub today: time::Date,
 }
 
@@ -179,6 +184,17 @@ pub(crate) fn banners(input: &BannerInput<'_>) -> Vec<Banner> {
     if offline {
         out.push(banner("offline", Severity::Warning, None, text::OFFLINE));
     }
+    if input.state_not_saved {
+        out.push(Banner {
+            dismissible: false,
+            ..banner(
+                "state-not-saved",
+                Severity::Warning,
+                None,
+                text::STATE_NOT_SAVED,
+            )
+        });
+    }
     if input.issues.iter().any(|i| i.severity == Severity::Error) {
         let mut config = banner("config", Severity::Error, None, text::CONFIG_ERRORS);
         config.action = Some(UserAction::OpenSettings(
@@ -187,6 +203,7 @@ pub(crate) fn banners(input: &BannerInput<'_>) -> Vec<Banner> {
         out.push(config);
     }
     out.extend(notify_banner(input.notifications));
+    out.extend(enabled.iter().filter_map(|o| loading_banner(o)));
     let autostart_off =
         input.autostart.desired && input.autostart.actual == Some(AutostartState::DisabledByUser);
     if autostart_off {
@@ -248,6 +265,20 @@ fn pat_banner(org: &OrgStatus, today: time::Date) -> Option<Banner> {
     })
 }
 
+/// The list is still filling in: the thread read budget held new PRs back. It clears itself
+/// within minutes, so it cannot be dismissed.
+fn loading_banner(org: &OrgStatus) -> Option<Banner> {
+    (org.loading_more > 0).then(|| Banner {
+        dismissible: false,
+        ..banner(
+            &format!("loading:{}", org.id),
+            Severity::Info,
+            Some(&org.id),
+            &text::loading_more(&org.label, org.loading_more),
+        )
+    })
+}
+
 fn notify_banner(notifications: &NotificationsStatus) -> Option<Banner> {
     if !notifications.enabled {
         return None;
@@ -260,26 +291,6 @@ fn notify_banner(notifications: &NotificationsStatus) -> Option<Banner> {
         | NotifierCapability::Unknown => return None,
     };
     Some(banner("notify-policy", Severity::Warning, None, title))
-}
-
-/// Remembers recent notices so the same text for the same org shows once per window.
-#[derive(Default)]
-pub(crate) struct NoticeLog {
-    recent: BTreeMap<(Arc<str>, Option<OrgId>), Instant>,
-}
-
-impl NoticeLog {
-    /// `true` if the notice should be shown now (and records it).
-    pub(crate) fn admit(&mut self, text: &Arc<str>, org: Option<&OrgId>, now: Instant) -> bool {
-        self.recent
-            .retain(|_, at| now.saturating_duration_since(*at) < NOTICE_DEDUPE);
-        let key = (text.clone(), org.cloned());
-        if self.recent.contains_key(&key) {
-            return false;
-        }
-        self.recent.insert(key, now);
-        true
-    }
 }
 
 /// Seen marks for keys that still exist (in a snapshot or a tombstone).

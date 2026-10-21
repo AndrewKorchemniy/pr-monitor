@@ -116,6 +116,45 @@ fn window_cloaked_start_stays_cloaked_until_shown_and_never_moves() {
     assert_eq!(moves(&commands), []);
 }
 
+/// A window minimized to the tray stays minimized while hidden. A tray click asks for a show
+/// before `begin_frame` reads that state, which took it for a fresh minimize and hid the
+/// window again, dropping the show: no click could reopen it until a restart.
+#[test]
+fn window_minimized_to_tray_reopens_on_tray_click() {
+    let ctx = egui::Context::default();
+    let (link, _ends) = link(AppState::default());
+    let shown = WindowLaunch {
+        start_hidden: false,
+        hide_offscreen: false,
+        restore_position: None,
+    };
+    let mut window = WindowController::new(shown, &UiPrefs::default());
+    let minimized = ViewportInfo {
+        minimized: Some(true),
+        ..ViewportInfo::default()
+    };
+    let commands = pass(&ctx, minimized.clone(), |ctx| {
+        window.begin_frame(ctx, &link, ts(0), true);
+    });
+    assert!(!window.visible(), "minimize goes to the tray");
+    assert!(commands.contains(&ViewportCommand::Visible(false)));
+    for at in [10, 20] {
+        let commands = pass(&ctx, minimized.clone(), |ctx| {
+            window.toggle(ctx, ts(at));
+            window.begin_frame(ctx, &link, ts(at), true);
+            window.take_show(ctx);
+        });
+        assert!(window.visible(), "click at {at}s shows the window");
+        assert!(commands.contains(&ViewportCommand::Visible(true)));
+        assert!(commands.contains(&ViewportCommand::Minimized(false)));
+        assert!(!commands.contains(&ViewportCommand::Visible(false)));
+        pass(&ctx, minimized.clone(), |ctx| {
+            window.begin_frame(ctx, &link, ts(at + 1), true);
+        });
+        assert!(!window.visible(), "minimized again, back to the tray");
+    }
+}
+
 /// The saved rect was the outer rect in zoomed points but was restored as the inner size in
 /// unzoomed points, so the window grew (or shrank) on every launch.
 #[test]

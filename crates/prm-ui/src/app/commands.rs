@@ -11,7 +11,6 @@ use super::PrMonitorApp;
 use crate::{
     actions::UiAction,
     commands::{CommandId as C, PAUSE},
-    copy,
     format::markdown_link,
     route::{ModalKind, Overlay},
     widgets::toolbar::{GROUPS, filter_id},
@@ -19,11 +18,16 @@ use crate::{
 
 const ZOOM_STEP: f32 = 0.1;
 
+/// Whether the peek is open after Space or its close button: it always closes, since closing
+/// needs no row and the selection may have gone since it opened; it opens only on a selection.
+pub(super) const fn toggled_peek(open: bool, selected: bool) -> bool {
+    !open && selected
+}
+
 /// Commands on the selected PR.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum PrCommand {
     Open,
-    Peek,
     CopyLink,
     CopyMarkdown,
     CopyTitle,
@@ -88,7 +92,7 @@ impl PrMonitorApp {
             C::ColumnsReset => view.reset_columns(),
             C::FilterFocus => ctx.memory_mut(|m| m.request_focus(filter_id())),
             C::PrOpen => self.run_pr(ctx, PrCommand::Open),
-            C::PrPeek => self.run_pr(ctx, PrCommand::Peek),
+            C::PrPeek => self.toggle_peek(),
             C::PrCopyLink => self.run_pr(ctx, PrCommand::CopyLink),
             C::PrCopyMarkdown => self.run_pr(ctx, PrCommand::CopyMarkdown),
             C::PrCopyTitle => self.run_pr(ctx, PrCommand::CopyTitle),
@@ -96,13 +100,11 @@ impl PrMonitorApp {
             C::PrFilterRepo => self.run_pr(ctx, PrCommand::FilterRepo),
             C::PrMarkSeen => self.run_pr(ctx, PrCommand::MarkSeen),
             C::PrMarkAllSeen => {
-                self.notices
-                    .info(&copy::marked_seen(self.state.summary.unread as usize), now);
+                tracing::debug!(unread = self.state.summary.unread, "marking all as seen");
                 self.link.send(Command::MarkAllSeen);
             }
             C::PaletteOpen => {
-                self.palette.query.clear();
-                self.palette.selected = 0;
+                self.palette.reopen();
                 self.overlay = Overlay::Palette;
             }
             C::RefreshNow => self.link.send(Command::RefreshNow),
@@ -119,7 +121,7 @@ impl PrMonitorApp {
             C::NotificationsResume => self
                 .link
                 .send(Command::SetNotificationsPaused { until: None }),
-            C::NotificationsTest => self.link.send(Command::TestNotification),
+            C::NotificationsTest => self.send_test_notification(),
             C::AuthMenu => {
                 self.window.show(ctx);
                 self.overlay = Overlay::Modal(ModalKind::AuthMenu);
@@ -134,25 +136,41 @@ impl PrMonitorApp {
         }
     }
 
+    /// Sends a test notification from Settings › Notifications, scrolled to the test button, so
+    /// its result (above all a failure) shows beside the button.
+    fn send_test_notification(&mut self) {
+        if self.first_run.is_none() {
+            self.open_settings(SettingsSection::Notifications);
+        }
+        if let Some(settings) = &mut self.settings {
+            settings.test_result = None;
+            settings.reveal_test = true;
+        }
+        self.link.send(Command::TestNotification);
+    }
+
+    fn toggle_peek(&mut self) {
+        let selected = self.dash.view.selected_row().is_some();
+        self.dash.peek.open = toggled_peek(self.dash.peek.open, selected);
+    }
+
     fn run_pr(&mut self, ctx: &egui::Context, command: PrCommand) {
         let Some(row) = self.dash.view.selected_row().cloned() else {
             return;
         };
-        let now = self.clock.now();
         let first_word = |s: &str| s.split_whitespace().next().unwrap_or_default().to_owned();
-        let mut copy_text = |text: String, notice: &str| {
+        let copy_text = |text: String, what: &str| {
             ctx.copy_text(text);
-            self.notices.info(notice, now);
+            tracing::debug!(what, "copied to the clipboard");
         };
         match command {
-            PrCommand::CopyLink => copy_text(row.web_url.to_string(), copy::LINK_COPIED),
+            PrCommand::CopyLink => copy_text(row.web_url.to_string(), "link"),
             PrCommand::CopyMarkdown => {
                 let title = format!("{} {}", row.number_text, row.title);
-                copy_text(markdown_link(&title, &row.web_url), copy::MARKDOWN_COPIED);
+                copy_text(markdown_link(&title, &row.web_url), "markdown link");
             }
-            PrCommand::CopyTitle => copy_text(row.title.to_string(), copy::TITLE_COPIED),
+            PrCommand::CopyTitle => copy_text(row.title.to_string(), "title"),
             PrCommand::Open => self.open_pr(row.key.clone()),
-            PrCommand::Peek => self.dash.peek.open = !self.dash.peek.open,
             PrCommand::FilterAuthor => {
                 self.set_filter_text(format!("@{}", first_word(&row.author_key)));
             }

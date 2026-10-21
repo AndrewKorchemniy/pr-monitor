@@ -41,22 +41,21 @@ fn content(kind: &EmptyKind, scope: &str) -> Content {
             action: Some((copy::EMPTY_SIGN_IN, UiAction::Modal(ModalKind::AuthMenu))),
             ..plain(copy::EMPTY_SIGNED_OUT)
         },
-        EmptyKind::NobodyTracked => Content {
-            body: Some(copy::EMPTY_NOBODY_BODY.to_owned()),
-            action: Some((
-                copy::EMPTY_CHOOSE_PEOPLE,
-                UiAction::OpenSettings(SettingsSection::People),
-            )),
-            ..plain(copy::EMPTY_NOBODY)
-        },
-        EmptyKind::NoActivePrs => Content {
-            body: Some(copy::no_prs_body(scope)),
-            action: Some((
-                copy::EMPTY_EDIT_PEOPLE,
-                UiAction::OpenSettings(SettingsSection::People),
-            )),
-            ..plain(copy::EMPTY_NO_PRS)
-        },
+        EmptyKind::NothingWatched => settings_fix(
+            copy::EMPTY_NOTHING_WATCHED,
+            copy::EMPTY_NOTHING_WATCHED_BODY.to_owned(),
+            (copy::EMPTY_OPEN_ORGS, SettingsSection::Organizations),
+        ),
+        EmptyKind::NoActivePrs { everyone: true } => settings_fix(
+            copy::EMPTY_NO_PRS,
+            copy::no_prs_anywhere_body(scope),
+            (copy::EMPTY_CHOOSE_REPOS, SettingsSection::Scope),
+        ),
+        EmptyKind::NoActivePrs { everyone: false } => settings_fix(
+            copy::EMPTY_NO_PRS,
+            copy::no_prs_body(scope),
+            (copy::EMPTY_EDIT_PEOPLE, SettingsSection::People),
+        ),
         EmptyKind::NoMatch { query } => Content {
             action: Some((copy::CLEAR_FILTER, UiAction::ClearFilters)),
             ..plain(&copy::no_match(query))
@@ -69,6 +68,20 @@ fn content(kind: &EmptyKind, scope: &str) -> Content {
             action: Some((copy::SHOW_ALL, UiAction::Run(CommandId::ChangedOnly))),
             ..plain(copy::NOTHING_CHANGED)
         },
+    }
+}
+
+/// A state that a change in settings fixes: the action opens `section`.
+fn settings_fix(
+    headline: &str,
+    body: String,
+    (label, section): (&'static str, SettingsSection),
+) -> Content {
+    Content {
+        headline: headline.to_owned(),
+        body: Some(body),
+        action: Some((label, UiAction::OpenSettings(section))),
+        progress: None,
     }
 }
 

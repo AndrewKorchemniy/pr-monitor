@@ -209,17 +209,22 @@ pub(crate) fn frame_chrome(theme: &UiTheme) -> egui::Frame {
 }
 
 /// The peek drawer and settings cards.
+/// No border: the panel's separator draws its left edge, and the toolbar, status bar and
+/// window bound the rest, so a stroke here doubled those hairlines.
 pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;
     egui::Frame::NONE
         .fill(theme.colors.surface_raised)
-        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_subtle))
         .inner_margin(Margin::same(px(m.space.lg)))
 }
 
-/// The table area.
+/// A block set into the peek (an open thread), padded and rounded like the controls around it.
 pub(crate) fn frame_sunken(theme: &UiTheme) -> egui::Frame {
-    egui::Frame::NONE.fill(theme.colors.surface_sunken)
+    let m = &theme.tokens.metrics;
+    egui::Frame::NONE
+        .fill(theme.colors.surface_sunken)
+        .inner_margin(Margin::symmetric(px(m.space.md), px(m.space.sm)))
+        .corner_radius(CornerRadius::same(m.radius.md))
 }
 
 /// The window background behind content (the dashboard body, settings pages).
@@ -227,12 +232,9 @@ pub(crate) fn frame_canvas(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE.fill(theme.colors.surface_canvas)
 }
 
-/// The table area: the canvas, with room on the right so the last column clears the edge.
+/// The table area: the canvas, edge to edge (the last column keeps its own margin).
 pub(crate) fn frame_table(theme: &UiTheme) -> egui::Frame {
-    frame_canvas(theme).inner_margin(Margin {
-        right: px(theme.tokens.metrics.space.md),
-        ..Margin::ZERO
-    })
+    frame_canvas(theme)
 }
 
 /// A standalone card with a hairline border, like a dialog (first run).
@@ -254,7 +256,7 @@ pub(crate) fn frame_banner(theme: &UiTheme, tone: Tone) -> egui::Frame {
         .inner_margin(Margin::symmetric(px(m.space.lg), px(m.space.sm)))
 }
 
-/// Popups: palette, notices, modals.
+/// Popups: palette, menus, modals.
 pub(crate) fn frame_popup(theme: &UiTheme, policy: RenderPolicy) -> egui::Frame {
     let v = visuals(theme, policy);
     egui::Frame::NONE

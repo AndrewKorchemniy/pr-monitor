@@ -13,6 +13,8 @@ expression: state
       "last_good_method": null,
       "signed_out": false,
       "baseline": true,
+      "rebaseline_pending": false,
+      "tracks_everyone": false,
       "last_refresh_ok": null,
       "org_wide_probe": null,
       "records": {

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use prm_auth::AuthAvailability;
 use prm_domain::{
     auth::{AuthError, SettingsSection},
@@ -36,8 +34,10 @@ fn status(name: &str, health: OrgHealth, auth: AuthStateView) -> OrgStatus {
         scope_issues: Arc::from([]),
         counts: StatusSummary::default(),
         catalog: None,
+        catalog_error: None,
         last_error: None,
         pat_expires_on: None,
+        loading_more: 0,
     }
 }
 
@@ -57,6 +57,7 @@ fn ids(orgs: &[OrgStatus], notifications: &NotificationsStatus) -> Vec<String> {
         issues: &[],
         notifications,
         autostart: &AutostartStatus::default(),
+        state_not_saved: false,
         today: today(),
     };
     banners(&input).iter().map(|b| b.id.to_string()).collect()
@@ -134,6 +135,7 @@ fn banner_config_errors_and_autostart() {
         issues: &issues,
         notifications: &quiet(),
         autostart: &autostart,
+        state_not_saved: false,
         today: today(),
     };
     let found = banners(&input);
@@ -146,13 +148,23 @@ fn banner_config_errors_and_autostart() {
 }
 
 #[test]
-fn notice_log_dedupes_within_window() {
-    let mut log = NoticeLog::default();
-    let text: Arc<str> = Arc::from("hello");
-    let start = Instant::now();
-    let a = org("a");
-    assert!(log.admit(&text, Some(&a), start));
-    assert!(!log.admit(&text, Some(&a), start + Duration::from_secs(29)));
-    assert!(log.admit(&text, None, start + Duration::from_secs(29)));
-    assert!(log.admit(&text, Some(&a), start + Duration::from_secs(31)));
+fn banner_state_not_saved_stays_until_a_save_succeeds() {
+    let (notifications, autostart) = (quiet(), AutostartStatus::default());
+    let input = |state_not_saved| BannerInput {
+        orgs: &[],
+        issues: &[],
+        notifications: &notifications,
+        autostart: &autostart,
+        state_not_saved,
+        today: today(),
+    };
+
+    let failed = banners(&input(true));
+    let saved = banners(&input(false));
+
+    let ids: Vec<&str> = failed.iter().map(|b| b.id.as_ref()).collect();
+    assert_eq!(ids, ["state-not-saved"]);
+    assert!(!failed[0].dismissible);
+    assert_eq!(failed[0].title.as_ref(), text::STATE_NOT_SAVED);
+    assert_eq!(saved, []);
 }

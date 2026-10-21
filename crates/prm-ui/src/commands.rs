@@ -560,7 +560,7 @@ pub(crate) static COMMANDS: &[CommandSpec] = &[
     cmd(
         C::ColumnsReset,
         "columns.reset",
-        "Reset column widths",
+        "Reset columns",
         View,
         &[],
         true,

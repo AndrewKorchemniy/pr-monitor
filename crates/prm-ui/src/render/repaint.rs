@@ -15,7 +15,7 @@ pub(crate) struct RepaintInputs<'a> {
     pub low_power: bool,
     pub now: Option<Timestamp>,
     pub next_refresh: Option<Timestamp>,
-    /// Other deadlines (notice expiry, UI-state save, pause end); `None` entries are unset.
+    /// Other deadlines (UI-state save, pause end); `None` entries are unset.
     pub deadlines: &'a [Option<Timestamp>],
 }
 

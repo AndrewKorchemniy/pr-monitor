@@ -16,16 +16,29 @@ use eframe::egui::Align;
 use prm_config::UiState;
 use prm_domain::{
     PrKey,
-    view::{GroupBy, PrRow, Sort, SortKey, StatusFilter, ViewModel, ViewQuery, build_view},
+    view::{
+        GroupBy, PrRow, Sort, SortKey, StatusFilter, StatusSummary, ViewModel, ViewQuery,
+        build_view, filtered_summary,
+    },
 };
 
 use crate::view::{
     anchor::{AnchorResult, capture, restore},
-    display::{DisplayList, DisplayRow, build_display, group_id},
+    columns::{Choices, ColumnId, Visibility},
+    display::{DisplayList, DisplayRow, Pitch, build_display, group_id},
 };
 
-/// Rows a page-up/down moves.
+/// Rows a page-up/down moves before the list has been drawn.
 const PAGE: usize = 15;
+
+/// The sort one click on `key`'s header gives: the sorted column reverses, any other column
+/// sorts ascending. One click is always enough to see a change.
+pub(crate) fn next_sort(current: Sort, key: SortKey) -> Sort {
+    Sort {
+        key,
+        descending: current.key == key && !current.descending,
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub(crate) enum ScrollIntent {
@@ -44,6 +57,9 @@ pub(crate) struct DashboardView {
     pub collapsed: BTreeSet<String>,
     pub selected: Option<PrKey>,
     pub model: ViewModel,
+    /// What the status bar's filter toggles count: the rows the text filter keeps, whatever
+    /// the status and changed-only filters.
+    pub bar_counts: StatusSummary,
     pub display: DisplayList,
     pub scroll: ScrollIntent,
     /// The last selection change came from the keyboard (shows the focus ring).
@@ -52,9 +68,18 @@ pub(crate) struct DashboardView {
     pub hidden_columns: Vec<String>,
     pub offset_y: f32,
     pub top_visible: Option<usize>,
-    pub row_pitch: f32,
+    /// How far apart the list drew its rows last frame (table rows, or cards and headers).
+    pub pitch: Pitch,
     /// Bumped by "reset columns" so the table forgets its stored widths.
     pub table_epoch: u32,
+    /// The table's id salt last frame (column set, epoch); when it changes the table keeps its
+    /// scroll offset.
+    pub table_salt: Option<(u64, u32)>,
+    /// Chosen columns the table had no room for last frame (not persisted).
+    pub squeezed: Vec<ColumnId>,
+    /// Pull request rows a page-up/down moves: one fewer than the list showed whole last frame,
+    /// so a page keeps one row in view.
+    pub page_rows: usize,
 }
 
 impl DashboardView {
@@ -73,6 +98,7 @@ impl DashboardView {
             collapsed: ui.collapsed_groups.iter().cloned().collect(),
             selected: ui.selected.clone(),
             model: ViewModel::default(),
+            bar_counts: StatusSummary::default(),
             display: DisplayList::default(),
             scroll: ScrollIntent::None,
             keyboard_nav: false,
@@ -80,8 +106,11 @@ impl DashboardView {
             hidden_columns: ui.hidden_columns.clone(),
             offset_y: 0.0,
             top_visible: None,
-            row_pitch,
+            pitch: Pitch::uniform(row_pitch),
             table_epoch: 0,
+            table_salt: None,
+            squeezed: Vec::new(),
+            page_rows: PAGE,
         };
         view.rebuild();
         if let Some(index) = view.selected_display() {
@@ -103,8 +132,8 @@ impl DashboardView {
         let snapshot = capture(
             &self.display,
             self.selected.as_ref(),
-            self.top_visible,
-            self.offset_y,
+            (self.top_visible, self.offset_y),
+            self.pitch,
         );
         self.rows = rows;
         self.rows_generation = generation;
@@ -112,7 +141,7 @@ impl DashboardView {
         let Some(snapshot) = snapshot else {
             return;
         };
-        match restore(&snapshot, &self.display, self.row_pitch) {
+        match restore(&snapshot, &self.display, self.pitch) {
             AnchorResult::Offset(offset) => self.scroll = ScrollIntent::Offset(offset),
             AnchorResult::SelectNeighbor { index } => {
                 if self.selected.is_some() {
@@ -126,6 +155,7 @@ impl DashboardView {
     pub(crate) fn rebuild(&mut self) {
         self.model = build_view(&self.rows, &self.query, self.sort, self.group);
         self.display = build_display(&self.rows, &self.model, self.group, &self.collapsed);
+        self.bar_counts = filtered_summary(&self.rows, &self.query);
     }
 
     /// Filter typing: keep the selection if it still matches, else select the first row.
@@ -188,18 +218,48 @@ impl DashboardView {
         self.scroll_to_selection();
     }
 
-    /// Clicking the sorted column again reverses it.
+    /// One click on a header: see `next_sort`.
     pub(crate) fn sort_by(&mut self, key: SortKey) {
-        if self.sort.key == key {
-            self.sort.descending = !self.sort.descending;
-        } else {
-            self.sort = Sort {
-                key,
-                descending: false,
-            };
-        }
+        self.sort = next_sort(self.sort, key);
         self.rebuild();
         self.scroll_to_selection();
+    }
+
+    /// Shows or hides a column from the column menu or settings. Only optional columns change,
+    /// so Status and Title always show.
+    pub(crate) fn toggle_column(&mut self, id: ColumnId) {
+        let Some(column) = columns::column(id) else {
+            return;
+        };
+        if column.visibility() != Visibility::Optional {
+            return;
+        }
+        if let Some(at) = self.hidden_columns.iter().position(|k| k == column.key) {
+            self.hidden_columns.remove(at);
+        } else {
+            self.hidden_columns.push(column.key.to_owned());
+        }
+    }
+
+    /// What the column menu and the settings checklist show.
+    pub(crate) fn column_choices(&self) -> Choices<'_> {
+        Choices {
+            hidden: &self.hidden_columns,
+            squeezed: &self.squeezed,
+        }
+    }
+
+    /// A width dragged in the header (points), or `None` to go back to the default.
+    pub(crate) fn set_column_width(&mut self, key: &str, width: Option<f32>) {
+        match width {
+            Some(width) if self.widths.get(key) != Some(&width) => {
+                self.widths.insert(key.to_owned(), width);
+            }
+            Some(_) => {}
+            None => {
+                self.widths.remove(key);
+            }
+        }
     }
 
     fn scroll_to_selection(&mut self) {
@@ -270,7 +330,7 @@ impl DashboardView {
     }
 
     pub(crate) fn nav_page(&mut self, down: bool) {
-        let rows = isize::try_from(PAGE).unwrap_or(1);
+        let rows = isize::try_from(self.page_rows.max(1)).unwrap_or(1);
         self.nav(if down { rows } else { -rows });
     }
 

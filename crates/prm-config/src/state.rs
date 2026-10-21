@@ -50,6 +50,12 @@ pub struct OrgPersisted {
     pub signed_out: bool,
     /// A snapshot exists, so the next refresh diffs against it (and may toast).
     pub baseline: bool,
+    /// Scope or tracked authors changed and the silent rebaseline has not finished: no `NewPr`
+    /// events until it has.
+    pub rebaseline_pending: bool,
+    /// The people list was empty (tracking everyone) when this was saved. Files from before an
+    /// empty list meant everyone lack it, so their empty lists rebaseline once.
+    pub tracks_everyone: bool,
     pub last_refresh_ok: Option<Timestamp>,
     pub org_wide_probe: Option<ProbeCache>,
     pub records: BTreeMap<PrKey, PrRecord>,

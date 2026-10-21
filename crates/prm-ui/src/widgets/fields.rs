@@ -2,7 +2,7 @@
 //! field with a flush action button, and the toolbar's seamless search field.
 
 use eframe::egui::{
-    self, CornerRadius, Rect, Sense, Shape, Stroke, StrokeKind, TextEdit, pos2, vec2,
+    self, CornerRadius, EventFilter, Rect, Sense, Shape, Stroke, StrokeKind, TextEdit, pos2, vec2,
 };
 
 use crate::theme::{
@@ -22,8 +22,13 @@ pub(crate) struct Field<'a> {
     pub hint: &'a str,
     /// Draws the border in the danger tone.
     pub error: bool,
-    /// `None` fills the available width.
+    /// The widest the field gets (narrower when there is less room, and the full width of a
+    /// justified layout); `None` fills the available width.
     pub width: Option<f32>,
+    /// Esc stays with the field (a combobox closing its dropdown) instead of taking its focus.
+    pub keeps_escape: bool,
+    /// Shows dots instead of the text (a token).
+    pub password: bool,
 }
 
 impl<'a> Field<'a> {
@@ -33,12 +38,33 @@ impl<'a> Field<'a> {
             hint,
             error: false,
             width: None,
+            keeps_escape: false,
+            password: false,
         }
     }
 
     pub(crate) const fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
         self
+    }
+
+    pub(crate) const fn keeps_escape(mut self, keeps: bool) -> Self {
+        self.keeps_escape = keeps;
+        self
+    }
+
+    pub(crate) const fn password(mut self, on: bool) -> Self {
+        self.password = on;
+        self
+    }
+}
+
+/// How wide `field` is in `ui`: its own width when there is room for it, else what there is.
+fn field_width(ui: &egui::Ui, field: &Field<'_>) -> f32 {
+    let room = ui.available_width();
+    match field.width {
+        Some(width) if !ui.layout().horizontal_justify() => width.min(room),
+        Some(_) | None => room,
     }
 }
 
@@ -49,7 +75,7 @@ pub(crate) fn text_field(
     text: &mut String,
     field: &Field<'_>,
 ) -> egui::Response {
-    let width = field.width.unwrap_or_else(|| ui.available_width());
+    let width = field_width(ui, field);
     let (rect, _) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::hover());
     let background = ui.painter().add(Shape::Noop);
     let response = ui.put(
@@ -69,13 +95,19 @@ pub(crate) fn text_field(
 }
 
 fn edit<'t>(theme: &UiTheme, text: &'t mut String, field: &Field<'_>) -> TextEdit<'t> {
-    TextEdit::singleline(text)
+    let edit = TextEdit::singleline(text)
         .id(field.id)
         .hint_text(field.hint)
         .frame(egui::Frame::NONE)
         .font(theme.fonts.body.clone())
         .align(egui::Align2::LEFT_CENTER)
-        .desired_width(f32::INFINITY)
+        .password(field.password)
+        .desired_width(f32::INFINITY);
+    let filter = edit.get_event_filter();
+    edit.event_filter(EventFilter {
+        escape: field.keeps_escape,
+        ..filter
+    })
 }
 
 /// Where the text sits inside a field: inset from the left border, up to `right`.
@@ -107,7 +139,7 @@ pub(crate) fn action_field(
     (field, action, icon): (&Field<'_>, &str, Icon),
 ) -> bool {
     let height = theme.control_height();
-    let width = field.width.unwrap_or_else(|| ui.available_width());
+    let width = field_width(ui, field);
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let background = ui.painter().add(Shape::Noop);
     let button_rect = Rect::from_min_max(pos2(rect.right() - height - 4.0, rect.top()), rect.max);
@@ -166,13 +198,13 @@ fn action_frame(
 }
 
 /// A seamless filter field: a search glyph and borderless text, underlined only while focused.
-/// It is as wide as its hint (or its text, when longer), up to `max_width`.
+/// It is as wide as its hint (or its text, when longer), between `min_width` and `max_width`.
 pub(crate) fn search_field(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     text: &mut String,
     (id, hint): (egui::Id, &str),
-    max_width: f32,
+    (min_width, max_width): (f32, f32),
 ) -> egui::Response {
     let m = &theme.tokens.metrics;
     let font = theme.fonts.body.clone();
@@ -183,7 +215,8 @@ pub(crate) fn search_field(
             .x
     };
     let content = measure(hint).max(measure(text) + m.space.md);
-    let width = (GLYPH + 2.0 + m.space.md + content + 24.0).min(max_width);
+    let width =
+        (GLYPH + 2.0 + m.space.md + content + 24.0).clamp(min_width.min(max_width), max_width);
     let (rect, area) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
     let glyph = Rect::from_center_size(
         pos2(

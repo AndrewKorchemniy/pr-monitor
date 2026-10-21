@@ -136,10 +136,13 @@ pub(crate) fn org_status(name: &str, auth: prm_service::AuthStateView) -> prm_se
         scope_issues: Arc::from([]),
         counts: Default::default(),
         catalog: None,
+        catalog_error: None,
         last_error: None,
         pat_expires_on: None,
+        loading_more: 0,
     }
 }
 
 pub(crate) mod demo;
+pub(crate) mod overflow;
 pub(crate) mod screens;

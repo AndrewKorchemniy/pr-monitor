@@ -174,10 +174,15 @@ pub struct OrgStatus {
     pub counts: StatusSummary,
     /// Projects and repositories, for the scope editor.
     pub catalog: Option<Arc<Catalog>>,
+    /// Why the last catalog load failed, until a load starts again or one succeeds.
+    pub catalog_error: Option<UiError>,
     /// The last refresh or sign-in error; cleared by a successful refresh.
     pub last_error: Option<UiError>,
     /// From the profile's `pat_expires_on`, when it parses as a date.
     pub pat_expires_on: Option<time::Date>,
+    /// New pull requests still to load: the thread read budget held them back on the last
+    /// refresh, and the next refreshes come sooner until they are in.
+    pub loading_more: u32,
 }
 
 impl OrgStatus {

@@ -37,7 +37,7 @@ fn a_fresh_window_is_centered_at_the_default_size() {
     assert_eq!(options.viewport.inner_size, Some(egui::vec2(1280.0, 760.0)));
     assert_eq!(
         options.viewport.min_inner_size,
-        Some(egui::vec2(720.0, 420.0))
+        Some(egui::vec2(360.0, 420.0))
     );
     assert_eq!(options.renderer, eframe::Renderer::Glow);
 }

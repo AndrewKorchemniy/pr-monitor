@@ -1,5 +1,6 @@
 //! A realistic, entirely fictional data set for screenshots: two orgs, a dozen pull requests
-//! in every state, a catalog of projects and repositories, and tracked people.
+//! in every state, a catalog of projects and repositories, and tracked people. Variants crowd
+//! the status bar with more orgs or a running refresh, or have nothing open.
 
 use std::sync::Arc;
 
@@ -12,7 +13,10 @@ use prm_domain::{
     testing::{BASE_TIME_SECS, PrBuilder, ThreadBuilder, key, org, person, record, repo, rows, ts},
     view::summary::summarize,
 };
-use prm_service::{AppState, AuthStateView, state::RefreshStatus};
+use prm_service::{
+    AppState, AuthStateView, RefreshPhase,
+    state::{RefreshProgress, RefreshStatus},
+};
 
 use crate::testing::org_status;
 
@@ -40,7 +44,8 @@ fn people() -> [Person; 6] {
     clippy::too_many_lines,
     reason = "one record per demo pull request reads best as a list"
 )]
-/// Twelve PRs across four repositories: every status, drafts, conflicts, votes and threads.
+/// Twelve PRs across four repositories: every status, drafts, conflicts, auto-complete, votes
+/// and threads.
 fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
     let [maya, jonas, priya, leo, rita, sam] = people();
     let pr = |repo_n: u128, n: i32, title: &str, author: &Person, age_h: i64| {
@@ -93,12 +98,13 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
             vec![comment(3, &rita)],
         ),
         record(
-            named(
-                pr(2, 4699, "Group dashboard rows by author", &leo, 30)
+            named(prm_domain::model::PullRequest {
+                auto_complete: true,
+                ..pr(2, 4699, "Group dashboard rows by author", &leo, 30)
                     .reviewer(rita.clone(), 10)
                     .reviewer(sam.clone(), 5)
-                    .build(),
-            ),
+                    .build()
+            }),
             vec![],
         ),
         record(
@@ -130,7 +136,7 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
                 pr(
                     4,
                     4681,
-                    "Credential Manager chunking for long tokens",
+                    "Credential Manager chunking for long tokens, so sign-ins that outgrow one entry survive a restart",
                     &leo,
                     8,
                 )
@@ -270,6 +276,50 @@ pub(crate) fn demo_state() -> AppState {
         },
         ..AppState::default()
     }
+}
+
+/// The demo with four orgs, two with long names: a crowded status bar.
+pub(crate) fn crowded_state() -> AppState {
+    let mut state = demo_state();
+    let more = ["northwind-traders", "adventure-works"]
+        .map(|name| org_status(name, AuthStateView::SignedIn));
+    state.orgs = state.orgs.iter().cloned().chain(more).collect();
+    state
+}
+
+/// The demo partway through reading comments, slowed by throttling, with notifications paused.
+pub(crate) fn busy_state() -> AppState {
+    let mut state = demo_state();
+    state.refresh.in_progress = true;
+    state.refresh.progress = Arc::from([RefreshProgress {
+        org: org("contoso"),
+        phase: RefreshPhase::Threads,
+        done: 12,
+        total: 40,
+    }]);
+    state.refresh.slowed = true;
+    state.notifications.paused_until = Some(ts(BASE_TIME_SECS + 7_200));
+    state
+}
+
+/// The demo orgs on a quiet day: signed in, with no open pull requests.
+pub(crate) fn quiet_state() -> AppState {
+    let mut state = demo_state();
+    state.rows = Arc::from([]);
+    state.summary = summarize([]);
+    state.rows_generation += 1;
+    state
+}
+
+/// The demo with contoso's people list emptied and the signed-in user's own pull requests
+/// left out: it tracks everyone else in its repositories.
+pub(crate) fn everyone_state() -> AppState {
+    let mut state = demo_state();
+    let mut config = (*state.config).clone();
+    config.orgs[0].people.tracked_authors.clear();
+    config.orgs[0].include_me = false;
+    state.config = Arc::new(config);
+    state
 }
 
 /// The same data with no orgs configured: the first-run screen.

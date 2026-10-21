@@ -20,18 +20,24 @@ pub(crate) const THROTTLED: &str =
     "Azure DevOps is throttling requests, so PR Monitor refreshes less often until it recovers.";
 pub(crate) const SIGNING_IN: &str = "Signing in…";
 pub(crate) const LOADING_PROJECTS: &str = "Loading projects…";
+pub(crate) const PROJECTS_FAILED: &str = "Couldn't load projects";
 pub(crate) const CHANGED_TOOLTIP: &str = "Changed since you last looked";
 pub(crate) const DRAFT: &str = "Draft";
 pub(crate) const GROUP: &str = "Group";
+pub(crate) const SORT: &str = "Sort";
+pub(crate) const LAST_ACTIVITY: &str = "Last activity";
+pub(crate) const ASCENDING: &str = "Ascending";
+pub(crate) const DESCENDING: &str = "Descending";
+/// Between the facts on a card's detail line.
+pub(crate) const DETAIL_SEPARATOR: &str = " · ";
 pub(crate) const CONFLICTS: &str = "Merge conflicts";
-pub(crate) const LINK_COPIED: &str = "Link copied";
-pub(crate) const MARKDOWN_COPIED: &str = "Markdown link copied";
-pub(crate) const TITLE_COPIED: &str = "Title copied";
 pub(crate) const REVIEWS: &str = "Reviews";
 pub(crate) const NO_OPEN_THREADS: &str = "No open threads.";
 pub(crate) const OPEN_THREADS: &str = "Open threads";
 pub(crate) const NO_REVIEWS: &str = "No reviews yet.";
 pub(crate) const GROUP_TAG: &str = "group";
+/// After a team's name on its pill.
+pub(crate) const GROUP_SUFFIX: &str = " · group";
 pub(crate) const REQUIRED_TAG: &str = "required";
 pub(crate) const OPEN_IN_BROWSER: &str = "Open in browser";
 pub(crate) const COPY_LINK: &str = "Copy link";
@@ -40,6 +46,20 @@ pub(crate) const COPY_TITLE: &str = "Copy title";
 pub(crate) const PEEK: &str = "Peek";
 pub(crate) const MARK_SEEN: &str = "Mark as seen";
 pub(crate) const CLOSE: &str = "Close";
+
+pub(crate) const COLUMN_STATUS: &str = "Status";
+pub(crate) const COLUMN_NUMBER: &str = "PR";
+pub(crate) const COLUMN_FLAGS: &str = "Flags";
+pub(crate) const COLUMN_TITLE: &str = "Title";
+pub(crate) const COLUMN_REPO: &str = "Repository";
+pub(crate) const COLUMN_AUTHOR: &str = "Author";
+pub(crate) const COLUMN_COMMENTS: &str = "Comments";
+pub(crate) const COLUMN_AGE: &str = "Age";
+pub(crate) const COLUMN_LOCKED: &str = "Always shown";
+pub(crate) const COLUMN_SQUEEZED: &str = "Hidden while the table is this narrow";
+pub(crate) const AUTO_COMPLETE: &str = "Auto-complete is set";
+pub(crate) const COLUMNS: &str = "Columns";
+pub(crate) const COLUMNS_HELP: &str = "Status and Title always show. Changes apply right away, and you can also right-click a column header.";
 pub(crate) const SERVICE_STOPPED: &str =
     "PR Monitor's background service stopped. Restart the app.";
 
@@ -48,11 +68,13 @@ pub(crate) const EMPTY_SIGNED_OUT: &str = "You're signed out.";
 pub(crate) const EMPTY_SIGNED_OUT_BODY: &str =
     "Sign in to an organization to see its pull requests.";
 pub(crate) const EMPTY_SIGN_IN: &str = "Sign in";
-pub(crate) const EMPTY_NOBODY: &str = "You're not tracking anyone yet.";
-pub(crate) const EMPTY_NOBODY_BODY: &str = "Pick the people whose pull requests you want to watch.";
-pub(crate) const EMPTY_CHOOSE_PEOPLE: &str = "Choose people";
+pub(crate) const EMPTY_NOTHING_WATCHED: &str = "You're not watching any organizations.";
+pub(crate) const EMPTY_NOTHING_WATCHED_BODY: &str =
+    "Turn on watching for an organization in Settings.";
+pub(crate) const EMPTY_OPEN_ORGS: &str = "Organization settings";
 pub(crate) const EMPTY_NO_PRS: &str = "No active pull requests.";
 pub(crate) const EMPTY_EDIT_PEOPLE: &str = "Edit tracked people";
+pub(crate) const EMPTY_CHOOSE_REPOS: &str = "Choose repositories";
 pub(crate) const CLEAR_FILTER: &str = "Clear filter";
 pub(crate) const SHOW_ALL: &str = "Show all";
 pub(crate) const NOTHING_CHANGED: &str = "Nothing changed since you last looked.";
@@ -73,10 +95,13 @@ pub(crate) const CHOOSE: &str = "Choose";
 pub(crate) const EDIT: &str = "Edit";
 pub(crate) const NOBODY_YET: &str = "Nobody yet";
 pub(crate) const TRACK_FROM: &str = "Track pull requests from";
+pub(crate) const TRACK_FROM_HELP: &str =
+    "Leave this empty to track everyone in the repositories you chose.";
+pub(crate) const EVERYONE: &str = "Everyone";
+pub(crate) const EVERYONE_BUT_ME: &str = "Everyone except you";
 pub(crate) const COUNT_REVIEWS_FROM: &str = "Count reviews from";
 pub(crate) const REVIEWERS_EMPTY_HELP: &str =
     "Leave this empty to count any vote except the author's.";
-pub(crate) const SKIP_FOR_NOW: &str = "Skip for now";
 pub(crate) const START_MONITORING: &str = "Start monitoring";
 
 pub(crate) const SIGN_IN_MICROSOFT: &str = "Sign in with Microsoft";
@@ -104,7 +129,6 @@ pub(crate) const COPY_MESSAGE: &str = "Copy message";
 pub(crate) const UNSAVED: &str = "You have unsaved changes.";
 pub(crate) const DISCARD: &str = "Discard";
 pub(crate) const SAVE_CHANGES: &str = "Save changes";
-pub(crate) const CHANGES_SAVED: &str = "Changes saved";
 pub(crate) const SAVE_FAILED: &str = "the settings file couldn't be written";
 pub(crate) const DISCARD_TITLE: &str = "Discard changes?";
 pub(crate) const DISCARD_BODY: &str = "Your edits to settings will be lost.";
@@ -173,7 +197,8 @@ pub(crate) const IGNORE_FROM: &str = "Ignore comments from";
 pub(crate) const IGNORE_HELP: &str = "Bots and pipelines.";
 pub(crate) const ADD_PEOPLE: &str = "Add people";
 pub(crate) const SEARCH_MIN: &str = "Type 3 or more letters to search the directory.";
-pub(crate) const SEARCHING: &str = "Searching directory…";
+pub(crate) const SEARCHING: &str = "Searching…";
+pub(crate) const SIGN_IN_TO_SEARCH: &str = "Sign in to search the directory.";
 pub(crate) const ADDING: &str = "Adding…";
 pub(crate) const SHOW_NOTIFICATIONS: &str = "Show Windows notifications";
 pub(crate) const WHILE_IN_FRONT: &str = "While PR Monitor is in front";
@@ -203,6 +228,10 @@ pub(crate) const PALETTE_FOOTER: &str = "Enter to run · Esc to close";
 pub(crate) const SHORTCUTS_TITLE: &str = "Keyboard shortcuts";
 pub(crate) const TRAY_OPEN: &str = "Open PR Monitor";
 pub(crate) const TRAY_REFRESH: &str = "Refresh now";
+pub(crate) const REFRESHING: &str = "Refreshing…";
+pub(crate) const COLUMN_NO_ROOM: &str = "No room";
+pub(crate) const STOPPED: &str = "Stopped";
+pub(crate) const PAT_TITLE: &str = "Personal access token";
 pub(crate) const TRAY_PAUSE: &str = "Pause notifications for 1 hour";
 pub(crate) const TRAY_RESUME: &str = "Resume notifications";
 pub(crate) const TRAY_SIGN_IN: &str = "Sign in…";
@@ -244,12 +273,17 @@ pub(crate) const fn vote_word(vote: VoteKind) -> &'static str {
     }
 }
 
-pub(crate) fn status_chip(count: u32, status: PrStatus) -> String {
+pub(crate) fn status_count(count: u32, status: PrStatus) -> String {
     format!("{count} {}", status.label())
 }
 
-pub(crate) fn changed_chip(count: u32) -> String {
+pub(crate) fn changed_count(count: u32) -> String {
     format!("{count} Changed")
+}
+
+/// A menu button's name for screen readers and its tooltip when only its icon shows.
+pub(crate) fn menu_value(label: &str, value: &str) -> String {
+    format!("{label}: {value}")
 }
 
 pub(crate) fn identity(org: &str, method: Option<AuthMethod>) -> String {
@@ -287,6 +321,16 @@ pub(crate) fn reading_progress(done: u32, total: u32) -> String {
     format!("Reading comments {done}/{total}")
 }
 
+/// `listing_progress` in a narrow status bar.
+pub(crate) fn listing_short(done: u32, total: u32) -> String {
+    format!("Listing {done}/{total}")
+}
+
+/// `reading_progress` in a narrow status bar.
+pub(crate) fn reading_short(done: u32, total: u32) -> String {
+    format!("Reading {done}/{total}")
+}
+
 pub(crate) fn repos(n: u32) -> String {
     format!("{n} repos")
 }
@@ -304,10 +348,6 @@ pub(crate) fn branches(source: &str, target: &str) -> String {
     format!("{source} into {target}")
 }
 
-pub(crate) fn marked_seen(n: usize) -> String {
-    format!("Marked {n} as seen")
-}
-
 pub(crate) fn open_threads(active: u32, total: u32) -> String {
     format!("Open threads ({active} of {total})")
 }
@@ -322,6 +362,11 @@ pub(crate) fn loading_body(done: u32, total: u32, org: &str) -> String {
 
 pub(crate) fn no_prs_body(scope: &str) -> String {
     format!("Nobody you track has an open pull request in {scope}.")
+}
+
+/// When everyone is tracked, the user included.
+pub(crate) fn no_prs_anywhere_body(scope: &str) -> String {
+    format!("Nobody has an open pull request in {scope}.")
 }
 
 pub(crate) fn no_match(query: &str) -> String {
@@ -365,14 +410,6 @@ pub(crate) fn blocked(title: &str) -> String {
     format!("Blocked: {title}")
 }
 
-pub(crate) fn pat_title(org: &str) -> String {
-    format!("Use a personal access token for {org}")
-}
-
-pub(crate) fn token_saved(name: &str) -> String {
-    format!("Token saved. Signed in as {name}.")
-}
-
 pub(crate) fn remove_org_title(org: &str) -> String {
     format!("Remove {org}?")
 }
@@ -394,7 +431,12 @@ pub(crate) fn search_scope(projects: usize, repos: usize) -> String {
 }
 
 pub(crate) fn no_people(query: &str) -> String {
-    format!("No people found for “{query}”.")
+    format!("No people match “{query}”.")
+}
+
+/// The accessible name of a pill's remove button.
+pub(crate) fn remove_person(name: &str) -> String {
+    format!("Remove {name}")
 }
 
 pub(crate) fn test_failed(reason: &str) -> String {
@@ -503,12 +545,16 @@ pub(crate) const ALL: &[&str] = &[
     CHANGED_TOOLTIP,
     DRAFT,
     CONFLICTS,
+    AUTO_COMPLETE,
+    COLUMN_SQUEEZED,
+    COLUMNS_HELP,
     REVIEWS,
     NO_OPEN_THREADS,
     SERVICE_STOPPED,
     EMPTY_LOADING,
     EMPTY_SIGNED_OUT,
-    EMPTY_NOBODY,
+    EMPTY_NOTHING_WATCHED,
+    EMPTY_NOTHING_WATCHED_BODY,
     EMPTY_NO_PRS,
     NOTHING_CHANGED,
     NO_ORGS,
@@ -517,11 +563,26 @@ pub(crate) const ALL: &[&str] = &[
     PAT_HELP,
     ENTRA_HELP,
     REFRESH_HELP,
+    REFRESHING,
+    COLUMN_NO_ROOM,
+    STOPPED,
+    PAT_TITLE,
     REMOVE_ORG_BODY,
     REVIEWERS_HELP,
+    TRACK_FROM_HELP,
+    EVERYONE_BUT_ME,
     ANY_NON_AUTHOR,
     SEARCH_MIN,
     SEARCHING,
+    SIGN_IN_TO_SEARCH,
+    ADDING,
+    GROUP_SUFFIX,
+    DETAIL_SEPARATOR,
+    LAST_ACTIVITY,
+    DESCENDING,
+    PROJECTS_FAILED,
+    SAVE_FAILED,
+    TEST_SENT,
     ANIMATIONS_HELP,
     PRIVACY,
     PALETTE_HINT,

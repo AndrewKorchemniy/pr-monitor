@@ -16,17 +16,13 @@ pub struct TableGeometry {
 }
 
 impl TableGeometry {
-    /// From logical points and the scale factor.
+    /// From logical points and the scale factor; `pitch` is how far apart rows start (their
+    /// height plus the spacing between them).
     #[expect(
         clippy::cast_possible_truncation,
         reason = "window coordinates fit in i32"
     )]
-    pub fn new(
-        viewport: [f32; 4],
-        scroll_offset: f32,
-        row_height: f32,
-        pixels_per_point: f32,
-    ) -> Self {
+    pub fn new(viewport: [f32; 4], scroll_offset: f32, pitch: f32, pixels_per_point: f32) -> Self {
         let px = |v: f32| (v * pixels_per_point).round() as i32;
         let [x0, top, x1, bottom] = viewport;
         Self {
@@ -35,7 +31,7 @@ impl TableGeometry {
             top: px(top),
             bottom: px(bottom),
             origin_y: px(top - scroll_offset),
-            pitch_milli: (row_height * pixels_per_point * 1000.0).round().max(1.0) as i32,
+            pitch_milli: (pitch * pixels_per_point * 1000.0).round().max(1.0) as i32,
         }
     }
 }

@@ -12,7 +12,7 @@ use prm_domain::{
     classify::{ClassifyConfig, EmptyReviewerPolicy},
     lenient::{saturating_u8, saturating_u32},
     notify::NotificationPrefs,
-    plan::{DraftPolicy, TrackSpec},
+    plan::{Authors, DraftPolicy, TrackSpec},
     scope::ScopeSpec,
 };
 
@@ -275,7 +275,8 @@ pub struct OrgProfile {
     pub auth: AuthMode,
     /// GUID override; empty means discover from the org.
     pub tenant: String,
-    /// Track the signed-in user's own PRs too.
+    /// Track the signed-in user's own PRs: added to `people.tracked_authors`, or kept among
+    /// everyone when that list is empty.
     pub include_me: bool,
     pub drafts: DraftPolicy,
     /// Watch, but never toast.
@@ -330,6 +331,7 @@ pub struct EntraSettings {
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PeopleConfig {
+    /// Whose PRs to track; empty tracks everyone in scope.
     pub tracked_authors: Vec<Person>,
     pub reviewers: Vec<Person>,
     /// Bots and pipelines whose threads never count.
@@ -355,11 +357,23 @@ impl OrgProfile {
         ids(&self.people.ignored_comment_authors)
     }
 
+    /// The only conversion from config to the tracking rule. An empty list tracks every
+    /// author in scope, minus the signed-in user unless `include_me`; a list tracks those
+    /// people, plus the signed-in user when `include_me`. Nobody is left out while `me` is
+    /// unknown.
     pub fn track_spec(&self, me: Option<&Person>) -> TrackSpec {
-        let mut authors = ids(&self.people.tracked_authors);
-        if self.include_me {
-            authors.extend(me.map(|m| m.id));
-        }
+        let me = me.map(|m| m.id);
+        let authors = if self.people.tracked_authors.is_empty() {
+            Authors::Everyone {
+                except: me.filter(|_| !self.include_me),
+            }
+        } else {
+            let mut listed = ids(&self.people.tracked_authors);
+            if self.include_me {
+                listed.extend(me);
+            }
+            Authors::Only(listed)
+        };
         TrackSpec {
             authors,
             drafts: self.drafts,

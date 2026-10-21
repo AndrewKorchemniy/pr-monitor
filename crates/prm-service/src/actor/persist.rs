@@ -1,7 +1,7 @@
 //! Writing `state.json`: debounced, at most one save in flight, and a "flush" that saves before
 //! showing a cycle's toasts.
 
-use prm_config::{ConfigError, PersistedState, Severity, StateRepo, state::STATE_SCHEMA};
+use prm_config::{ConfigError, PersistedState, StateRepo, state::STATE_SCHEMA};
 use prm_domain::{model::Catalog, notify::NotifierOp};
 use tokio::{
     task::{AbortHandle, Id},
@@ -13,7 +13,7 @@ use crate::{
     consts::{PERSIST_DEBOUNCE, SHUTDOWN_SAVE_WAIT},
     errors::UiError,
     jobs::{JobKind, JobOutput, JobTag, Saved, apply_notifier_ops, blocking},
-    publish, text,
+    publish,
 };
 
 #[derive(Default)]
@@ -26,6 +26,8 @@ pub(super) struct PersistState {
     again: bool,
     /// Toasts of cycles that finished while a save was running: flushed after it.
     queued: Option<Vec<NotifierOp>>,
+    /// The last state save failed; a banner says so until a save succeeds.
+    pub failed: bool,
 }
 
 impl Service {
@@ -75,9 +77,9 @@ impl Service {
     /// A state save (plain or flush) finished: start whatever waited for it.
     pub(super) fn on_state_saved(&mut self, result: Result<(), UiError>) {
         self.persist.in_flight = None;
+        self.persist.failed = result.is_err();
         if let Err(error) = result {
             tracing::warn!(error = %error.title, "state save failed; retrying");
-            self.global_notice(Severity::Warning, text::STATE_NOT_SAVED);
             self.mark_persist();
         }
         if let Some(ops) = self.persist.queued.take() {

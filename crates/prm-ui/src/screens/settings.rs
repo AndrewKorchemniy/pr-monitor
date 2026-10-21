@@ -11,6 +11,7 @@ pub(crate) use shell::settings_modal;
 
 use std::{path::PathBuf, sync::Arc};
 
+use eframe::egui;
 use prm_config::Config;
 use prm_domain::auth::SettingsSection;
 use prm_service::AppEvent;
@@ -22,7 +23,8 @@ use crate::{
     widgets::{people_picker::PeoplePicker, scope_picker::ScopeFilter},
 };
 
-/// The pages in the sidebar (org sub-sections all open Organizations).
+/// The pages in the sidebar, or the page menu in a narrow window (org sub-sections all open
+/// Organizations).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Page {
     General,
@@ -41,7 +43,8 @@ pub(crate) const PAGES: [Page; 4] = [
 impl Page {
     pub(crate) const fn from_section(section: SettingsSection) -> Self {
         match section {
-            // why: version, links and licenses live in the sidebar footer, not on a page.
+            // why: version, links and licenses live in the sidebar footer (at the end of General
+            // when the sidebar is folded away), not on a page of their own.
             SettingsSection::General | SettingsSection::About => Self::General,
             SettingsSection::Organizations
             | SettingsSection::Auth
@@ -79,7 +82,7 @@ impl Page {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Editor {
     AddOrg,
-    /// Third-party licenses, from the sidebar footer.
+    /// Third-party licenses, from the about links.
     Licenses,
     Repositories,
     Tracked,
@@ -118,8 +121,14 @@ pub(crate) struct SettingsState {
     pub scroll_to: Option<SettingsSection>,
     /// A save is in flight; the base updates when the service confirms.
     pub saving: bool,
-    /// A save waits for the service's confirmation notice.
+    /// A save waits for the service to say whether the settings file was written.
     pub confirm_pending: bool,
+    /// The last save was applied but not written; the Save bar shows it until a write succeeds.
+    pub save_error: Option<Arc<str>>,
+    /// The last test notification, shown beside its button.
+    pub test_result: notifications::TestResult,
+    /// Scroll the test button into view on the next frame (a test sent from the palette).
+    pub reveal_test: bool,
 }
 
 impl SettingsState {
@@ -137,11 +146,19 @@ impl SettingsState {
             scroll_to: Some(section),
             saving: false,
             confirm_pending: false,
+            save_error: None,
+            test_result: None,
+            reveal_test: false,
         }
     }
 
     pub(crate) fn dirty(&self) -> bool {
         self.draft != *self.base
+    }
+
+    /// The Save bar shows: unsaved edits, or a save that could not be written (to retry).
+    pub(crate) fn save_bar_shown(&self) -> bool {
+        self.dirty() || self.save_error.is_some()
     }
 
     /// Routes people search results to the picker that asked; adds resolved people.
@@ -186,4 +203,15 @@ pub(crate) struct SettingsEnv<'a> {
     pub build: BuildInfo,
     pub licenses: &'static str,
     pub renderer_line: &'a str,
+    /// The table's column choices, live: they are layout (`UiState`), applied right away
+    /// rather than through the draft.
+    pub columns: crate::view::columns::Choices<'a>,
+}
+
+/// Scrolls the section starting here into view when settings opened for it.
+fn reveal(ui: &mut egui::Ui, st: &mut SettingsState, sections: &[SettingsSection]) {
+    if st.scroll_to.is_some_and(|s| sections.contains(&s)) {
+        ui.scroll_to_cursor(Some(egui::Align::TOP));
+        st.scroll_to = None;
+    }
 }

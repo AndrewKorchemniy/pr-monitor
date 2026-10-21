@@ -1,10 +1,13 @@
 //! First run: connect an organization, choose repositories, choose people. Each step edits a
-//! draft config that is applied when the user finishes (or skips).
+//! draft config that is applied when the user starts monitoring. The card keeps even
+//! margins in a narrow window, and its footer's buttons wrap when they do not fit beside
+//! Back.
 
 use std::sync::Arc;
 
 use eframe::egui::{self, RichText};
 use prm_config::Config;
+use prm_service::state::Banner;
 
 use crate::{
     actions::UiAction,
@@ -13,11 +16,13 @@ use crate::{
     screens::settings::{SettingsState, orgs::new_profile},
     theme::{UiTheme, adapter, icons::Icon},
     widgets::{
-        self, card,
+        self,
+        banner::banners,
+        card,
         dialog::{self, DialogHead},
         fields::{self, Field},
         people_picker::people_picker,
-        scope_picker::scope_picker,
+        scope_picker::{CatalogState, scope_picker},
     },
 };
 
@@ -43,8 +48,21 @@ impl FirstRun {
     }
 }
 
-pub(crate) fn first_run(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
+/// The current step in a card; `stopped` (the background service stopped) shows above it, as
+/// on the dashboard, since setup cannot finish without the service.
+pub(crate) fn first_run(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    fr: &mut FirstRun,
+    stopped: Option<&Banner>,
+) {
     let theme = cx.theme.clone();
+    if let Some(stopped) = stopped {
+        let mut expanded = false;
+        egui::Panel::top("banners")
+            .frame(adapter::frame_canvas(&theme).inner_margin(egui::Margin::symmetric(8, 6)))
+            .show(ui, |ui| banners(ui, cx, &[stopped], &mut expanded));
+    }
     egui::CentralPanel::no_frame()
         .frame(adapter::frame_canvas(&theme))
         .show(ui, |ui| {
@@ -117,16 +135,17 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         fr.step = Step::Connect;
         return;
     };
-    let status = org.org_id().and_then(|id| cx.state.org(id));
+    let state = cx.state;
+    let status = org.org_id().and_then(|id| state.org(id));
     let identity = status.map(|s| copy::identity(&s.label, s.auth.method));
-    let catalog = status.and_then(|o| o.catalog.clone());
+    let catalog = CatalogState::of(status);
     let reload = dialog::body(ui, &theme, |ui| {
         if let Some(identity) = &identity {
             widgets::muted(ui, &theme, identity);
             ui.add_space(theme.tokens.metrics.space.md);
         }
         let filter = &mut st.scope_filter;
-        scope_picker(ui, &theme, filter, catalog.as_deref(), &mut org.scope)
+        scope_picker(ui, &theme, filter, catalog, &mut org.scope)
     });
     if reload && let Some(id) = org.org_id() {
         cx.push(UiAction::Send(prm_service::Command::LoadCatalog {
@@ -154,7 +173,7 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     };
     let id = org.org_id().cloned();
     dialog::body(ui, &theme, |ui| {
-        group_label(ui, &theme, copy::TRACK_FROM, None);
+        group_label(ui, &theme, copy::TRACK_FROM, Some(copy::TRACK_FROM_HELP));
         let list = &mut org.people.tracked_authors;
         people_picker(ui, cx, &mut st.pickers.tracked, id.as_ref(), list);
         ui.add_space(theme.tokens.metrics.space.xl);
@@ -163,27 +182,20 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         let list = &mut org.people.reviewers;
         people_picker(ui, cx, &mut st.pickers.reviewers, id.as_ref(), list);
     });
-    // why: once people are chosen, skipping would read as throwing the choice away.
-    let nobody = org.people.tracked_authors.is_empty() && org.people.reviewers.is_empty();
-    let mut finish = None;
+    // why: no "skip": empty lists are a complete choice (everyone, any vote but the
+    // author's), so skipping would start the same monitoring.
+    let mut start = false;
     let back = footer(ui, &theme, |ui| {
-        if widgets::primary_button(ui, &theme, copy::START_MONITORING).clicked() {
-            finish = Some(true);
-        }
-        if nobody && ui.button(copy::SKIP_FOR_NOW).clicked() {
-            finish = Some(false);
-        }
+        start = widgets::primary_button(ui, &theme, copy::START_MONITORING).clicked();
     });
     if back {
         fr.step = Step::Repositories;
     }
-    if let Some(refresh) = finish {
+    if start {
         cx.push(UiAction::Send(prm_service::Command::ApplyConfig(Box::new(
             st.draft.clone(),
         ))));
-        if refresh {
-            cx.push(UiAction::Send(prm_service::Command::RefreshNow));
-        }
+        cx.push(UiAction::Send(prm_service::Command::RefreshNow));
         cx.push(UiAction::FinishFirstRun);
     }
 }
@@ -201,11 +213,13 @@ fn group_label(ui: &mut egui::Ui, theme: &UiTheme, title: &str, help: Option<&st
     ui.add_space(theme.tokens.metrics.space.sm);
 }
 
-/// The action bar: Back on the left, the step's buttons right-aligned; true on Back.
+/// The action bar: Back on the left, the step's buttons right-aligned (wrapping onto more lines
+/// when they do not fit beside it); true on Back.
 fn footer(ui: &mut egui::Ui, theme: &UiTheme, add: impl FnOnce(&mut egui::Ui)) -> bool {
     dialog::actions(ui, theme, |ui| {
         let went_back = ui.button(copy::PREVIOUS).clicked();
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
+        let right = egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true);
+        ui.with_layout(right, add);
         went_back
     })
 }

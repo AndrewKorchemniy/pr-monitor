@@ -1,6 +1,8 @@
 //! One harness for every screen: the state a screen draws from, the theme, and the action
 //! queue. Shared by the kittest tests and the screenshot gallery.
 
+use std::sync::Arc;
+
 use eframe::egui;
 use egui_kittest::Harness;
 use prm_config::UiState;
@@ -15,20 +17,26 @@ use crate::{
     },
     deps::BuildInfo,
     frame::FrameCx,
+    render::MIN_SIZE,
     screens::{
         dashboard::{DashboardUi, dashboard},
         first_run::{FirstRun, first_run},
         settings::{SettingsEnv, SettingsState, settings_modal},
         shortcuts::shortcuts,
+        token::token_dialog,
     },
     theme::{ThemeRuntime, fonts},
     ui_state::PeekLayout,
-    view::{DashboardView, changes::ChangeLog},
+    view::{DashboardView, changes::ChangeLog, columns::Choices},
     widgets::palette_view::{PaletteOutcome, palette_view},
 };
 
 /// The window size every screen is drawn at.
 pub(crate) const WINDOW: egui::Vec2 = egui::vec2(1280.0, 760.0);
+/// The smallest window the app allows.
+pub(crate) const NARROW: egui::Vec2 = egui::vec2(MIN_SIZE[0], MIN_SIZE[1]);
+/// `egui_kittest` draws the ui inside an outer margin this wide on every side (points).
+pub(crate) const HARNESS_MARGIN: f32 = 8.0;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Shown {
@@ -37,6 +45,8 @@ pub(crate) enum Shown {
     FirstRun,
     Palette,
     Shortcuts,
+    /// The personal access token dialog over the dashboard.
+    Token,
 }
 
 pub(crate) struct Fixture {
@@ -47,6 +57,8 @@ pub(crate) struct Fixture {
     pub first_run: FirstRun,
     pub palette: PaletteState,
     pub palette_outcome: Option<PaletteItem>,
+    /// The token dialog's text and its last error.
+    pub token: (String, Option<Arc<str>>),
     pub keymap: Keymap,
     pub changes: ChangeLog,
     pub actions: Actions,
@@ -77,6 +89,7 @@ impl Fixture {
             first_run: FirstRun::new(state.config.clone()),
             palette: PaletteState::default(),
             palette_outcome: None,
+            token: (String::new(), None),
             keymap: Keymap::defaults(),
             changes: ChangeLog::default(),
             actions: Actions::default(),
@@ -100,10 +113,17 @@ impl Fixture {
         };
         match self.shown {
             Shown::Dashboard => dashboard(ui, &mut cx, &mut self.dash, true),
-            Shown::FirstRun => first_run(ui, &mut cx, &mut self.first_run),
+            Shown::FirstRun => {
+                let stopped = self.dash.service_stopped.as_ref();
+                first_run(ui, &mut cx, &mut self.first_run, stopped);
+            }
             Shown::Settings => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
-                settings_modal(&ctx, &mut cx, &mut self.settings, &env());
+                let env = SettingsEnv {
+                    columns: self.dash.view.column_choices(),
+                    ..env()
+                };
+                settings_modal(&ctx, &mut cx, &mut self.settings, &env);
             }
             Shown::Palette => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
@@ -122,6 +142,11 @@ impl Fixture {
             Shown::Shortcuts => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let _ = shortcuts(&ctx, &cx);
+            }
+            Shown::Token => {
+                dashboard(ui, &mut cx, &mut self.dash, false);
+                let (input, error) = &mut self.token;
+                let _ = token_dialog(&ctx, &cx.theme, "contoso", (input, error.as_deref()));
             }
         }
     }
@@ -148,13 +173,22 @@ pub(crate) fn env() -> SettingsEnv<'static> {
         },
         licenses: "Third-party license text.",
         renderer_line: "Using OpenGL on Test GPU",
+        columns: Choices {
+            hidden: &[],
+            squeezed: &[],
+        },
     }
 }
 
 /// A headless harness (accessibility checks on, missing glyphs fail).
 pub(crate) fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
+    harness_at(fixture, WINDOW)
+}
+
+/// A headless harness with the window at `size`.
+pub(crate) fn harness_at(fixture: Fixture, size: egui::Vec2) -> Harness<'static, Fixture> {
     Harness::builder()
-        .with_size(WINDOW)
+        .with_size(size)
         .with_context_setup(fonts::install)
         .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture)
 }

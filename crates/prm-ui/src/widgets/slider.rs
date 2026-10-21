@@ -1,6 +1,6 @@
 //! A contained slider: the rail, its accent fill and the knob sit inside a bordered field with
 //! the value at the right edge. Drag or click the rail, use the arrow keys, or double-click the
-//! value to type one.
+//! value to type one. It shrinks to fit narrow rows and spans a justified layout.
 
 use std::ops::RangeInclusive;
 
@@ -13,7 +13,7 @@ use crate::theme::UiTheme;
 
 const VALUE_WIDTH: f32 = 64.0;
 /// The usual width of a settings slider.
-pub(crate) const SLIDER_WIDTH: f32 = 280.0;
+pub(crate) const SLIDER_WIDTH: f32 = crate::widgets::fit::CONTROL_WIDTH;
 const KNOB: f32 = 7.0;
 
 /// How a slider is named and how its value reads.
@@ -25,6 +25,7 @@ pub(crate) struct SliderSpec<'a> {
     pub scale: f64,
     /// Appended to the shown value ("min", "%").
     pub unit: &'a str,
+    /// The widest it gets; narrower when the row is, and the full width of a justified layout.
     pub width: f32,
 }
 
@@ -37,8 +38,12 @@ pub(crate) fn slider_field<N: Numeric>(
     spec: &SliderSpec<'_>,
 ) -> egui::Response {
     let (lo, hi) = (range.start().to_f64(), range.end().to_f64());
-    let (rect, _) =
-        ui.allocate_exact_size(vec2(spec.width, theme.control_height()), Sense::hover());
+    let width = if ui.layout().horizontal_justify() {
+        ui.available_width()
+    } else {
+        spec.width.min(ui.available_width())
+    };
+    let (rect, _) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::hover());
     let value_rect = Rect::from_min_max(pos2(rect.right() - VALUE_WIDTH, rect.top()), rect.max);
     let rail = Rect::from_min_max(
         pos2(rect.left() + KNOB + 8.0, rect.top()),
@@ -192,7 +197,7 @@ fn fraction_of(v: f64, (lo, hi): (f64, f64)) -> f32 {
     }
 }
 
-/// The field, the rail with its accent fill, and the knob (its color follows the value).
+/// The field, the rail with its accent fill, and the accent knob.
 fn paint(
     ui: &egui::Ui,
     theme: &UiTheme,
@@ -223,18 +228,13 @@ fn paint(
         painter.rect_filled(shape, 2.0, color);
     };
     bar(rail.left(), rail.right(), colors.border_default);
-    bar(rail.left(), knob_x, colors.accent_base);
+    // why: under the knob a short fill read as a stray dot beside it.
+    if knob_x - rail.left() >= KNOB {
+        bar(rail.left(), knob_x, colors.accent_base);
+    }
     let active = response.hovered() || response.dragged();
     let size = if active { KNOB + 1.0 } else { KNOB };
-    let knob = colors
-        .text_secondary
-        .lerp_to_gamma(colors.accent_base, fraction);
-    painter.circle(
-        pos2(knob_x, mid),
-        size,
-        knob,
-        Stroke::new(2.0, colors.control_bg),
-    );
+    painter.circle_filled(pos2(knob_x, mid), size, colors.accent_base);
 }
 
 fn paint_value(ui: &egui::Ui, theme: &UiTheme, rect: Rect, text: &str) {

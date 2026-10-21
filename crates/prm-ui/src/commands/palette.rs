@@ -54,8 +54,20 @@ pub(crate) enum PaletteItem {
 pub(crate) struct PaletteState {
     pub query: String,
     pub selected: usize,
+    /// The row last scrolled into view. The highlight is scrolled into view once each time it
+    /// moves, so between moves the list stays where the wheel left it.
+    pub revealed: Option<usize>,
     /// Recently run commands, newest first.
     pub recent: Vec<CommandId>,
+}
+
+impl PaletteState {
+    /// Ready to open again: no query, and the first row highlighted and scrolled into view.
+    pub(crate) fn reopen(&mut self) {
+        self.query.clear();
+        self.selected = 0;
+        self.revealed = None;
+    }
 }
 
 /// What the palette can offer besides the static commands.

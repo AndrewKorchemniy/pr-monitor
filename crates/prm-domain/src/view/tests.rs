@@ -115,6 +115,21 @@ fn filter_prefixes_author_repo_org_is() {
 }
 
 #[test]
+fn filtered_summary_follows_the_text_but_not_the_status_filter() {
+    let rows = sample();
+    let query = ViewQuery {
+        text: "fix paging".into(),
+        status: StatusFilter::Reviewed,
+        unread_only: true,
+        ..ViewQuery::default()
+    };
+    let counts = filtered_summary(&rows, &query);
+    assert_eq!(counts.total, 1);
+    assert_eq!(counts.active_comments, 1);
+    assert_eq!(filtered_summary(&rows, &ViewQuery::default()).total, 3);
+}
+
+#[test]
 fn status_filter() {
     let rows = sample();
     let query = ViewQuery {

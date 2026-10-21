@@ -8,6 +8,15 @@ pub const REFRESH_DEADLINE: Duration = Duration::from_secs(120);
 pub const LIST_CONCURRENCY: usize = 4;
 /// Concurrent thread fetches per org.
 pub const THREAD_CONCURRENCY: usize = 6;
+/// Thread reads per org per refresh. Tracking everyone in a busy project can mean hundreds of
+/// active PRs; beyond this they are read in turns (see `plan_thread_reads`). That is 25 rounds
+/// at `THREAD_CONCURRENCY`, so even 2 s requests leave most of `REFRESH_DEADLINE` for listing
+/// and lookups.
+pub const THREAD_READ_BUDGET: usize = 150;
+/// While the budget holds new PRs back, the next refresh comes this soon (or at the interval,
+/// if shorter), stretched like the interval when rate-limit headroom is low. Each one still
+/// reads at most `THREAD_READ_BUDGET` threads, so 500 new PRs are all in within about 2 min.
+pub const CATCH_UP_DELAY: Duration = Duration::from_secs(30);
 /// Vanished PRs looked up by id per refresh; the rest are carried over as stale.
 pub const VANISHED_RESOLVE_CAP: usize = 25;
 /// Projects and repositories are refetched after this long.
@@ -52,10 +61,6 @@ pub const PEOPLE_REMOTE_MIN_CHARS: usize = 3;
 pub const SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
 /// Most candidates returned per search phase.
 pub const SEARCH_LIMIT: usize = 20;
-/// The same notice for the same org is shown at most once in this window.
-pub const NOTICE_DEDUPE: Duration = Duration::from_secs(30);
-/// How long an in-app notice stays visible.
-pub const NOTICE_TTL: Duration = Duration::from_secs(8);
 /// The org-wide query probe result is trusted this long.
 pub const ORG_WIDE_PROBE_TTL: Duration = Duration::from_hours(24);
 /// A discovered tenant is trusted this long.

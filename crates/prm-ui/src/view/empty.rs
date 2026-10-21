@@ -14,8 +14,13 @@ pub(crate) enum EmptyKind {
         org: Arc<str>,
     },
     SignedOut,
-    NobodyTracked,
-    NoActivePrs,
+    /// Every organization's watching is turned off.
+    NothingWatched,
+    /// No open pull requests by anyone tracked. `everyone` when every watched organization
+    /// tracks everyone, the user included: then only the repositories can widen the view.
+    NoActivePrs {
+        everyone: bool,
+    },
     NoMatch {
         query: String,
     },
@@ -64,6 +69,9 @@ pub(crate) fn empty_kind(input: &EmptyInputs<'_>) -> Option<EmptyKind> {
 
 fn no_rows(state: &AppState) -> EmptyKind {
     let enabled: Vec<_> = state.orgs.iter().filter(|o| o.enabled).collect();
+    if enabled.is_empty() {
+        return EmptyKind::NothingWatched;
+    }
     let checking = enabled.iter().any(|o| {
         matches!(
             o.auth.state,
@@ -82,19 +90,14 @@ fn no_rows(state: &AppState) -> EmptyKind {
                 .map_or_else(|| Arc::from(""), |o| o.label.clone()),
         };
     }
-    let signed_out = !enabled.is_empty() && enabled.iter().all(|o| o.needs_sign_in());
-    if signed_out {
+    if enabled.iter().all(|o| o.needs_sign_in()) {
         return EmptyKind::SignedOut;
     }
-    let nobody = state
+    let everyone = state
         .config
         .enabled_orgs()
-        .all(|profile| profile.people.tracked_authors.is_empty() && !profile.include_me);
-    if nobody {
-        EmptyKind::NobodyTracked
-    } else {
-        EmptyKind::NoActivePrs
-    }
+        .all(|profile| profile.people.tracked_authors.is_empty() && profile.include_me);
+    EmptyKind::NoActivePrs { everyone }
 }
 
 #[cfg(test)]

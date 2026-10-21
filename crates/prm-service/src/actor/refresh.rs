@@ -181,7 +181,7 @@ impl Service {
         };
         org.live.last_error = None;
         after_success(
-            policy,
+            policy.with_backlog(org.data.loading_more),
             &mut org.live.schedule,
             now,
             rate.headroom(),
@@ -195,6 +195,7 @@ impl Service {
                 .extend(snapshot.iter().map(|(k, c)| (k.clone(), c.fingerprint)));
         }
         if let Some(catalog) = refetched {
+            self.orgs[idx].live.catalog_error = None;
             self.save_catalog(idx, &catalog);
         }
         if let Some(method) = auth.method {

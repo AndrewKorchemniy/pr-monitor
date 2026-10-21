@@ -3,12 +3,14 @@
 
 use prm_domain::PrKey;
 
-use crate::view::display::{DisplayList, DisplayRow};
+use crate::view::display::{DisplayList, DisplayRow, Pitch};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AnchorSnapshot {
     pub key: PrKey,
     pub display_index: usize,
+    /// The top of the anchor's row in the list it was captured from (points).
+    pub top: f32,
     pub offset_y: f32,
 }
 
@@ -23,12 +25,12 @@ pub(crate) enum AnchorResult {
     None,
 }
 
-/// Prefer the selected key; else the top visible PR row.
+/// Prefer the selected key; else the top visible PR row. `pitch` is how `list` was laid out.
 pub(crate) fn capture(
     list: &DisplayList,
     selected: Option<&PrKey>,
-    top_visible: Option<usize>,
-    offset_y: f32,
+    (top_visible, offset_y): (Option<usize>, f32),
+    pitch: Pitch,
 ) -> Option<AnchorSnapshot> {
     let from_selection = selected.and_then(|key| {
         let index = *list.index_of.get(key)?;
@@ -45,15 +47,16 @@ pub(crate) fn capture(
     Some(AnchorSnapshot {
         key,
         display_index,
+        top: pitch.top_of(&list.rows, display_index),
         offset_y,
     })
 }
 
-/// `offset' = max(0, offset + (new − old) · pitch)` keeps the anchor at the same screen y.
-pub(crate) fn restore(snapshot: &AnchorSnapshot, list: &DisplayList, pitch: f32) -> AnchorResult {
+/// `offset' = max(0, offset + new top − old top)` keeps the anchor at the same screen y.
+pub(crate) fn restore(snapshot: &AnchorSnapshot, list: &DisplayList, pitch: Pitch) -> AnchorResult {
     if let Some(&new_index) = list.index_of.get(&snapshot.key) {
-        let moved = row_delta(new_index, snapshot.display_index);
-        return AnchorResult::Offset((snapshot.offset_y + moved * pitch).max(0.0));
+        let moved = pitch.top_of(&list.rows, new_index) - snapshot.top;
+        return AnchorResult::Offset((snapshot.offset_y + moved).max(0.0));
     }
     if list.index_of.is_empty() {
         return AnchorResult::None;
@@ -69,14 +72,6 @@ pub(crate) fn restore(snapshot: &AnchorSnapshot, list: &DisplayList, pitch: f32)
         .map_or(AnchorResult::None, |index| AnchorResult::SelectNeighbor {
             index,
         })
-}
-
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "row counts are far below f32 precision"
-)]
-fn row_delta(new: usize, old: usize) -> f32 {
-    new as f32 - old as f32
 }
 
 #[cfg(test)]

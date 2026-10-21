@@ -2,6 +2,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use prm_ado::{AdoError, testing::ApiCall};
 use prm_domain::{
     ids::RequestId,
     person::{CandidateSource, PersonCandidate},
@@ -13,6 +14,7 @@ use super::support::{CONTOSO, list_calls, pr, refreshed, setup};
 use crate::{
     command::Command,
     event::{AppEvent, SearchPhase},
+    state::AuthStateView,
     testing::ServiceHarness,
     text,
 };
@@ -104,11 +106,6 @@ async fn open_pr_rejects_non_allowlisted_host() {
         h.opener.opened()[0].as_str(),
         pr(CONTOSO, 2).web_url.as_ref()
     );
-    let blocked = h
-        .events()
-        .into_iter()
-        .any(|e| matches!(e, AppEvent::Notice(n) if n.text.as_ref() == text::LINK_BLOCKED));
-    assert!(blocked);
     h.stop().await;
 }
 
@@ -151,12 +148,13 @@ async fn people_search_local_then_final_latest_wins() {
     h.send(search("zed r", 3));
     h.advance(Duration::from_millis(300)).await;
     let events = h.events.clone();
-    h.wait_for("final results", move |_| {
+    h.wait_for("directory results", move |_| {
         events.events().iter().any(|e| {
             matches!(
                 e,
                 AppEvent::PeopleResults {
                     phase: SearchPhase::Final,
+                    request: RequestId(3),
                     ..
                 }
             )
@@ -165,18 +163,88 @@ async fn people_search_local_then_final_latest_wins() {
     .await;
 
     let results = people_results(&h);
-    let finals: Vec<_> = results
-        .iter()
-        .filter(|(_, phase, _)| *phase == SearchPhase::Final)
-        .collect();
-    assert_eq!(finals.len(), 1);
-    assert_eq!(finals[0].0, RequestId(3));
-    assert!(finals[0].2.iter().any(|n| n.as_ref() == "Zed Remote"));
-    let locals = results
-        .iter()
-        .filter(|(_, phase, _)| *phase == SearchPhase::Local)
-        .count();
-    assert_eq!(locals, 3);
+    let requests = |wanted: &SearchPhase| -> Vec<RequestId> {
+        results
+            .iter()
+            .filter(|(_, phase, _)| phase == wanted)
+            .map(|(request, _, _)| *request)
+            .collect()
+    };
+    // why: "ze" is too short for the directory, so its local results are final at once.
+    assert_eq!(requests(&SearchPhase::Final), [RequestId(1), RequestId(3)]);
+    assert_eq!(requests(&SearchPhase::Local), [RequestId(2), RequestId(3)]);
+    let last = results.last().map(|(_, _, names)| names.clone());
+    assert!(last.is_some_and(|names| names.iter().any(|n| n.as_ref() == "Zed Remote")));
+    h.stop().await;
+}
+
+/// A failed directory search used to show only as a passing message; the picker kept saying
+/// it was searching.
+#[tokio::test(start_paused = true)]
+async fn people_search_failure_reported_with_local_results() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    h.api(&org(CONTOSO))
+        .fail(ApiCall::SearchSubjects, AdoError::Network("down".into()));
+
+    h.send(Command::SearchPeople {
+        org: org(CONTOSO),
+        query: "ann".into(),
+        request: RequestId(1),
+    });
+    h.advance(Duration::from_millis(300)).await;
+    let events = h.events.clone();
+    h.wait_for("finished search", move |_| {
+        events.events().iter().any(|e| {
+            matches!(
+                e,
+                AppEvent::PeopleResults {
+                    phase: SearchPhase::Failed(_),
+                    ..
+                }
+            )
+        })
+    })
+    .await;
+
+    let results = people_results(&h);
+    let Some((request, SearchPhase::Failed(error), names)) = results.last() else {
+        panic!("expected a failed final phase: {results:?}");
+    };
+    assert_eq!(*request, RequestId(1));
+    assert_eq!(error.title.as_ref(), text::SEARCH_FAILED);
+    assert!(names.iter().any(|n| n.as_ref() == "Ann"), "{names:?}");
+    h.stop().await;
+}
+
+/// Signed out, the directory is not searched; the picker must not read that as "nobody
+/// matches".
+#[tokio::test(start_paused = true)]
+async fn people_search_signed_out_is_local_only() {
+    let mut h = ServiceHarness::start(setup(vec![(CONTOSO, vec![pr(CONTOSO, 1)])]));
+    refreshed(&mut h, CONTOSO, 1).await;
+    h.send(Command::SignOut { org: org(CONTOSO) });
+    h.wait_for("signed out", |s| {
+        s.org(&org(CONTOSO))
+            .is_some_and(|o| o.auth.state == AuthStateView::SignedOut)
+    })
+    .await;
+
+    h.send(Command::SearchPeople {
+        org: org(CONTOSO),
+        query: "ann".into(),
+        request: RequestId(1),
+    });
+    h.advance(Duration::from_millis(300)).await;
+    h.settle().await;
+
+    let results = people_results(&h);
+    let [(request, SearchPhase::LocalOnly, names)] = results.as_slice() else {
+        panic!("expected one local-only phase: {results:?}");
+    };
+    assert_eq!(*request, RequestId(1));
+    assert!(names.iter().any(|n| n.as_ref() == "Ann"), "{names:?}");
+    assert_eq!(h.api(&org(CONTOSO)).calls(ApiCall::SearchSubjects), 0);
     h.stop().await;
 }
 

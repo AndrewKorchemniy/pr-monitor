@@ -131,3 +131,27 @@ fn diff_configs_duplicate_uses_first_entry() {
         }
     );
 }
+
+/// Emptying the list switches to tracking everyone (and back): both widen or narrow what is
+/// shown, so the next refresh must rebaseline instead of toasting every PR as new.
+#[test]
+fn diff_configs_emptying_tracked_authors_rebaselines() {
+    let mut listed = config(&["contoso"]);
+    listed.orgs[0]
+        .people
+        .tracked_authors
+        .push(prm_domain::Person::new(
+            prm_domain::Vsid::from_u128(7),
+            "Maya Patel",
+        ));
+    let everyone = config(&["contoso"]);
+    for (old, new) in [(&listed, &everyone), (&everyone, &listed)] {
+        assert_eq!(
+            only_change(old, new),
+            OrgChanges {
+                authors: true,
+                ..OrgChanges::default()
+            }
+        );
+    }
+}
