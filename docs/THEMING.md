@@ -1,13 +1,14 @@
 # Theming
 
 Every colour, radius, spacing and motion value comes from a theme. A theme is one TOML file.
-The three built-in themes are in `crates/prm-theme/themes/`:
+The four built-in themes are in `crates/prm-theme/themes/`:
 
 | Theme | Appearance | Character |
 |---|---|---|
 | Graphite | dark (default) | graphite pencil on a dark drafting table |
 | Vellum | light | drafting film; the default light theme |
 | Cyanotype | dark | a blueprint: square corners, no stripes |
+| Paper | light | aged paper and fountain-pen ink: warm off-white, deep teal accent |
 
 ## Making your own
 

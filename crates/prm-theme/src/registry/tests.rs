@@ -63,7 +63,7 @@ fn missing_user_dir_is_fine() {
     let dir = tempfile::tempdir().unwrap();
     let (registry, issues) = ThemeRegistry::builtin().with_user_dir(&dir.path().join("nope"));
     assert_eq!(issues, Vec::new());
-    assert_eq!(registry.list().count(), 3);
+    assert_eq!(registry.list().count(), 4);
 }
 
 #[test]
