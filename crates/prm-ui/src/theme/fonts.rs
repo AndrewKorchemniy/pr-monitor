@@ -1,5 +1,6 @@
 //! The embedded Atkinson Hyperlegible Next (UI) and Mono (numbers, ids, branches) variable fonts,
 //! registered once per weight through the `wght` axis (the bytes are shared, not copied).
+//! Both are OFL Modified Versions whose `zero` has no slash (see `assets/fonts/README.md`).
 
 use std::sync::Arc;
 
