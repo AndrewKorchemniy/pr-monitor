@@ -1,8 +1,7 @@
 //! The command palette (Ctrl+K): a query field over commands, sign-ins, themes and `!number`
-//! jumps. Arrow keys move, Enter runs, Esc closes. In a small window it is narrower and lists
-//! fewer rows at a time, scrolled to keep the highlighted one in view.
-
-use std::ops::Range;
+//! jumps. Arrow keys move, Enter runs, Esc closes. It lists up to a dozen rows at a time (fewer
+//! in a short window) and scrolls for the rest; the highlighted row is scrolled into view when
+//! it moves. In a narrow window it is narrower.
 
 use eframe::egui::{self, Key, Modifiers};
 
@@ -86,11 +85,7 @@ fn show(
     let area = egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, top));
     let frame = crate::theme::adapter::frame_popup(theme, theme.policy);
     let width = WIDTH.min(fit::room(window).x - frame.total_margin().sum().x);
-    let rows = rows_that_fit(
-        theme,
-        window.y - top - fit::window_margin(window.min_elem()),
-    );
-    let shown = visible(state.selected, items.len(), rows);
+    let rows = rows_that_fit(theme, window.y - top - fit::window_margin(window.y));
     let mut clicked = None;
     let modal = egui::Modal::new(id)
         .area(area)
@@ -102,23 +97,59 @@ fn show(
             response.request_focus();
             if response.changed() {
                 state.selected = 0;
+                state.revealed = None;
             }
             ui.separator();
             if items.is_empty() {
                 widgets::muted(ui, theme, copy::PALETTE_EMPTY);
             }
             ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
-            for (index, (item, title)) in items.iter().enumerate().take(shown.end).skip(shown.start)
-            {
-                if row(ui, theme, title, index == state.selected).clicked() {
-                    clicked = Some(item.clone());
-                }
-            }
+            clicked = list(ui, theme, state, items, rows);
             ui.separator();
             widgets::muted(ui, theme, copy::PALETTE_FOOTER);
         });
     let close = clicked.is_none() && modal.should_close();
     (clicked, close)
+}
+
+/// The results, `rows` high at most, scrolling (by wheel or bar) for the rest; the highlighted
+/// row is scrolled into view each time it moves. Returns a clicked item.
+fn list(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    state: &mut PaletteState,
+    items: &[(PaletteItem, String)],
+    rows: usize,
+) -> Option<PaletteItem> {
+    let mut clicked = None;
+    // why: an overlay scrollbar, so the rows keep their width once the list scrolls.
+    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+    egui::ScrollArea::vertical()
+        .id_salt("palette_rows")
+        .max_height(list_height(theme, rows))
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for (index, (item, title)) in items.iter().enumerate() {
+                let selected = index == state.selected;
+                let response = row(ui, theme, title, selected);
+                if selected && state.revealed != Some(index) {
+                    response.scroll_to_me(None);
+                    state.revealed = Some(index);
+                }
+                if response.clicked() {
+                    clicked = Some(item.clone());
+                }
+            }
+        });
+    clicked
+}
+
+/// The height of `rows` result rows and the gaps between them, in points.
+fn list_height(theme: &UiTheme, rows: usize) -> f32 {
+    let gap = theme.tokens.metrics.space.xxs;
+    #[expect(clippy::cast_precision_loss, reason = "a dozen rows")]
+    let rows = rows as f32;
+    rows * (theme.control_height() + gap) - gap
 }
 
 /// How many result rows fit in `height` points below the palette's top, besides its field,
@@ -135,14 +166,6 @@ fn rows_that_fit(theme: &UiTheme, height: f32) -> usize {
     )]
     let fits = fits as usize;
     fits.clamp(MIN_ROWS, MAX_ROWS)
-}
-
-/// The rows listed: `rows` of `count` starting at the top, moved down just enough to keep the
-/// `selected` row in view.
-fn visible(selected: usize, count: usize, rows: usize) -> Range<usize> {
-    let start = selected.saturating_add(1).saturating_sub(rows);
-    let start = start.min(count.saturating_sub(rows));
-    start..(start + rows).min(count)
 }
 
 /// One result: left-aligned, highlighted with the accent tint when selected.

@@ -3,6 +3,7 @@
 
 mod dialogs;
 mod sign_in;
+mod tabs;
 
 pub(crate) use dialogs::editor;
 use eframe::egui::{self, RichText};
@@ -11,7 +12,7 @@ use prm_domain::{
     OrgId, Person, auth::SettingsSection, classify::EmptyReviewerPolicy, ids::parse_org_input,
     plan::DraftPolicy,
 };
-use prm_service::{AuthStateView, Command};
+use prm_service::Command;
 
 use crate::{
     actions::UiAction,
@@ -19,7 +20,7 @@ use crate::{
     frame::FrameCx,
     route::ModalKind,
     screens::settings::{Editor, SettingsState},
-    theme::{Tone, UiTheme, icons::Icon},
+    theme::UiTheme,
     widgets::{
         self, card,
         controls::{self, setting_row, toggle_row},
@@ -42,36 +43,28 @@ pub(crate) fn new_profile(input: &str) -> Option<OrgProfile> {
 
 pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState) {
     let theme = cx.theme.clone();
-    org_tabs(ui, cx, st);
+    tabs::org_tabs(ui, cx, st);
     ui.add_space(theme.tokens.metrics.space.xl);
     if st.org >= st.draft.orgs.len() {
         widgets::muted(ui, &theme, copy::NO_ORGS);
         return;
     }
     let saved = saved(st);
-    reveal(ui, st, &[SettingsSection::Auth]);
+    super::reveal(ui, st, &[SettingsSection::Auth]);
     card::section(ui, &theme, copy::CONNECTION, None, |ui| {
         sign_in::section(ui, cx, st, saved);
     });
     card::section(ui, &theme, copy::ORGANIZATION, None, |ui| {
         details(ui, &theme, &mut st.draft.orgs[st.org]);
     });
-    reveal(ui, st, &[SettingsSection::Scope]);
+    super::reveal(ui, st, &[SettingsSection::Scope]);
     card::section(ui, &theme, copy::REPOSITORIES, None, |ui| {
         repositories(ui, cx, st);
     });
-    reveal(ui, st, &[SettingsSection::People]);
+    super::reveal(ui, st, &[SettingsSection::People]);
     card::section(ui, &theme, copy::PEOPLE, None, |ui| people(ui, &theme, st));
     if ui.button(copy::REMOVE_ORG).clicked() {
         cx.push(UiAction::Modal(ModalKind::RemoveOrg(st.org)));
-    }
-}
-
-/// Scrolls the section starting here into view when settings opened for it.
-fn reveal(ui: &mut egui::Ui, st: &mut SettingsState, sections: &[SettingsSection]) {
-    if st.scroll_to.is_some_and(|s| sections.contains(&s)) {
-        ui.scroll_to_cursor(Some(egui::Align::TOP));
-        st.scroll_to = None;
     }
 }
 
@@ -93,142 +86,6 @@ pub(crate) fn breadcrumb(ui: &mut egui::Ui, theme: &UiTheme, st: &SettingsState)
     }
     ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.sm;
     card::breadcrumb(ui, theme, &crumbs);
-}
-
-/// One tab per org with its sign-in state as a dot, then Add organization, over a baseline.
-fn org_tabs(ui: &mut egui::Ui, cx: &FrameCx<'_>, st: &mut SettingsState) {
-    let theme = cx.theme.clone();
-    let mut picked = None;
-    let mut add = false;
-    let row = ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.xs;
-        for (index, org) in st.draft.orgs.iter().enumerate() {
-            let state = org
-                .org_id()
-                .and_then(|id| cx.state.org(id))
-                .map(|o| &o.auth.state);
-            let label = org.display_label();
-            if org_tab(ui, &theme, (&label, state), st.org == index).clicked() {
-                picked = Some(index);
-            }
-        }
-        ui.add_space(theme.tokens.metrics.space.sm);
-        add = add_tab(ui, &theme).clicked();
-    });
-    let line = row.response.rect;
-    let stroke = egui::Stroke::new(
-        theme.tokens.metrics.stroke.hairline,
-        theme.colors.border_default,
-    );
-    ui.painter()
-        .hline(line.left()..=ui.max_rect().right(), line.bottom(), stroke);
-    if add {
-        st.new_org_url.clear();
-        st.url_error = false;
-        st.editing = Some(Editor::AddOrg);
-    }
-    if let Some(index) = picked
-        && index != st.org
-    {
-        st.org = index;
-        st.pickers = super::Pickers::default();
-    }
-}
-
-const fn auth_tone(state: &AuthStateView) -> Tone {
-    match state {
-        AuthStateView::SignedIn => Tone::Success,
-        AuthStateView::NeedsSignIn { .. } => Tone::Warning,
-        AuthStateView::Blocked { .. } => Tone::Danger,
-        AuthStateView::Unknown
-        | AuthStateView::Checking
-        | AuthStateView::SigningIn { .. }
-        | AuthStateView::SignedOut
-        | AuthStateView::Disabled => Tone::Neutral,
-    }
-}
-
-fn org_tab(
-    ui: &mut egui::Ui,
-    theme: &UiTheme,
-    (label, state): (&str, Option<&AuthStateView>),
-    selected: bool,
-) -> egui::Response {
-    let m = &theme.tokens.metrics;
-    let c = &theme.colors;
-    let (text, font) = if selected {
-        (c.text_primary, theme.fonts.body_strong.clone())
-    } else {
-        (c.text_secondary, theme.fonts.body.clone())
-    };
-    let pad = m.space.lg;
-    let chrome = pad + 7.0 + m.space.sm + pad;
-    // why: a long org name is cut short rather than running out of a narrow page.
-    let mut job = egui::text::LayoutJob::simple_singleline(label.to_owned(), font, text);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(ui.max_rect().width() - chrome);
-    let galley = ui.painter().layout_job(job);
-    let width = chrome + galley.size().x;
-    let size = egui::vec2(width, theme.control_height());
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    if response.hovered() && !selected {
-        let top = egui::CornerRadius {
-            nw: m.radius.md,
-            ne: m.radius.md,
-            sw: 0,
-            se: 0,
-        };
-        ui.painter().rect_filled(rect, top, c.control_hover);
-    }
-    if selected {
-        let bar = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max);
-        ui.painter().rect_filled(bar, 1.0, c.accent_base);
-    }
-    let tone = state.map_or(Tone::Neutral, auth_tone);
-    let dot = egui::pos2(rect.left() + pad + 3.5, rect.center().y);
-    ui.painter().circle_filled(dot, 3.5, c.tone(tone).solid);
-    let at = egui::pos2(
-        dot.x + 3.5 + m.space.sm,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter().galley(at, galley, text);
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, label));
-    match state.map(copy::auth_state_short) {
-        Some(tip) => response.on_hover_text(tip),
-        None => response,
-    }
-}
-
-/// "+ Add organization" drawn like a tab, so the strip reads as one control.
-fn add_tab(ui: &mut egui::Ui, theme: &UiTheme) -> egui::Response {
-    let m = &theme.tokens.metrics;
-    let galley = ui.painter().layout_no_wrap(
-        copy::ADD_ORG.to_owned(),
-        theme.fonts.body.clone(),
-        theme.colors.text_secondary,
-    );
-    let pad = m.space.lg;
-    let width = pad + 12.0 + m.space.sm + galley.size().x + pad;
-    let size = egui::vec2(width, theme.control_height());
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    controls::ghost_fill(ui, theme, rect, &response);
-    let color = if response.hovered() {
-        theme.colors.text_primary
-    } else {
-        theme.colors.text_secondary
-    };
-    let glyph = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + pad + 6.0, rect.center().y),
-        egui::vec2(12.0, 12.0),
-    );
-    crate::theme::icons::paint(ui.painter(), glyph, Icon::Plus, color);
-    let at = egui::pos2(
-        glyph.right() + m.space.sm,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter().galley(at, galley, color);
-    let name = copy::ADD_ORG;
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-    response
 }
 
 /// Adds (or selects) the org typed in the field. A new org is applied to the service right away

@@ -1,5 +1,6 @@
-//! The overlays and first run in small windows: a phone-sized one (360 pt wide) and one 600 pt
-//! wide. Settings folds its sidebar into a page menu there, rows stack, and dialogs fit.
+//! The overlays and first run in small windows: a phone-sized one (360 pt wide), one 600 pt
+//! wide, and the shortest the app allows. Settings folds its sidebar into a page menu there, rows
+//! stack, and dialogs fit.
 
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use egui_kittest::{
     Harness,
     kittest::{AccessKitNode, Queryable as _},
 };
-use prm_domain::auth::AuthMode;
+use prm_domain::auth::{AuthMode, SettingsSection};
 use prm_service::{AppState, SearchPhase};
 
 use super::{Pointer, Scene, editing, first_run_step, matches, nothing, scene};
@@ -16,7 +17,7 @@ use crate::{
     copy,
     screens::{
         first_run::Step,
-        settings::{Editor, PAGES},
+        settings::{Editor, PAGES, SettingsState, orgs::new_profile},
     },
     testing::{
         demo::{demo_state, empty_state},
@@ -28,6 +29,8 @@ use crate::{
 const PHONE: egui::Vec2 = vec2(360.0, 640.0);
 /// A small window, still too narrow for the settings sidebar.
 const SMALL: egui::Vec2 = vec2(600.0, 800.0);
+/// The shortest window the app allows, at phone width.
+const SHORT: egui::Vec2 = vec2(360.0, 420.0);
 
 /// A scene's name at each size.
 type Names = (&'static str, &'static str);
@@ -36,8 +39,8 @@ type Pair = (Names, Shown, fn() -> AppState, fn(&mut Fixture));
 /// A settings scene's names, its setup and what the pointer does.
 type Pointed = (Names, fn(&mut Fixture), Pointer);
 
-/// The four pages, the last two with the Save bar.
-fn settings_pages() -> [Pair; 6] {
+/// The four pages, General opened for About, more orgs than fit on a line, and the Save bar.
+fn settings_pages() -> [Pair; 8] {
     let settings = Shown::Settings;
     [
         (
@@ -51,6 +54,18 @@ fn settings_pages() -> [Pair; 6] {
             settings,
             demo_state,
             |f| f.settings.page = PAGES[1],
+        ),
+        (
+            ("settings-about-360", "settings-about-600"),
+            settings,
+            demo_state,
+            opened_for_about,
+        ),
+        (
+            ("settings-many-orgs-360", "settings-many-orgs-600"),
+            settings,
+            demo_state,
+            many_orgs,
         ),
         (
             ("settings-notifications-360", "settings-notifications-600"),
@@ -176,9 +191,10 @@ fn other_pairs() -> [Pair; 7] {
     ]
 }
 
-/// Every pair at both sizes.
+/// Every pair at both sizes, then the repositories dialog in the shortest window, searched so
+/// its list is longer than the dialog.
 pub(super) fn scenes() -> Vec<Scene> {
-    settings_pages()
+    let mut all: Vec<Scene> = settings_pages()
         .into_iter()
         .chain(settings_dialogs())
         .chain(other_pairs())
@@ -188,7 +204,36 @@ pub(super) fn scenes() -> Vec<Scene> {
                 scene(small, shown, state, setup).at(SMALL),
             ]
         })
-        .collect()
+        .collect();
+    let searched = |f: &mut Fixture| {
+        editing(f, Editor::Repositories);
+        "e".clone_into(&mut f.settings.scope_filter.text);
+    };
+    all.push(
+        scene(
+            "settings-choose-repositories-short",
+            Shown::Settings,
+            demo_state,
+            searched,
+        )
+        .at(SHORT),
+    );
+    all
+}
+
+/// Settings as the About command opens it.
+fn opened_for_about(f: &mut Fixture) {
+    let config = f.state.config.clone();
+    f.settings = SettingsState::new(config, SettingsSection::About);
+}
+
+/// Organizations with six orgs, the last selected: more tabs than fit on one line.
+fn many_orgs(f: &mut Fixture) {
+    f.settings.page = PAGES[1];
+    for org in ["northwind", "tailspin", "fourthcoffee", "woodgrove"] {
+        f.settings.draft.orgs.extend(new_profile(org));
+    }
+    f.settings.org = f.settings.draft.orgs.len() - 1;
 }
 
 /// The page menu open, the about links at the end of General, and the Advanced sign-in fields.

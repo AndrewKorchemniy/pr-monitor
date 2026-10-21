@@ -9,13 +9,15 @@ mod save_bar;
 use eframe::egui::{self, Margin, Rect, RichText, Sense, Stroke, UiBuilder, pos2, vec2};
 use prm_domain::auth::SettingsSection;
 
-use super::{PAGES, Page, SettingsEnv, SettingsState, appearance, general, notifications, orgs};
+use super::{
+    PAGES, Page, SettingsEnv, SettingsState, appearance, general, notifications, orgs, reveal,
+};
 use crate::{
     actions::UiAction,
     copy,
     frame::FrameCx,
     theme::{UiTheme, adapter, icons},
-    widgets::{self, card, controls, fit},
+    widgets::{self, card, controls, dialog, fit},
 };
 
 const NAV_WIDTH: f32 = 232.0;
@@ -60,8 +62,7 @@ pub(crate) fn settings_modal(
 ) {
     let theme = cx.theme.clone();
     let frame = adapter::frame_dialog(&theme, theme.policy).inner_margin(Margin::ZERO);
-    let chrome = frame.total_margin().sum();
-    let size = fit::fit(MAX_SIZE + chrome, ctx.content_rect().size()) - chrome;
+    let size = inner_size(ctx.content_rect().size(), frame.total_margin().sum());
     let nav = Nav::for_width(size.x);
     let modal = egui::Modal::new(egui::Id::unique("settings"))
         .frame(frame)
@@ -79,6 +80,12 @@ pub(crate) fn settings_modal(
         cx.push(UiAction::LeaveSettings);
     }
     orgs::editor(ctx, cx, st, env);
+}
+
+/// The settings window's size inside its frame (`chrome` points of margin and stroke) in a
+/// window of `window` points.
+fn inner_size(window: egui::Vec2, chrome: egui::Vec2) -> egui::Vec2 {
+    fit::fit(MAX_SIZE + chrome, window) - chrome
 }
 
 /// The sidebar in `rect`'s left edge and the page beside it.
@@ -234,18 +241,13 @@ fn page_column(
     }
 }
 
-/// The page's title and the close button, which keeps its place however long the title gets.
+/// The page's title (or the page menu) and the close button, which keeps its place however
+/// long the title gets.
 fn page_header(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsState, nav: Nav) {
     let theme = cx.theme.clone();
-    ui.horizontal_centered(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if controls::close_button(ui, &theme, copy::CLOSE).clicked() {
-                cx.push(UiAction::LeaveSettings);
-            }
-            let left = egui::Layout::left_to_right(egui::Align::Center);
-            ui.with_layout(left, |ui| page_title(ui, &theme, st, nav));
-        });
-    });
+    if dialog::with_close(ui, &theme, true, |ui| page_title(ui, &theme, st, nav)) {
+        cx.push(UiAction::LeaveSettings);
+    }
 }
 
 /// The page's title, its breadcrumb on Organizations, or the page menu in a narrow window.
@@ -296,6 +298,7 @@ fn page_body(
         Page::Appearance => appearance::page(ui, cx, &mut st.draft, env),
     }
     if nav == Nav::Menu && st.page == Page::General {
+        reveal(ui, st, &[SettingsSection::About]);
         let title = copy::settings_section(SettingsSection::About);
         card::section(ui, &theme, title, None, |ui| {
             about::section(ui, cx, st, env);

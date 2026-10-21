@@ -1,6 +1,7 @@
 //! Which projects and repositories an org watches: all projects, or chosen projects with all or
 //! chosen repositories. Searchable; built from the org's catalog. In a narrow dialog the summary
-//! moves under the "Watch all projects" line, and in a short window the list is shorter.
+//! moves under the "Watch all projects" line; in a short window the list is shorter, and in a
+//! very short one it scrolls with the dialog instead of in a box of its own.
 
 use std::sync::Arc;
 
@@ -26,11 +27,13 @@ use crate::{
 
 /// The project list's height in a tall window, in points.
 const LIST_HEIGHT: f32 = 300.0;
-/// The shortest the project list gets, in points.
-const LIST_MIN: f32 = 120.0;
 /// The window height the list leaves to everything around it (the dialog's header, the search
 /// field, the action bar and the margins), in points.
 const LIST_SURROUND: f32 = 400.0;
+/// From this window height (points) the list scrolls in a box of its own. In a shorter window
+/// that box would be a few rows scrolling inside a scrolling dialog, so the list is laid out in
+/// full and the dialog's body (or the first-run page) is the one thing that scrolls.
+const LIST_BOX_FROM: f32 = 560.0;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScopeFilter {
@@ -82,13 +85,18 @@ pub(crate) fn scope_picker(
     ui.add_space(theme.tokens.metrics.space.sm);
     let needle = filter.text.trim().to_lowercase();
     let window = ui.ctx().content_rect().height();
-    let height = (window - LIST_SURROUND).clamp(LIST_MIN, LIST_HEIGHT);
+    let list_box = (window >= LIST_BOX_FROM).then(|| (window - LIST_SURROUND).min(LIST_HEIGHT));
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
-        egui::ScrollArea::vertical()
-            .max_height(height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
+        match list_box {
+            Some(height) => {
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
+            }
+            None => project_list(ui, theme, catalog, &needle, scope),
+        }
     });
     reload
 }
@@ -132,7 +140,10 @@ fn header(
         });
     });
     if below {
-        summary_line(ui, theme, catalog, &line);
+        ui.horizontal(|ui| {
+            ui.add_space(CHEVRON);
+            summary_line(ui, theme, catalog, &line);
+        });
     }
     reload
 }

@@ -21,3 +21,19 @@ fn the_sidebar_folds_into_a_page_menu_below_720_points() {
         "rows beside the sidebar keep their controls inline"
     );
 }
+
+/// A taller window made settings narrower, so the sidebar folded away as the window grew.
+#[test]
+fn the_window_height_does_not_change_the_navigation() {
+    let chrome = vec2(2.0, 2.0);
+    for width in [600.0, 720.0, 760.0, 780.0, 800.0, 1280.0] {
+        let nav = |height: f32| Nav::for_width(inner_size(vec2(width, height), chrome).x);
+        let short = nav(420.0);
+        for height in [560.0, 600.0, 640.0, 740.0, 800.0, 1200.0] {
+            assert_eq!(nav(height), short, "{width} by {height} pt");
+        }
+    }
+    let nav = |width: f32| Nav::for_width(inner_size(vec2(width, 800.0), chrome).x);
+    assert_eq!(nav(760.0), Nav::Menu);
+    assert_eq!(nav(790.0), Nav::Sidebar);
+}

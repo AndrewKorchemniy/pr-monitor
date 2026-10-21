@@ -4,7 +4,7 @@
 //! title wraps beside the close button, and the action bar's buttons wrap onto more lines when
 //! the dialog is narrow.
 
-use eframe::egui::{self, Margin, RichText, Stroke};
+use eframe::egui::{self, Margin, Rect, RichText, Stroke, UiBuilder, Vec2, pos2};
 
 use crate::{
     theme::UiTheme,
@@ -51,25 +51,48 @@ pub(crate) fn header(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) 
         .inner_margin(pad(theme))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            if !head.close {
+            if head.close {
+                with_close(ui, theme, false, |ui| title(ui, theme, head))
+            } else {
                 title(ui, theme, head);
-                return false;
+                false
             }
-            // why: the close button is placed first, so a long title wraps beside it instead
-            // of pushing it out of the dialog.
-            let right = egui::Layout::right_to_left(egui::Align::Min);
-            ui.with_layout(right, |ui| {
-                let closed = controls::close_button(ui, theme, crate::copy::CLOSE).clicked();
-                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                    title(ui, theme, head);
-                });
-                closed
-            })
-            .inner
         })
         .inner;
     divider(ui, theme);
     closed
+}
+
+/// `add` (a title) in the `Ui`'s width short of a close button at its right, then the button,
+/// at the top or, when `centered`, halfway down the `Ui`'s rect with the title centred beside
+/// it. The title wraps or is cut short instead of pushing the button out, and it comes before
+/// the button in reading and Tab order. Returns true when the close button was clicked.
+pub(crate) fn with_close(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    centered: bool,
+    add: impl FnOnce(&mut egui::Ui),
+) -> bool {
+    let side = controls::close_side(theme);
+    let full = ui.available_rect_before_wrap();
+    let top = if centered {
+        full.center().y - side / 2.0
+    } else {
+        full.top()
+    };
+    let close = Rect::from_min_size(pos2(full.right() - side, top), Vec2::splat(side));
+    let room = full.with_max_x(close.left() - ui.spacing().item_spacing.x);
+    let layout = egui::Layout::top_down(egui::Align::Min);
+    ui.scope_builder(UiBuilder::new().max_rect(room).layout(layout), |ui| {
+        if centered {
+            ui.horizontal_centered(add);
+        } else {
+            add(ui);
+        }
+    });
+    ui.expand_to_include_rect(close);
+    let mut slot = ui.new_child(UiBuilder::new().max_rect(close));
+    controls::close_button(&mut slot, theme, crate::copy::CLOSE).clicked()
 }
 
 fn title(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) {

@@ -20,6 +20,8 @@ use crate::{
 
 /// The width of the Change sign-in menu.
 const MENU_WIDTH: f32 = 260.0;
+/// The side of the sign-in state's dot, in points.
+const STATE_DOT: f32 = 8.0;
 
 const MODES: [(AuthMode, &str); 4] = [
     (AuthMode::Auto, "Automatic (Azure CLI, then a saved token)"),
@@ -59,26 +61,47 @@ pub(super) fn section(
     }
 }
 
-/// The state line with, once signed in, Sign out and Change sign-in on its right; in a narrow
-/// page the buttons go on the line below.
+/// The state line with, once signed in, Change sign-in and Sign out at its right end, or on the
+/// line below when they do not fit beside it.
 fn headline(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
     let theme = cx.theme.clone();
-    let signed_in = matches!(status.auth.state, AuthStateView::SignedIn);
-    if fit::row_stacks(ui.available_width()) {
+    if !matches!(status.auth.state, AuthStateView::SignedIn) {
         ui.horizontal_wrapped(|ui| state_line(ui, &theme, status));
-        if signed_in {
-            ui.horizontal_wrapped(|ui| signed_in_buttons(ui, cx, status));
-        }
+        return;
+    }
+    let gap = ui.spacing().item_spacing.x;
+    let buttons = widgets::button_width(ui, &theme, copy::CHANGE_SIGN_IN)
+        + gap
+        + widgets::button_width(ui, &theme, copy::SIGN_OUT);
+    if state_width(ui, &theme, status) + gap + buttons > ui.available_width() {
+        ui.horizontal_wrapped(|ui| state_line(ui, &theme, status));
+        ui.horizontal_wrapped(|ui| signed_in_buttons(ui, cx, status));
         return;
     }
     ui.horizontal(|ui| {
         state_line(ui, &theme, status);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if signed_in {
-                signed_in_buttons(ui, cx, status);
-            }
-        });
+        // why: laid out left to right after a gap, not right to left, so the buttons come in
+        // the same reading and Tab order as on the line below.
+        ui.add_space((ui.available_width() - buttons).max(0.0));
+        signed_in_buttons(ui, cx, status);
     });
+}
+
+/// The state line's width on one line: the dot, the headline and "via Azure CLI".
+fn state_width(ui: &egui::Ui, theme: &UiTheme, status: &OrgStatus) -> f32 {
+    let gap = ui.spacing().item_spacing.x;
+    let measure = |text: String, font: egui::FontId| {
+        let galley = ui
+            .painter()
+            .layout_no_wrap(text, font, theme.colors.text_primary);
+        galley.size().x
+    };
+    let (text, _) = state_text(status);
+    let mut width = STATE_DOT + gap + measure(text, theme.fonts.body_strong.clone());
+    if let (AuthStateView::SignedIn, Some(method)) = (&status.auth.state, status.auth.method) {
+        width += gap + measure(copy::via(method.label()), theme.fonts.small.clone());
+    }
+    width
 }
 
 /// The sign-in method, the tenant, and (only for the organization's app) its client ID and
@@ -152,7 +175,18 @@ fn entra_rows(
 
 /// The state dot and headline ("Signed in as Maya Patel", then "via Azure CLI" muted).
 fn state_line(ui: &mut egui::Ui, theme: &UiTheme, status: &OrgStatus) {
-    let (text, tone) = match &status.auth.state {
+    let (text, tone) = state_text(status);
+    let icon = crate::theme::icons::Icon::Dot;
+    crate::theme::icons::show(ui, icon, STATE_DOT, theme.colors.tone(tone).solid);
+    ui.label(RichText::new(text).font(theme.fonts.body_strong.clone()));
+    if let (AuthStateView::SignedIn, Some(method)) = (&status.auth.state, status.auth.method) {
+        widgets::muted(ui, theme, &copy::via(method.label()));
+    }
+}
+
+/// The headline ("Signed in as Maya Patel") and the tone of its dot.
+fn state_text(status: &OrgStatus) -> (String, Tone) {
+    match &status.auth.state {
         AuthStateView::SignedIn => {
             let name = status
                 .auth
@@ -170,12 +204,6 @@ fn state_line(ui: &mut egui::Ui, theme: &UiTheme, status: &OrgStatus) {
         AuthStateView::SignedOut | AuthStateView::Disabled => {
             (copy::SIGNED_OUT.to_owned(), Tone::Neutral)
         }
-    };
-    let icon = crate::theme::icons::Icon::Dot;
-    crate::theme::icons::show(ui, icon, 8.0, theme.colors.tone(tone).solid);
-    ui.label(RichText::new(text).font(theme.fonts.body_strong.clone()));
-    if let (AuthStateView::SignedIn, Some(method)) = (&status.auth.state, status.auth.method) {
-        widgets::muted(ui, theme, &copy::via(method.label()));
     }
 }
 
@@ -193,13 +221,8 @@ fn detail(status: &OrgStatus) -> Option<String> {
     }
 }
 
-/// Signed in: Sign out, and a menu with the other ways to sign in.
+/// Signed in: a menu with the other ways to sign in, then Sign out.
 fn signed_in_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
-    if ui.button(copy::SIGN_OUT).clicked() {
-        cx.push(UiAction::Send(Command::SignOut {
-            org: status.id.clone(),
-        }));
-    }
     let response = ui.button(copy::CHANGE_SIGN_IN);
     let theme = cx.theme.clone();
     egui::Popup::menu(&response)
@@ -211,6 +234,11 @@ fn signed_in_buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus
             ui.spacing_mut().item_spacing.y = 0.0;
             method_items(ui, cx, status);
         });
+    if ui.button(copy::SIGN_OUT).clicked() {
+        cx.push(UiAction::Send(Command::SignOut {
+            org: status.id.clone(),
+        }));
+    }
 }
 
 /// Not signed in: Microsoft sign-in as the primary action, the alternatives beside it.

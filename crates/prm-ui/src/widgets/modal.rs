@@ -67,6 +67,9 @@ pub(crate) fn modal(
         let bar = id.with("action_bar");
         let used = ui.cursor().top() - top + bar_height(ui, theme, spec, bar);
         let height = (room.y - used).clamp(MIN_BODY, MAX_BODY);
+        // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
+        // when it starts to scroll (as the settings page does).
+        ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
         egui::ScrollArea::vertical()
             .id_salt(id.with("body"))
             .max_height(height)

@@ -2,6 +2,9 @@
 //! nothing runs past the window's sides, dialogs lie inside it, and the controls a user needs
 //! (Close, the page menu, Save) are there and take a click.
 
+mod lists;
+mod navigation;
+
 use std::sync::Arc;
 
 use eframe::egui::{self, Role, accesskit::Toggled, vec2};
@@ -64,7 +67,7 @@ fn assert_close_buttons(h: &Harness<'_, Fixture>, size: egui::Vec2) {
         .collect();
     assert!(!closes.is_empty(), "{size:?}: no close button");
     for close in &closes {
-        assert_clickable(close, size);
+        assert_clickable(h, close, size);
     }
 }
 
@@ -74,7 +77,7 @@ fn every_settings_page_fits_a_small_window() {
         for page in PAGES {
             let h = settings_at(page, size);
             assert_overlays_fit(&h, size);
-            assert_clickable(&page_menu(&h, page), size);
+            assert_clickable(&h, &page_menu(&h, page), size);
             assert_close_buttons(&h, size);
             assert!(
                 h.query_by_role_and_label(Role::Tab, page.title()).is_none(),
@@ -92,7 +95,7 @@ fn the_page_menu_moves_between_pages() {
         page_menu(&h, Page::General).click();
         h.run();
         let item = h.get_by_role_and_label(Role::MenuItem, Page::Appearance.title());
-        assert_clickable(&item, size);
+        assert_clickable(&h, &item, size);
         assert_overlays_fit(&h, size);
         item.click();
         h.run();
@@ -127,7 +130,7 @@ fn the_about_links_end_the_general_page_when_the_sidebar_folds() {
         h.get_by_label(copy::LICENSES_SHORT).scroll_to_me();
         h.run();
         let licenses = h.get_by_label(copy::LICENSES_SHORT);
-        assert_clickable(&licenses, size);
+        assert_clickable(&h, &licenses, size);
         licenses.click();
         h.run();
         assert_eq!(
@@ -150,9 +153,9 @@ fn the_save_bar_fits_and_saves_in_a_small_window() {
         h.run();
         assert!(h.state().settings.dirty(), "{size:?}");
         assert_overlays_fit(&h, size);
-        assert_clickable(&h.get_by_label(copy::DISCARD), size);
+        assert_clickable(&h, &h.get_by_label(copy::DISCARD), size);
         let save = h.get_by_label(copy::SAVE_CHANGES);
-        assert_clickable(&save, size);
+        assert_clickable(&h, &save, size);
         save.click();
         h.run();
         let actions = h.state_mut().take_actions();
@@ -174,7 +177,7 @@ fn a_failed_save_wraps_its_reason_above_the_button() {
         assert_overlays_fit(&h, size);
         let line = h.get_by_label(&reason).rect();
         let save = h.get_by_label(copy::SAVE_CHANGES);
-        assert_clickable(&save, size);
+        assert_clickable(&h, &save, size);
         assert!(
             line.bottom() <= save.rect().top(),
             "{size:?}: {line:?} beside the button"
@@ -193,8 +196,8 @@ fn the_sign_in_area_and_its_advanced_fields_fit() {
             "11111111-2222-3333-4444-555555555555".clone_into(&mut org.entra.client_id);
         };
         let mut h = shown_at(Shown::Settings, demo_state(), setup, size);
-        assert_clickable(&h.get_by_label(copy::SIGN_OUT), size);
-        assert_clickable(&h.get_by_label(copy::CHANGE_SIGN_IN), size);
+        assert_clickable(&h, &h.get_by_label(copy::SIGN_OUT), size);
+        assert_clickable(&h, &h.get_by_label(copy::CHANGE_SIGN_IN), size);
         h.get_by_label(copy::ADVANCED).click();
         h.run();
         let client_id =
@@ -202,8 +205,8 @@ fn the_sign_in_area_and_its_advanced_fields_fit() {
         h.get_by(client_id).scroll_to_me();
         h.run();
         assert_overlays_fit(&h, size);
-        assert_clickable(&h.get_by(client_id), size);
-        assert_clickable(&h.get_by_label(copy::SIGN_IN_ENTRA), size);
+        assert_clickable(&h, &h.get_by(client_id), size);
+        assert_clickable(&h, &h.get_by_label(copy::SIGN_IN_ENTRA), size);
     }
 }
 
@@ -220,8 +223,8 @@ fn the_notification_test_and_its_result_fit() {
         h.get_by_label(copy::SEND_TEST).scroll_to_me();
         h.run();
         assert_overlays_fit(&h, size);
-        assert_clickable(&h.get_by_label(copy::SEND_TEST), size);
-        assert_clickable(&h.get_by_label(&failed), size);
+        assert_clickable(&h, &h.get_by_label(copy::SEND_TEST), size);
+        assert_clickable(&h, &h.get_by_label(&failed), size);
     }
 }
 
@@ -245,7 +248,7 @@ fn every_settings_dialog_fits_a_small_window() {
             assert_overlays_fit(&h, size);
             assert_close_buttons(&h, size);
             if let Some(done) = h.query_by_role_and_label(Role::Button, copy::DONE) {
-                assert_clickable(&done, size);
+                assert_clickable(&h, &done, size);
             }
         }
     }
@@ -267,7 +270,7 @@ fn the_people_dropdown_fits_a_small_window() {
         let h = shown_at(Shown::Settings, demo_state(), setup, size);
         assert_overlays_fit(&h, size);
         let row = h.get_by_role_and_label(Role::MenuItem, "Priyanka Das");
-        assert_clickable(&row, size);
+        assert_clickable(&h, &row, size);
     }
 }
 
@@ -277,8 +280,8 @@ fn the_token_dialog_fits_a_small_window() {
         let setup = |f: &mut Fixture| f.token.1 = Some(Arc::from("The token was rejected"));
         let h = shown_at(Shown::Token, demo_state(), setup, size);
         assert_overlays_fit(&h, size);
-        assert_clickable(&h.get_by_label(copy::SAVE_TOKEN), size);
-        assert_clickable(&h.get_by_label(copy::CANCEL), size);
+        assert_clickable(&h, &h.get_by_label(copy::SAVE_TOKEN), size);
+        assert_clickable(&h, &h.get_by_label(copy::CANCEL), size);
     }
 }
 
@@ -305,12 +308,11 @@ fn every_first_run_step_fits_a_small_window() {
     ];
     for size in SIZES {
         for (step, next) in steps {
-            let mut h = first_run_at(step, size);
+            let h = first_run_at(step, size);
             assert_screen_fits(&h, size);
-            h.get_by_label(next).scroll_to_me();
-            h.run();
+            // In view as laid out, without scrolling: the card rises when it would not fit.
             let next = h.get_by_label(next);
-            assert_clickable(&next, size);
+            assert_clickable(&h, &next, size);
             // The card sits between even margins: its left inset mirrors its right one.
             let title = h.get_by_label(copy::APP_NAME).rect();
             let right = size.x - next.rect().right();
@@ -320,7 +322,7 @@ fn every_first_run_step_fits_a_small_window() {
                 title.left()
             );
             if step != Step::Connect {
-                assert_clickable(&h.get_by_label(copy::PREVIOUS), size);
+                assert_clickable(&h, &h.get_by_label(copy::PREVIOUS), size);
             }
         }
     }
@@ -339,16 +341,7 @@ fn the_palette_fits_a_small_window() {
             }
             h.run();
             assert_overlays_fit(&h, size);
-            let lit: Vec<_> = h
-                .query_all_by_role(Role::Dialog)
-                .flat_map(|dialog| dialog.children_recursive().collect::<Vec<_>>())
-                .filter(|n| {
-                    let node = n.accesskit_node();
-                    node.role() == Role::Button && node.toggled() == Some(Toggled::True)
-                })
-                .collect();
-            assert_eq!(lit.len(), 1, "{size:?} {query:?}: one row is highlighted");
-            assert_clickable(&lit[0], size);
+            assert_clickable(&h, &lit_row(&h), size);
         }
     }
 }
@@ -360,4 +353,18 @@ fn the_shortcut_sheet_fits_a_small_window() {
         assert_overlays_fit(&h, size);
         assert_close_buttons(&h, size);
     }
+}
+
+/// The one highlighted palette row.
+fn lit_row<'h>(h: &'h Harness<'_, Fixture>) -> egui_kittest::Node<'h> {
+    let mut lit = h
+        .query_all_by_role(Role::Dialog)
+        .flat_map(|dialog| dialog.children_recursive().collect::<Vec<_>>())
+        .filter(|n| {
+            let node = n.accesskit_node();
+            node.role() == Role::Button && node.toggled() == Some(Toggled::True)
+        });
+    let row = lit.next().expect("a row is highlighted");
+    assert!(lit.next().is_none(), "one row is highlighted");
+    row
 }

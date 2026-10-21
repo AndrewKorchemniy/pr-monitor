@@ -29,6 +29,52 @@ fn room_never_shrinks_as_the_window_grows() {
     }
 }
 
+/// The margin came from the window's shorter side, so between 600 and 784 pt wide a taller
+/// window made dialogs narrower and folded the settings sidebar away.
+#[test]
+fn room_along_one_axis_ignores_the_other() {
+    for fixed in [360.0, 600.0, 660.0, 760.0, 1280.0] {
+        let (wide, tall) = (room(vec2(fixed, 300.0)), room(vec2(300.0, fixed)));
+        for step in 0..=200 {
+            let other = 300.0 + 5.0 * step as f32;
+            assert_eq!(room(vec2(fixed, other)).x, wide.x, "{fixed} by {other} pt");
+            assert_eq!(room(vec2(other, fixed)).y, tall.y, "{other} by {fixed} pt");
+        }
+    }
+}
+
+#[test]
+fn a_card_starts_a_share_down_unless_that_would_cut_it_off() {
+    let floor = 24.0;
+    let cases = [
+        // Not measured yet, or short enough: 16% of the way down.
+        (900.0, None, 144.0),
+        (900.0, Some(400.0), 144.0),
+        (640.0, Some(300.0), 102.4),
+        // Too tall for that: centred between even margins.
+        (640.0, Some(570.0), 35.0),
+        (720.0, Some(560.0), 80.0),
+        // Taller than the window: at the margin, and the page scrolls.
+        (640.0, Some(900.0), 16.0),
+        (420.0, Some(900.0), 8.0),
+        // A short window keeps the floor above a card that fits.
+        (100.0, Some(20.0), 24.0),
+    ];
+    for (window, card, expected) in cases {
+        let top = card_top(window, card, floor);
+        assert!((top - expected).abs() < 0.01, "{card:?} in {window}: {top}");
+        if let Some(card) = card {
+            let margin = window_margin(window);
+            assert!(top >= margin, "{card} in {window}: {top} above the margin");
+            let fits = card + 2.0 * margin <= window;
+            assert!(
+                !fits || top + card + margin <= window,
+                "{card} in {window} cut off"
+            );
+        }
+    }
+}
+
 #[test]
 fn fit_keeps_a_dialog_inside_the_window() {
     let cases = [
@@ -37,13 +83,15 @@ fn fit_keeps_a_dialog_inside_the_window() {
             vec2(1280.0, 760.0),
             vec2(1040.0, 696.0),
         ),
-        (vec2(1040.0, 780.0), vec2(360.0, 640.0), vec2(344.0, 624.0)),
+        (vec2(1040.0, 780.0), vec2(360.0, 640.0), vec2(344.0, 608.0)),
         (
             vec2(1040.0, 780.0),
             vec2(1280.0, 420.0),
             vec2(1040.0, 404.0),
         ),
-        (vec2(1040.0, 780.0), vec2(720.0, 620.0), vec2(696.0, 596.0)),
+        (vec2(1040.0, 780.0), vec2(720.0, 620.0), vec2(656.0, 596.0)),
+        (vec2(1040.0, 780.0), vec2(760.0, 560.0), vec2(696.0, 544.0)),
+        (vec2(1040.0, 780.0), vec2(760.0, 800.0), vec2(696.0, 736.0)),
         (vec2(420.0, 300.0), vec2(1280.0, 760.0), vec2(420.0, 300.0)),
         (vec2(420.0, 300.0), vec2(100.0, 10.0), vec2(84.0, 0.0)),
     ];
