@@ -21,11 +21,21 @@ use prm_domain::{
 
 use crate::view::{
     anchor::{AnchorResult, capture, restore},
+    columns::{ColumnId, Visibility},
     display::{DisplayList, DisplayRow, build_display, group_id},
 };
 
 /// Rows a page-up/down moves.
 const PAGE: usize = 15;
+
+/// The sort one click on `key`'s header gives: the sorted column reverses, any other column
+/// sorts ascending. One click is always enough to see a change.
+pub(crate) fn next_sort(current: Sort, key: SortKey) -> Sort {
+    Sort {
+        key,
+        descending: current.key == key && !current.descending,
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub(crate) enum ScrollIntent {
@@ -188,18 +198,40 @@ impl DashboardView {
         self.scroll_to_selection();
     }
 
-    /// Clicking the sorted column again reverses it.
+    /// One click on a header: see `next_sort`.
     pub(crate) fn sort_by(&mut self, key: SortKey) {
-        if self.sort.key == key {
-            self.sort.descending = !self.sort.descending;
-        } else {
-            self.sort = Sort {
-                key,
-                descending: false,
-            };
-        }
+        self.sort = next_sort(self.sort, key);
         self.rebuild();
         self.scroll_to_selection();
+    }
+
+    /// Shows or hides a column from the column menu or settings. Only optional columns change,
+    /// so Status and Title always show.
+    pub(crate) fn toggle_column(&mut self, id: ColumnId) {
+        let Some(column) = columns::column(id) else {
+            return;
+        };
+        if column.visibility() != Visibility::Optional {
+            return;
+        }
+        if let Some(at) = self.hidden_columns.iter().position(|k| k == column.key) {
+            self.hidden_columns.remove(at);
+        } else {
+            self.hidden_columns.push(column.key.to_owned());
+        }
+    }
+
+    /// A width dragged in the header (points), or `None` to go back to the default.
+    pub(crate) fn set_column_width(&mut self, key: &str, width: Option<f32>) {
+        match width {
+            Some(width) if self.widths.get(key) != Some(&width) => {
+                self.widths.insert(key.to_owned(), width);
+            }
+            Some(_) => {}
+            None => {
+                self.widths.remove(key);
+            }
+        }
     }
 
     fn scroll_to_selection(&mut self) {

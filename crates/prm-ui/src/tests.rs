@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use eframe::egui;
-use egui_kittest::kittest::Queryable as _;
-use prm_domain::view::StatusFilter;
+use eframe::egui::{self, Role};
+use egui_kittest::{Harness, kittest::Queryable as _};
+use prm_domain::view::{SortKey, StatusFilter};
 use prm_service::{AppState, AuthStateView, Command, UiError};
 
 use crate::{
@@ -18,6 +18,7 @@ use crate::{
         screens::{Fixture, Shown, harness},
         state_with,
     },
+    view::columns::ColumnId,
 };
 
 mod gallery;
@@ -80,7 +81,7 @@ fn clicking_a_row_selects_it_and_a_header_sorts() {
     assert!(
         actions
             .iter()
-            .any(|a| matches!(a, UiAction::Sort(prm_domain::view::SortKey::Title))),
+            .any(|a| matches!(a, UiAction::Sort(SortKey::Title))),
         "{actions:?}"
     );
 }
@@ -167,5 +168,125 @@ fn the_palette_runs_the_highlighted_command_on_enter() {
     assert_eq!(
         h.state().palette_outcome,
         Some(PaletteItem::Command(CommandId::RefreshNow))
+    );
+}
+
+/// A primary click at `pos` the way a mouse sends it: a move, a press and a release, each in
+/// its own frame; returns the actions it queued.
+fn click_at(h: &mut Harness<'_, Fixture>, pos: egui::Pos2) -> Vec<UiAction> {
+    h.event(egui::Event::PointerMoved(pos));
+    h.step();
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+    }
+    h.run();
+    h.state_mut().take_actions()
+}
+
+/// Only the header's text took clicks; its sort arrow and the rest of the cell did nothing, so
+/// flipping a sort often took a second click.
+#[test]
+fn one_click_anywhere_in_a_header_cell_sorts_and_the_next_reverses() {
+    let mut h = harness(Fixture::new(Shown::Dashboard, state_with(sample_rows())));
+    h.run();
+    let header = h.get_by_label(copy::COLUMN_REPO).rect();
+    // Far right of the word, still inside the cell.
+    let pos = egui::pos2(header.right() - 12.0, header.center().y);
+    for descending in [false, true] {
+        let actions = click_at(&mut h, pos);
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, UiAction::Sort(SortKey::Repo))),
+            "{actions:?}"
+        );
+        h.state_mut().dash.view.sort_by(SortKey::Repo);
+        h.run();
+        let sort = h.state().dash.view.sort;
+        assert_eq!((sort.key, sort.descending), (SortKey::Repo, descending));
+    }
+}
+
+/// The margin column's resize grabber sat on the group chevron and took the click.
+#[test]
+fn clicking_a_group_header_chevron_toggles_the_group() {
+    let mut h = harness(Fixture::new(Shown::Dashboard, state_with(sample_rows())));
+    h.run();
+    let group = h
+        .get_by_role_and_label(Role::Button, "Active comments")
+        .rect();
+    let actions = click_at(&mut h, egui::pos2(group.left() + 12.0, group.center().y));
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, UiAction::ToggleGroup(1))),
+        "{actions:?}"
+    );
+}
+
+/// Resize grabbers ran down every row, so a click on a column divider did not select the row.
+#[test]
+fn clicking_a_row_on_a_column_divider_selects_it() {
+    let mut h = harness(Fixture::new(Shown::Dashboard, state_with(sample_rows())));
+    h.run();
+    let row = h.get_by_label("Add retry").rect();
+    // The header target reaches the middle of the gap: the Title | Repository divider.
+    let divider = h.get_by_label(copy::COLUMN_REPO).rect().left();
+    let actions = click_at(&mut h, egui::pos2(divider, row.center().y));
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, UiAction::Select(k) if *k == crate::testing::reviewed())),
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn the_column_menu_toggles_optional_columns_but_not_title() {
+    let mut h = harness(Fixture::new(Shown::Dashboard, state_with(sample_rows())));
+    h.run();
+    h.get_by_label(copy::COLUMN_AUTHOR).click_secondary();
+    h.run();
+    h.get_by_role_and_label(Role::MenuItemCheckBox, copy::REVIEWS)
+        .click();
+    h.run();
+    h.get_by_role_and_label(Role::MenuItemCheckBox, copy::COLUMN_TITLE)
+        .click();
+    h.run();
+    let actions = h.state_mut().take_actions();
+    let toggled: Vec<_> = actions
+        .iter()
+        .filter_map(|a| {
+            if let UiAction::ToggleColumn(id) = a {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(toggled, [ColumnId::Reviews], "{actions:?}");
+}
+
+#[test]
+fn the_settings_column_checklist_toggles_columns() {
+    let mut fixture = Fixture::new(Shown::Settings, signed_out());
+    fixture.settings.page = Page::General;
+    let mut h = harness(fixture);
+    h.run();
+    h.get_by_role_and_label(Role::CheckBox, copy::COLUMN_FLAGS)
+        .click_accesskit();
+    h.run();
+    let actions = h.state_mut().take_actions();
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, UiAction::ToggleColumn(ColumnId::Flags))),
+        "{actions:?}"
     );
 }

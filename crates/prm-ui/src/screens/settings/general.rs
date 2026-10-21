@@ -7,9 +7,11 @@ use prm_config::{
 };
 
 use crate::{
+    actions::UiAction,
     copy,
     frame::FrameCx,
     theme::UiTheme,
+    view::columns::{self, ColumnSpec, Visibility},
     widgets::{
         self,
         card::section,
@@ -25,7 +27,13 @@ const ORG_COLUMN: [(OrgColumn, &str); 3] = [
     (OrgColumn::Never, "Never"),
 ];
 
-pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) {
+/// The column checklist's boxes per line.
+const COLUMN_GRID: usize = 3;
+/// Each box and its label in the column checklist (points).
+const COLUMN_CHECK_WIDTH: f32 = 160.0;
+
+/// `hidden` is the table's live hidden-column list (see `SettingsEnv::hidden_columns`).
+pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config, hidden: &[String]) {
     let theme = cx.theme.clone();
     section(ui, &theme, copy::SECTION_REFRESH, None, |ui| {
         refresh_row(ui, &theme, &mut draft.refresh.interval_minutes);
@@ -47,6 +55,8 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) 
             &mut prefs.relative_times,
             (copy::RELATIVE_TIMES, None),
         );
+        controls::row_divider(ui, &theme);
+        column_checklist(ui, cx, hidden);
     });
     section(ui, &theme, copy::SECTION_NETWORK, None, |ui| {
         setting_row(ui, &theme, (copy::PROXY, Some(copy::RESTART_HELP)), |ui| {
@@ -56,6 +66,55 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, draft: &mut Config) 
     section(ui, &theme, copy::SECTION_PRIVACY, None, |ui| {
         widgets::muted(ui, &theme, copy::PRIVACY);
     });
+}
+
+/// The same choices as right-clicking a column header, in table order. Status and Title are
+/// listed but locked on. These apply right away: they are table layout, not saved settings.
+fn column_checklist(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, hidden: &[String]) {
+    let theme = cx.theme.clone();
+    let m = &theme.tokens.metrics;
+    ui.add_space(m.space.sm);
+    ui.label(
+        egui::RichText::new(copy::COLUMNS)
+            .font(theme.fonts.body.clone())
+            .color(theme.colors.text_primary),
+    );
+    widgets::muted(ui, &theme, copy::COLUMNS_HELP);
+    ui.add_space(m.space.sm);
+    egui::Grid::new("settings_columns")
+        .num_columns(COLUMN_GRID)
+        .min_col_width(COLUMN_CHECK_WIDTH)
+        .spacing(egui::vec2(m.space.xl, m.space.xs))
+        .show(ui, |ui| {
+            for (index, column) in columns::listed().enumerate() {
+                if column_check(ui, &theme, &column, hidden).clicked() {
+                    cx.push(UiAction::ToggleColumn(column.id));
+                }
+                if (index + 1) % COLUMN_GRID == 0 {
+                    ui.end_row();
+                }
+            }
+        });
+    ui.add_space(m.space.sm);
+}
+
+fn column_check(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    column: &ColumnSpec,
+    hidden: &[String],
+) -> egui::Response {
+    let locked = column.visibility() == Visibility::Locked;
+    let state = if columns::chosen(column, hidden) {
+        controls::Check::On
+    } else {
+        controls::Check::Off
+    };
+    ui.add_enabled_ui(!locked, |ui| {
+        controls::check(ui, theme, state, column.name.into())
+    })
+    .inner
+    .on_disabled_hover_text(copy::COLUMN_LOCKED)
 }
 
 fn refresh_row(ui: &mut egui::Ui, theme: &UiTheme, interval: &mut u32) {

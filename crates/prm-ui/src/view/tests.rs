@@ -75,6 +75,70 @@ fn filter_text_and_flags_combine_and_clear_together() {
 }
 
 #[test]
+fn next_sort_reverses_the_sorted_column_and_starts_others_ascending() {
+    let by = |key, descending| Sort { key, descending };
+    let cases = [
+        (
+            by(SortKey::Title, false),
+            SortKey::Title,
+            by(SortKey::Title, true),
+        ),
+        (
+            by(SortKey::Title, true),
+            SortKey::Title,
+            by(SortKey::Title, false),
+        ),
+        (
+            by(SortKey::Title, true),
+            SortKey::Age,
+            by(SortKey::Age, false),
+        ),
+        (
+            by(SortKey::Status, false),
+            SortKey::Repo,
+            by(SortKey::Repo, false),
+        ),
+    ];
+    for (current, key, expected) in cases {
+        assert_eq!(
+            next_sort(current, key),
+            expected,
+            "{current:?} then {key:?}"
+        );
+    }
+}
+
+#[test]
+fn toggling_a_column_hides_and_shows_it_but_never_a_locked_one() {
+    let mut v = view(GroupBy::None);
+    v.toggle_column(ColumnId::Author);
+    for locked in [
+        ColumnId::Margin,
+        ColumnId::Status,
+        ColumnId::Title,
+        ColumnId::Org,
+    ] {
+        v.toggle_column(locked);
+    }
+    assert_eq!(v.hidden_columns, ["author"]);
+    let mut ui = UiState::default();
+    assert!(v.differs_from(&ui));
+    v.write_ui_state(&mut ui);
+    assert_eq!(ui.hidden_columns, ["author"]);
+    v.toggle_column(ColumnId::Author);
+    assert_eq!(v.hidden_columns, Vec::<String>::new());
+}
+
+#[test]
+fn a_dragged_width_stays_until_reset() {
+    let mut v = view(GroupBy::None);
+    v.set_column_width("repo", Some(210.0));
+    assert_eq!(v.widths.get("repo"), Some(&210.0));
+    v.set_column_width("repo", None);
+    assert_eq!(v.widths.get("repo"), None);
+}
+
+#[test]
 fn sorting_the_same_column_twice_reverses_it() {
     let mut v = view(GroupBy::None);
     v.sort_by(SortKey::Title);

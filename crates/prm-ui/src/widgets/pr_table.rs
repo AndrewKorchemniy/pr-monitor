@@ -1,7 +1,10 @@
-//! The pull request table: virtualized rows, resizable sortable columns, group headers, the
-//! change bar in the margin, id-keyed selection, and a context menu per row.
+//! The pull request table: virtualized rows, sortable columns resized from the header, group
+//! headers, the change bar in the margin, id-keyed selection, and a context menu per row.
 
-use eframe::egui::{self, Align, Layout, Rect, RichText, Sense, Stroke, StrokeKind};
+mod cells;
+mod header;
+
+use eframe::egui::{self, Align, Layout, Rect, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBody, TableBuilder, TableRow};
 use prm_domain::view::{GroupBy, PrRow, age::AgeCache};
 
@@ -20,11 +23,11 @@ use crate::{
         columns::{ColumnId, ColumnSpec, Width, columns_hash, visible_columns},
         display::DisplayRow,
     },
-    widgets::{status_pill::status_pill, vote_tally::vote_tally},
 };
+use header::{HeaderCx, header_row};
 
-/// Below this Status column width only the glyph shows.
-const COMPACT_STATUS: f32 = 100.0;
+/// The Status column's width when grouped by status, where only the glyph shows.
+const STATUS_GLYPH: f32 = 24.0;
 
 pub(crate) struct TableInputs<'a> {
     pub ages: &'a AgeCache,
@@ -39,15 +42,20 @@ pub(crate) struct TableOut {
     pub geometry: Option<TableGeometry>,
 }
 
+/// `saved` is the user's dragged width for resizable columns.
 fn column(spec: &ColumnSpec, saved: Option<f32>, margin: f32) -> Column {
-    match spec.width {
+    let column = match spec.width {
         Width::Exact => Column::exact(margin),
+        Width::Fixed(width) => Column::exact(width),
         Width::Remainder => Column::remainder().at_least(spec.min).clip(true),
         Width::Initial(width) => Column::initial(saved.unwrap_or(width))
             .at_least(spec.min)
-            .clip(true)
-            .resizable(true),
-    }
+            .clip(true),
+    };
+    // why: egui_extras' resize handles run the full table height, so they showed a grabber
+    // over group headers (the margin's sat on the chevron) and took clicks from rows. Widths
+    // change from header-only strips instead (`header::resize_strips`).
+    column.resizable(false)
 }
 
 pub(crate) fn pr_table(
@@ -63,34 +71,36 @@ pub(crate) fn pr_table(
         compact_status(&mut columns);
     }
     let span = ui.available_rect_before_wrap().x_range();
-    // why: column resize lines show only while hovered or dragged, not as permanent rules.
-    ui.visuals_mut().widgets.noninteractive.bg_stroke = Stroke::NONE;
     let builder = table_builder(ui, &theme, &columns, view);
     let mut pending = Vec::new();
-    let mut widths: Vec<f32> = Vec::new();
+    let mut resize = None;
     let row_height = metrics.row_height;
     let output = builder
         .header(metrics.header_height, |mut header| {
-            header_row(&mut header, (&theme, span), &columns, view, &mut pending);
+            let hcx = HeaderCx {
+                theme: &theme,
+                span,
+                columns: &columns,
+                view,
+            };
+            resize = header_row(&mut header, &hcx, &mut pending);
         })
         .body(|body| {
-            widths = body.widths().to_vec();
-            table_body(
-                body,
-                &BodyCx {
-                    theme: &theme,
-                    columns: &columns,
-                    view,
-                    input,
-                    cx_now: cx,
-                },
-                &mut pending,
-            );
+            let bcx = BodyCx {
+                theme: &theme,
+                columns: &columns,
+                view,
+                input,
+                cx_now: cx,
+            };
+            table_body(body, &bcx, &mut pending);
         });
     for action in pending {
         cx.push(action);
     }
-    remember_widths(view, &columns, &widths);
+    if let Some(resize) = resize {
+        view.set_column_width(resize.key, resize.width);
+    }
     let offset = output.state.clamped_offset().y;
     view.offset_y = offset;
     view.top_visible = Some(first_visible(offset, row_height));
@@ -111,10 +121,9 @@ fn compact_status(columns: &mut [ColumnSpec]) {
     for spec in columns.iter_mut() {
         match spec.id {
             ColumnId::Status => {
-                spec.key = "status_glyph";
                 spec.header = "";
-                spec.width = Width::Initial(24.0);
-                spec.min = 24.0;
+                spec.width = Width::Fixed(STATUS_GLYPH);
+                spec.min = STATUS_GLYPH;
                 spec.sort = None;
             }
             ColumnId::Number => {
@@ -123,6 +132,7 @@ fn compact_status(columns: &mut [ColumnSpec]) {
                 spec.width = Width::Initial(56.0);
             }
             ColumnId::Margin
+            | ColumnId::Flags
             | ColumnId::Title
             | ColumnId::Repo
             | ColumnId::Author
@@ -146,7 +156,6 @@ fn table_builder<'a>(
         .id_salt(("pr_table", columns_hash(columns), view.table_epoch))
         .striped(theme.tokens.metrics.stripes)
         .sense(Sense::click())
-        .resizable(true)
         .auto_shrink(false)
         .animate_scrolling(theme.policy.animations)
         .cell_layout(Layout::left_to_right(Align::Center));
@@ -168,96 +177,6 @@ fn table_builder<'a>(
 )]
 fn first_visible(offset: f32, row_height: f32) -> usize {
     (offset / row_height.max(1.0)).floor().max(0.0) as usize
-}
-
-/// Keeps user-resized widths of resizable columns (persisted with the UI state).
-fn remember_widths(view: &mut DashboardView, columns: &[ColumnSpec], widths: &[f32]) {
-    for (spec, width) in columns.iter().zip(widths) {
-        if matches!(spec.width, Width::Initial(_)) {
-            let rounded = width.round();
-            if view.widths.get(spec.key) != Some(&rounded) {
-                view.widths.insert(spec.key.to_owned(), rounded);
-            }
-        }
-    }
-}
-
-fn header_row(
-    header: &mut TableRow<'_, '_>,
-    (theme, span): (&UiTheme, egui::Rangef),
-    columns: &[ColumnSpec],
-    view: &DashboardView,
-    pending: &mut Vec<UiAction>,
-) {
-    for (index, spec) in columns.iter().enumerate() {
-        let mut clicked = false;
-        header.col(|ui| {
-            if index == 0 {
-                header_rule(ui, theme, span);
-            }
-            clicked = header_cell(ui, theme, spec, view);
-        });
-        if clicked && let Some(key) = spec.sort {
-            pending.push(UiAction::Sort(key));
-        }
-    }
-}
-
-/// A hairline under the whole header row, painted from its first cell.
-fn header_rule(ui: &egui::Ui, theme: &UiTheme, span: egui::Rangef) {
-    let cell = ui.max_rect();
-    let mut painter = ui.painter().clone();
-    painter.set_clip_rect(Rect::from_x_y_ranges(span, cell.y_range().expand(4.0)));
-    let y = cell.bottom() + ui.spacing().item_spacing.y / 2.0;
-    let stroke = Stroke::new(
-        theme.tokens.metrics.stroke.hairline,
-        theme.colors.border_subtle,
-    );
-    painter.hline(span, y, stroke);
-}
-
-/// The column title with a sort arrow on the sorted column; true when clicked.
-fn header_cell(
-    ui: &mut egui::Ui,
-    theme: &UiTheme,
-    spec: &ColumnSpec,
-    view: &DashboardView,
-) -> bool {
-    let sorted = spec.sort.is_some_and(|key| key == view.sort.key);
-    let color = if sorted {
-        theme.colors.text_primary
-    } else {
-        theme.colors.text_secondary
-    };
-    let label = egui::Label::new(
-        RichText::new(spec.header)
-            .font(theme.fonts.label.clone())
-            .color(color),
-    )
-    .sense(if spec.sort.is_some() {
-        Sense::click()
-    } else {
-        Sense::hover()
-    })
-    .truncate();
-    let layout = if spec.align_right {
-        Layout::right_to_left(Align::Center)
-    } else {
-        Layout::left_to_right(Align::Center)
-    };
-    let arrow = if view.sort.descending {
-        Icon::ChevronDown
-    } else {
-        Icon::ChevronUp
-    };
-    ui.with_layout(layout, |ui| {
-        let clicked = ui.add(label).clicked();
-        if sorted && !spec.header.is_empty() {
-            icons::show(ui, arrow, 8.0, theme.colors.text_secondary);
-        }
-        clicked
-    })
-    .inner
 }
 
 struct BodyCx<'a, 'b> {
@@ -287,6 +206,7 @@ fn table_body(mut body: TableBody<'_>, bcx: &BodyCx<'_, '_>, pending: &mut Vec<U
     });
 }
 
+/// A group header: the whole row (chevron included) collapses and expands it.
 fn group_row(
     row: &mut TableRow<'_, '_>,
     bcx: &BodyCx<'_, '_>,
@@ -379,7 +299,7 @@ fn pr_row(
     let selected = bcx.view.selected.as_ref() == Some(&pr.key);
     row.set_selected(selected);
     for spec in bcx.columns {
-        row.col(|ui| cell(ui, bcx, spec, pr, index));
+        row.col(|ui| cells::cell(ui, bcx, spec, pr, index));
     }
     let response = row.response();
     if selected && bcx.view.keyboard_nav && bcx.input.focused {
@@ -423,150 +343,4 @@ fn context_menu(ui: &mut egui::Ui, pr: &PrRow, pending: &mut Vec<UiAction>) {
             ui.close();
         }
     }
-}
-
-fn cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, spec: &ColumnSpec, pr: &PrRow, index: usize) {
-    let theme = bcx.theme;
-    let text = |s: &str| {
-        RichText::new(s)
-            .font(theme.fonts.body.clone())
-            .color(theme.colors.text_primary)
-    };
-    let mono = |s: &str| {
-        RichText::new(s)
-            .font(theme.fonts.mono.clone())
-            .color(theme.colors.text_secondary)
-    };
-    match spec.id {
-        ColumnId::Margin => change_bar(ui, bcx, pr),
-        ColumnId::Status => {
-            let compact = ui.available_width() < COMPACT_STATUS;
-            status_pill(ui, theme, pr.status, compact).on_hover_text(copy::status_tooltip(
-                pr.status,
-                pr.tally,
-                pr.active_threads,
-            ));
-        }
-        ColumnId::Number => number_cell(ui, spec, mono(&pr.number_text)),
-        ColumnId::Title => title_cell(ui, bcx, pr),
-        ColumnId::Repo => {
-            ui.add(egui::Label::new(text(&pr.repo_name)).truncate());
-        }
-        ColumnId::Author => {
-            ui.add(egui::Label::new(text(&pr.author.display_name())).truncate());
-        }
-        ColumnId::Reviews => {
-            vote_tally(ui, theme, &pr.reviewers);
-        }
-        ColumnId::Comments if pr.total_threads == 0 => {}
-        ColumnId::Comments => right(ui, |ui| {
-            let color = if pr.active_threads > 0 {
-                theme.colors.tone(crate::theme::Tone::ActiveComments).fg
-            } else {
-                theme.colors.text_muted
-            };
-            ui.label(
-                RichText::new(pr.comments_text.as_ref())
-                    .font(theme.fonts.mono.clone())
-                    .color(color),
-            );
-        }),
-        ColumnId::Age => right(ui, |ui| {
-            let age = bcx
-                .input
-                .ages
-                .get(bcx.view.display.pr_at(index).unwrap_or(usize::MAX))
-                .unwrap_or(&pr.age);
-            let when = crate::format::date_time(pr.created_at, bcx.cx_now.offset);
-            ui.label(mono(&age.text)).on_hover_text(when);
-        }),
-        ColumnId::Org => {
-            ui.add(egui::Label::new(text(&pr.org_label)).truncate());
-        }
-    }
-}
-
-/// "!4711", right-aligned unless the column says otherwise (glyph-only status mode).
-fn number_cell(ui: &mut egui::Ui, spec: &ColumnSpec, text: RichText) {
-    if spec.align_right {
-        right(ui, |ui| {
-            ui.label(text);
-        });
-    } else {
-        ui.label(text);
-    }
-}
-
-fn right(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
-    ui.with_layout(Layout::right_to_left(Align::Center), add);
-}
-
-fn title_cell(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow) {
-    let theme = bcx.theme;
-    if pr.draft {
-        ui.label(
-            RichText::new(copy::DRAFT)
-                .font(theme.fonts.small.clone())
-                .color(theme.colors.text_muted),
-        );
-    }
-    if pr.conflicts {
-        icons::show(
-            ui,
-            Icon::Warning,
-            11.0,
-            theme.colors.tone(crate::theme::Tone::Warning).solid,
-        )
-        .on_hover_text(copy::CONFLICTS);
-    }
-    let color = if pr.stale {
-        theme.colors.text_muted
-    } else {
-        theme.colors.text_primary
-    };
-    let label = egui::Label::new(
-        RichText::new(pr.title.as_ref())
-            .font(theme.fonts.body.clone())
-            .color(color),
-    )
-    .truncate();
-    let response = ui.add(label);
-    if let Some(note) = bcx.cx_now.changes.note(&pr.key) {
-        response.on_hover_text(note.text.as_ref());
-    } else if pr.stale {
-        let when = pr.last_activity;
-        response.on_hover_text(copy::stale_row(&crate::format::clock(
-            when,
-            bcx.cx_now.offset,
-        )));
-    }
-}
-
-/// The 3 px blue-pencil bar for rows changed since last looked; draws downward when it appears.
-fn change_bar(ui: &mut egui::Ui, bcx: &BodyCx<'_, '_>, pr: &PrRow) {
-    let theme = bcx.theme;
-    let id = ui.scope_id().with(("bar", &pr.key));
-    let motion = &theme.tokens.metrics.motion;
-    let duration = if theme.policy.animations {
-        motion.reveal
-    } else {
-        0.0
-    };
-    let t = ui.ctx().animate_bool_with_time(id, pr.unread, duration);
-    if t <= 0.0 {
-        return;
-    }
-    let cell = ui.max_rect();
-    let width = theme.tokens.metrics.row.revision_bar;
-    let top = cell.top() + 4.0;
-    let bottom = top + (cell.height() - 8.0) * t;
-    let bar = Rect::from_min_max(
-        egui::pos2(cell.left() + 1.0, top),
-        egui::pos2(cell.left() + 1.0 + width, bottom),
-    );
-    ui.painter()
-        .rect_filled(bar, width / 2.0, theme.colors.signature_revision);
-    let _ = ui
-        .allocate_rect(bar, Sense::hover())
-        .on_hover_text(copy::CHANGED_TOOLTIP);
 }

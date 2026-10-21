@@ -186,4 +186,7 @@ pub(crate) struct SettingsEnv<'a> {
     pub build: BuildInfo,
     pub licenses: &'static str,
     pub renderer_line: &'a str,
+    /// The table's hidden column keys, live: column choices are layout (`UiState`), applied
+    /// right away rather than through the draft.
+    pub hidden_columns: &'a [String],
 }

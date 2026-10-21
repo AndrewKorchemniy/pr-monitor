@@ -40,6 +40,19 @@ pub(crate) const COPY_TITLE: &str = "Copy title";
 pub(crate) const PEEK: &str = "Peek";
 pub(crate) const MARK_SEEN: &str = "Mark as seen";
 pub(crate) const CLOSE: &str = "Close";
+
+pub(crate) const COLUMN_STATUS: &str = "Status";
+pub(crate) const COLUMN_NUMBER: &str = "PR";
+pub(crate) const COLUMN_FLAGS: &str = "Flags";
+pub(crate) const COLUMN_TITLE: &str = "Title";
+pub(crate) const COLUMN_REPO: &str = "Repository";
+pub(crate) const COLUMN_AUTHOR: &str = "Author";
+pub(crate) const COLUMN_COMMENTS: &str = "Comments";
+pub(crate) const COLUMN_AGE: &str = "Age";
+pub(crate) const COLUMN_LOCKED: &str = "Always shown";
+pub(crate) const AUTO_COMPLETE: &str = "Auto-complete is set";
+pub(crate) const COLUMNS: &str = "Columns";
+pub(crate) const COLUMNS_HELP: &str = "Status and Title always show. Changes apply right away, and you can also right-click a column header.";
 pub(crate) const SERVICE_STOPPED: &str =
     "PR Monitor's background service stopped. Restart the app.";
 
@@ -503,6 +516,8 @@ pub(crate) const ALL: &[&str] = &[
     CHANGED_TOOLTIP,
     DRAFT,
     CONFLICTS,
+    AUTO_COMPLETE,
+    COLUMNS_HELP,
     REVIEWS,
     NO_OPEN_THREADS,
     SERVICE_STOPPED,

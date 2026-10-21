@@ -1,5 +1,6 @@
-//! Controls that share the bordered button look: icon buttons, a labeled menu button with flush
-//! menu items, settings rows (switches, segmented options), check boxes and radio buttons.
+//! Shared controls: bordered and ghost (borderless) icon buttons, a ghost menu button with flush
+//! menu items and check items, settings rows (switches, segmented options), check boxes and
+//! radio buttons.
 
 use eframe::egui::{self, CornerRadius, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
@@ -32,6 +33,15 @@ fn hover_color(theme: &UiTheme, response: &egui::Response) -> egui::Color32 {
     }
 }
 
+/// How a button draws its frame.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Chrome {
+    /// Fill and border for every state, like egui buttons (next to fields and in forms).
+    Bordered,
+    /// Nothing at rest; a fading fill on hover (toolbars, so they read as text).
+    Ghost,
+}
+
 /// A square bordered icon button named `name` for screen readers (callers add the tooltip).
 pub(crate) fn icon_button(
     ui: &mut egui::Ui,
@@ -39,9 +49,32 @@ pub(crate) fn icon_button(
     icon: Icon,
     name: &str,
 ) -> egui::Response {
+    square_icon_button(ui, theme, (icon, name), Chrome::Bordered)
+}
+
+/// A square borderless icon button for toolbars: no chrome at rest, the ghost hover fill, and
+/// a focus ring for the keyboard. Named `name` for screen readers (callers add the tooltip).
+pub(crate) fn ghost_icon_button(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    icon: Icon,
+    name: &str,
+) -> egui::Response {
+    square_icon_button(ui, theme, (icon, name), Chrome::Ghost)
+}
+
+fn square_icon_button(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    (icon, name): (Icon, &str),
+    chrome: Chrome,
+) -> egui::Response {
     let side = theme.control_height();
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
-    paint_frame(ui, rect, &response);
+    match chrome {
+        Chrome::Bordered => paint_frame(ui, rect, &response),
+        Chrome::Ghost => ghost_chrome(ui, theme, rect, &response, false),
+    }
     let glyph = Rect::from_center_size(rect.center(), vec2(BUTTON_GLYPH, BUTTON_GLYPH));
     icons::paint(ui.painter(), glyph, icon, hover_color(theme, &response));
     let enabled = ui.is_enabled();
@@ -49,7 +82,31 @@ pub(crate) fn icon_button(
     response
 }
 
-/// A bordered button reading "Label  Value ⌄" that opens a menu (callers attach the popup).
+/// A ghost button's chrome: the hover fill (held while its menu is `open`) and a focus ring
+/// when it has keyboard focus.
+pub(crate) fn ghost_chrome(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    rect: Rect,
+    response: &egui::Response,
+    open: bool,
+) {
+    let m = &theme.tokens.metrics;
+    if open {
+        ui.painter()
+            .rect_filled(rect, m.radius.md, theme.colors.control_hover);
+    } else {
+        ghost_fill(ui, theme, rect, response);
+    }
+    if response.has_focus() {
+        let ring = Stroke::new(m.stroke.focus, theme.colors.border_focus);
+        ui.painter()
+            .rect_stroke(rect, m.radius.md, ring, StrokeKind::Inside);
+    }
+}
+
+/// A ghost button reading "Label  Value ⌄" that opens a menu (callers attach the popup with
+/// `egui::Popup::menu`); it stays filled while that menu is open.
 pub(crate) fn menu_button(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -65,7 +122,8 @@ pub(crate) fn menu_button(
     let width = pad + label_g.size().x + gap + value_g.size().x + gap + 2.0 + chevron + pad;
     let (rect, response) =
         ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::click());
-    paint_frame(ui, rect, &response);
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+    ghost_chrome(ui, theme, rect, &response, open);
     let y = rect.center().y;
     let mut x = rect.left() + pad;
     let label_w = label_g.size().x;
@@ -355,6 +413,45 @@ pub(crate) fn menu_item(
     let enabled = ui.is_enabled();
     response
         .widget_info(|| egui::WidgetInfo::selected(egui::Role::MenuItem, enabled, selected, text));
+    response
+}
+
+/// The check box in a `menu_check` row.
+const MENU_MARK: f32 = 14.0;
+
+/// One row of a multi-choice menu: a check box and its label, filled edge to edge when hovered
+/// like `menu_item`. In a disabled `Ui` it is dimmed and does not respond.
+pub(crate) fn menu_check(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    text: &str,
+    checked: bool,
+) -> egui::Response {
+    let m = &theme.tokens.metrics;
+    let size = vec2(ui.available_width(), theme.control_height() - m.space.xs);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let enabled = ui.is_enabled();
+    if enabled && response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.colors.row_selected);
+    }
+    let center = pos2(rect.left() + m.space.lg + MENU_MARK / 2.0, rect.center().y);
+    let mark = Rect::from_center_size(center, vec2(MENU_MARK, MENU_MARK));
+    let state = if checked { Check::On } else { Check::Off };
+    paint_check(ui, theme, mark, state, &response);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        theme.fonts.body.clone(),
+        theme.colors.text_primary,
+    );
+    let at = pos2(
+        mark.right() + m.space.sm,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(at, galley, theme.colors.text_primary);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::Role::MenuItemCheckBox, enabled, checked, text)
+    });
     response
 }
 
