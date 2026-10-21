@@ -29,27 +29,27 @@ const fn severity_icon(severity: Severity) -> icons::Icon {
 }
 
 /// Shows `banners` (already filtered of dismissed ones); `expanded` shows all of them.
+/// Returns where each shown banner ends, in points below the first one's top.
 pub(crate) fn banners(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
     banners: &[&Banner],
     expanded: &mut bool,
-) {
+) -> Vec<f32> {
     let Some((first, rest)) = banners.split_first() else {
-        return;
+        return Vec::new();
     };
-    banner(
-        ui,
-        cx,
-        first,
-        (!*expanded && !rest.is_empty()).then_some(rest.len()),
-        expanded,
-    );
+    let top = ui.cursor().top();
+    let more = (!*expanded && !rest.is_empty()).then_some(rest.len());
+    banner(ui, cx, first, more, expanded);
+    let mut ends = vec![ui.min_rect().bottom() - top];
     if *expanded {
         for item in rest {
             banner(ui, cx, item, None, expanded);
+            ends.push(ui.min_rect().bottom() - top);
         }
     }
+    ends
 }
 
 /// The severity icon, in points.

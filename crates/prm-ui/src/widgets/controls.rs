@@ -153,6 +153,9 @@ pub(crate) fn ghost_chrome(
 }
 
 /// The side of `close_button`'s square, in points.
+/// The cross in a close button (points).
+pub(crate) const CLOSE_GLYPH: f32 = 14.0;
+
 pub(crate) fn close_side(theme: &UiTheme) -> f32 {
     theme.control_height() - theme.tokens.metrics.space.xs
 }
@@ -162,7 +165,7 @@ pub(crate) fn close_button(ui: &mut egui::Ui, theme: &UiTheme, name: &str) -> eg
     let side = close_side(theme);
     let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
     ghost_fill(ui, theme, rect, &response);
-    let glyph = Rect::from_center_size(rect.center(), vec2(14.0, 14.0));
+    let glyph = Rect::from_center_size(rect.center(), vec2(CLOSE_GLYPH, CLOSE_GLYPH));
     icons::paint(
         ui.painter(),
         glyph,

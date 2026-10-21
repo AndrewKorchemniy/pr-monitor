@@ -13,7 +13,9 @@ pub mod text;
 pub use age::{AgeBucket, AgeCache, AgeLabel, age_label};
 pub use group::{GroupBy, GroupKey, GroupSpan};
 pub use model::{ViewModel, build_view};
-pub use query::{ParsedFilter, StatusFilter, ViewQuery, parse_filter, row_matches};
+pub use query::{
+    ParsedFilter, StatusFilter, ViewQuery, filtered_summary, parse_filter, row_matches,
+};
 pub use row::{PrRow, ReviewerChip, RowBuildInput, ThreadPreview, build_rows};
 pub use sort::{Sort, SortKey, compare_rows};
 pub use summary::{StatusSummary, TrayBadge, summarize, tray_badge, tray_tooltip};

@@ -209,17 +209,22 @@ pub(crate) fn frame_chrome(theme: &UiTheme) -> egui::Frame {
 }
 
 /// The peek drawer and settings cards.
+/// No border: the panel's separator draws its left edge, and the toolbar, status bar and
+/// window bound the rest, so a stroke here doubled those hairlines.
 pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;
     egui::Frame::NONE
         .fill(theme.colors.surface_raised)
-        .stroke(Stroke::new(m.stroke.hairline, theme.colors.border_subtle))
         .inner_margin(Margin::same(px(m.space.lg)))
 }
 
-/// The table area.
+/// A block set into the peek (an open thread), padded and rounded like the controls around it.
 pub(crate) fn frame_sunken(theme: &UiTheme) -> egui::Frame {
-    egui::Frame::NONE.fill(theme.colors.surface_sunken)
+    let m = &theme.tokens.metrics;
+    egui::Frame::NONE
+        .fill(theme.colors.surface_sunken)
+        .inner_margin(Margin::symmetric(px(m.space.md), px(m.space.sm)))
+        .corner_radius(CornerRadius::same(m.radius.md))
 }
 
 /// The window background behind content (the dashboard body, settings pages).

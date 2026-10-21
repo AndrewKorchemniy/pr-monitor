@@ -164,10 +164,12 @@ pub(crate) fn dashboard(
         PeekPlace::Closed | PeekPlace::Over => width,
     };
     let mode = list_mode(ui, &theme, list_width);
+    let stopped = d.service_stopped.is_some();
     let inputs = ToolbarInputs {
         group: d.view.group,
         sort: (mode == ListMode::Cards).then_some(d.view.sort),
         show_org: cx.state.show_org_column,
+        stopped,
     };
     egui::Panel::top("toolbar")
         .exact_size(theme.toolbar_height())
@@ -179,7 +181,10 @@ pub(crate) fn dashboard(
     egui::Panel::bottom("status_bar")
         .exact_size(theme.tokens.metrics.row.statusbar_height)
         .frame(adapter::frame_chrome(&theme))
-        .show(ui, |ui| status_bar(ui, cx, &d.view.query, window_focused));
+        .show(ui, |ui| {
+            let counts = (&d.view.query, d.view.bar_counts);
+            status_bar(ui, cx, counts, window_focused, stopped);
+        });
     if let PeekPlace::Docked { width, max } = place {
         docked_peek(ui, cx, d, (width, max));
     }
@@ -215,21 +220,39 @@ fn banner_panel(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, d: &mut DashboardUi) {
         });
 }
 
-/// `visible` banners in a scroll area as tall as they are, up to `most` points.
+/// `visible` banners in a scroll area as tall as they are, up to `most` points, cut at the
+/// end of the last whole banner that fits so no line of text is sliced.
 fn scrolled_banners(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
     (visible, expanded): (&[&Banner], &mut bool),
     most: f32,
 ) {
+    let ends_id = egui::Id::unique("banner_ends");
+    let ends: Vec<f32> = ui.data(|d| d.get_temp(ends_id)).unwrap_or_default();
+    let height = ends
+        .iter()
+        .copied()
+        .take_while(|end| *end <= most)
+        .last()
+        .filter(|_| ends.last().is_some_and(|last| *last > most))
+        .unwrap_or(most);
     // why: a panel lays its content out in the height it took last frame, so a scroll area
     // sized from the panel would never grow; it gets room of its own.
-    let room = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), most));
+    let room = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), height));
     ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
-        egui::ScrollArea::vertical()
+        // why: the bar floats over the banners' own right inset, so both insets match.
+        ui.spacing_mut().scroll.floating_allocated_width = 0.0;
+        let shown = egui::ScrollArea::vertical()
             .id_salt("banners")
             .auto_shrink([false, true])
-            .show(ui, |ui| banners(ui, cx, visible, expanded));
+            .max_height(height)
+            .show(ui, |ui| banners(ui, cx, visible, expanded))
+            .inner;
+        if shown != ends {
+            ui.data_mut(|d| d.insert_temp(ends_id, shown));
+            ui.ctx().request_repaint();
+        }
     });
 }
 

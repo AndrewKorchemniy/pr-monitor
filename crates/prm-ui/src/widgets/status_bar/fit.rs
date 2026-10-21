@@ -138,14 +138,29 @@ fn sizing_width(ui: &egui::Ui, theme: &UiTheme, text: &str) -> f32 {
     Segment::new(ui, theme, None, zeroed.into(), Kind::Info).width(theme)
 }
 
+/// What must fit beside the counts' labels before they give way: so widening the window never
+/// trades "Updated" for longer labels.
+const BESIDE_LABELS: [Rank; 5] = [
+    Rank::Counts,
+    Rank::Refresh,
+    Rank::Paused,
+    Rank::OrgDots,
+    Rank::Updated,
+];
+
 /// Hands out `room` points rank by rank: the counts always show, and every other segment
 /// shows when it fits. One that does not fit leaves its room to smaller ones after it. While
-/// the counts and the refresh state do not fit side by side, the counts drop their labels
-/// (glyph and number), then the refresh state shortens ("Reading 12/40").
+/// the counts, the refresh state, the paused notice, the org dots and "Updated" do not fit
+/// side by side, the counts drop their labels (glyph and number); while the counts and the
+/// refresh state still do not fit, the refresh state shortens ("Reading 12/40").
 pub(super) fn fit(mut room: f32, theme: &UiTheme, left: &mut [Slot<'_>], right: &mut [Slot<'_>]) {
     let separator = separator_width(theme);
-    for rank in [Rank::Counts, Rank::Refresh] {
-        if crowded(room, separator, left, right) {
+    let steps: [(Rank, &[Rank]); 2] = [
+        (Rank::Counts, &BESIDE_LABELS),
+        (Rank::Refresh, &[Rank::Counts, Rank::Refresh]),
+    ];
+    for (rank, beside) in steps {
+        if crowded(room, separator, (left, right), beside) {
             compact(rank, theme, left);
             compact(rank, theme, right);
         }
@@ -173,8 +188,13 @@ fn compact(rank: Rank, theme: &UiTheme, slots: &mut [Slot<'_>]) {
     }
 }
 
-/// Whether the counts and the refresh state, as they are now, need more than `room`.
-fn crowded(room: f32, separator: f32, left: &[Slot<'_>], right: &[Slot<'_>]) -> bool {
+/// Whether the segments of `ranks`, as they are now, need more than `room`.
+fn crowded(
+    room: f32,
+    separator: f32,
+    (left, right): (&[Slot<'_>], &[Slot<'_>]),
+    ranks: &[Rank],
+) -> bool {
     let need = |rank: Rank| {
         let slots = || left.iter().chain(right).filter(move |s| s.rank == rank);
         let separators = if slots().any(|s| s.cluster().is_some()) {
@@ -184,7 +204,7 @@ fn crowded(room: f32, separator: f32, left: &[Slot<'_>], right: &[Slot<'_>]) -> 
         };
         slots().map(|s| s.fit).sum::<f32>() + separator * separators as f32
     };
-    need(Rank::Counts) + need(Rank::Refresh) > room
+    ranks.iter().map(|rank| need(*rank)).sum::<f32>() > room
 }
 
 /// Shows each slot of `rank` that fits in `room`, charging it a separator too unless it joins

@@ -3,7 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{classify::PrStatus, ids::OrgId, view::row::PrRow};
+use crate::{
+    classify::PrStatus,
+    ids::OrgId,
+    view::{
+        row::PrRow,
+        summary::{StatusSummary, summarize},
+    },
+};
 
 /// What the user is filtering by, persisted with the UI state.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -88,6 +95,18 @@ fn apply_is_flag(filter: &mut ParsedFilter, token: &str) -> bool {
         Some(_) | None => return false,
     }
     true
+}
+
+/// Counts of the rows that `query`'s text, organization and draft filters keep, whatever its
+/// status and changed-only filters: what the status bar's filter toggles count.
+pub fn filtered_summary(rows: &[PrRow], query: &ViewQuery) -> StatusSummary {
+    let filter = parse_filter(&query.text);
+    let broad = ViewQuery {
+        status: StatusFilter::All,
+        unread_only: false,
+        ..query.clone()
+    };
+    summarize(rows.iter().filter(|row| row_matches(row, &broad, &filter)))
 }
 
 pub fn row_matches(row: &PrRow, query: &ViewQuery, filter: &ParsedFilter) -> bool {

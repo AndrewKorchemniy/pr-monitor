@@ -11,7 +11,7 @@ use eframe::egui::{self, Sense, Stroke, vec2};
 use prm_domain::{
     PrStatus, Timestamp,
     auth::SettingsSection,
-    view::{StatusFilter, ViewQuery, age::age_label},
+    view::{StatusFilter, StatusSummary, ViewQuery, age::age_label},
 };
 use prm_service::{AppState, AuthStateView, OrgHealth, OrgStatus, RefreshPhase};
 
@@ -70,11 +70,14 @@ pub(crate) fn org_tone(org: &OrgStatus) -> Tone {
     }
 }
 
+/// `counts` are the rows the text filter keeps; `stopped` is set once the background service
+/// has stopped, so nothing will refresh.
 pub(crate) fn status_bar(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
-    query: &ViewQuery,
+    (query, counts): (&ViewQuery, StatusSummary),
     focused: bool,
+    stopped: bool,
 ) {
     let theme = cx.theme.clone();
     let m = &theme.tokens.metrics;
@@ -85,8 +88,8 @@ pub(crate) fn status_bar(
     let state = cx.state;
     ui.horizontal_centered(|ui| {
         let mut left = org_slots(ui, &theme, state);
-        count_slots(ui, &theme, state, query, &mut left);
-        let mut right = timing_slots(ui, cx, focused);
+        count_slots(ui, &theme, counts, query, &mut left);
+        let mut right = timing_slots(ui, cx, focused, stopped);
         // why: the gap keeps the two sides apart however narrow the window gets.
         let room = ui.available_width() - m.space.xl;
         fit(room, &theme, &mut left, &mut right);
@@ -132,11 +135,10 @@ fn org_slots<'a>(ui: &egui::Ui, theme: &UiTheme, state: &'a AppState) -> Vec<Slo
 fn count_slots(
     ui: &egui::Ui,
     theme: &UiTheme,
-    state: &AppState,
+    summary: StatusSummary,
     query: &ViewQuery,
     slots: &mut Vec<Slot<'_>>,
 ) {
-    let summary = state.summary;
     let total = summary.needs_review + summary.active_comments + summary.reviewed;
     // why: with nothing tracked, zero-count filters only compete with the empty state.
     if total == 0 && query.status == StatusFilter::default() && !query.unread_only {
@@ -180,11 +182,21 @@ fn toggle<'a>(
 }
 
 /// The right side in display order, right to left: refresh, updated, slowed, paused, repos.
-fn timing_slots<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Vec<Slot<'a>> {
+fn timing_slots<'a>(
+    ui: &egui::Ui,
+    cx: &FrameCx<'_>,
+    focused: bool,
+    stopped: bool,
+) -> Vec<Slot<'a>> {
     let theme = &cx.theme;
     let refresh = &cx.state.refresh;
     let mut slots = Vec::new();
-    slots.extend(refresh_slot(ui, cx, focused));
+    if stopped {
+        let text = copy::STOPPED.into();
+        slots.push(Slot::info(ui, theme, text, Rank::Refresh, Hook::None));
+    } else {
+        slots.extend(refresh_slot(ui, cx, focused));
+    }
     let updated = updated_text(refresh.last_completed, cx.now).into();
     let updated = Slot::info(ui, theme, updated, Rank::Updated, Hook::None);
     let sizing = updated_text(Some(cx.now.saturating_sub(SIZING_AGE)), cx.now);
@@ -228,6 +240,10 @@ fn refresh_slot<'a>(ui: &egui::Ui, cx: &FrameCx<'_>, focused: bool) -> Option<Sl
         );
         let slot = slot.with_room_for(ui, theme, &widest);
         return Some(slot.with_short_room_for(ui, theme, &shortest));
+    }
+    // why: with no organization watched nothing is scheduled, whatever was last published.
+    if !cx.state.orgs.iter().any(|org| org.enabled) {
+        return None;
     }
     let next = cx.state.refresh.next_due.filter(|n| *n > cx.now)?;
     let text = match countdown(next.since(cx.now), focused) {

@@ -65,6 +65,8 @@ pub(crate) struct ToolbarInputs {
     pub sort: Option<Sort>,
     /// The organization column is on, so the organization is a sort key too.
     pub show_org: bool,
+    /// The background service has stopped, so refreshing does nothing.
+    pub stopped: bool,
 }
 
 /// Returns whether the filter field has focus.
@@ -155,13 +157,19 @@ fn buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, inputs: ToolbarInputs, fit: 
         if let Some(sort) = inputs.sort {
             sort_menu(ui, cx, (sort, inputs.show_org), fit.menus);
         }
-        refresh_button(ui, cx);
+        refresh_button(ui, cx, inputs.stopped);
         icon_button(ui, cx, Icon::Gear, CommandId::SettingsOpen);
     });
 }
 
 /// Refresh, or while a refresh runs, the same button turned off with its arrow spinning.
-fn refresh_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>) {
+fn refresh_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, stopped: bool) {
+    if stopped {
+        ui.add_enabled_ui(false, |ui| {
+            icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
+        });
+        return;
+    }
     if !cx.state.refresh.in_progress {
         icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
         return;

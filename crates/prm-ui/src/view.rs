@@ -16,7 +16,10 @@ use eframe::egui::Align;
 use prm_config::UiState;
 use prm_domain::{
     PrKey,
-    view::{GroupBy, PrRow, Sort, SortKey, StatusFilter, ViewModel, ViewQuery, build_view},
+    view::{
+        GroupBy, PrRow, Sort, SortKey, StatusFilter, StatusSummary, ViewModel, ViewQuery,
+        build_view, filtered_summary,
+    },
 };
 
 use crate::view::{
@@ -54,6 +57,9 @@ pub(crate) struct DashboardView {
     pub collapsed: BTreeSet<String>,
     pub selected: Option<PrKey>,
     pub model: ViewModel,
+    /// What the status bar's filter toggles count: the rows the text filter keeps, whatever
+    /// the status and changed-only filters.
+    pub bar_counts: StatusSummary,
     pub display: DisplayList,
     pub scroll: ScrollIntent,
     /// The last selection change came from the keyboard (shows the focus ring).
@@ -92,6 +98,7 @@ impl DashboardView {
             collapsed: ui.collapsed_groups.iter().cloned().collect(),
             selected: ui.selected.clone(),
             model: ViewModel::default(),
+            bar_counts: StatusSummary::default(),
             display: DisplayList::default(),
             scroll: ScrollIntent::None,
             keyboard_nav: false,
@@ -148,6 +155,7 @@ impl DashboardView {
     pub(crate) fn rebuild(&mut self) {
         self.model = build_view(&self.rows, &self.query, self.sort, self.group);
         self.display = build_display(&self.rows, &self.model, self.group, &self.collapsed);
+        self.bar_counts = filtered_summary(&self.rows, &self.query);
     }
 
     /// Filter typing: keep the selection if it still matches, else select the first row.
