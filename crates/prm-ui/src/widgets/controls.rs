@@ -152,10 +152,10 @@ pub(crate) fn ghost_chrome(
     }
 }
 
-/// The side of `close_button`'s square, in points.
 /// The cross in a close button (points).
 pub(crate) const CLOSE_GLYPH: f32 = 14.0;
 
+/// The side of `close_button`'s square, in points.
 pub(crate) fn close_side(theme: &UiTheme) -> f32 {
     theme.control_height() - theme.tokens.metrics.space.xs
 }
