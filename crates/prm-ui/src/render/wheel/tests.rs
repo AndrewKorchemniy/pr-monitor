@@ -18,7 +18,7 @@ fn wheel(lines: f32, phase: TouchPhase, source: MouseWheelSource) -> Event {
     }
 }
 
-fn precise(lines: f32) -> Event {
+fn touchpad(lines: f32) -> Event {
     wheel(lines, TouchPhase::Move, MouseWheelSource::Unknown)
 }
 
@@ -26,9 +26,37 @@ fn start() -> Event {
     wheel(0.0, TouchPhase::Start, MouseWheelSource::Unknown)
 }
 
-/// How far egui scrolls in each frame, one frame per entry of `frames`, after `prepare` ran on
-/// its events: the `smooth_scroll_delta` every scroll area applies.
-fn scrolled_per_frame(frames: Vec<Vec<Event>>, prepare: fn(&mut Vec<Event>)) -> Vec<f32> {
+/// Feeds each frame's touchpad deltas (after a pointer move) through one filter and returns
+/// the non-zero wheel deltas that came out of each frame.
+fn filtered(frames: &[&[f32]]) -> Vec<Vec<f32>> {
+    let mut scroll = TouchpadScroll::default();
+    frames
+        .iter()
+        .map(|frame| {
+            let mut events = vec![Event::PointerMoved(pos2(1.0, 1.0))];
+            events.extend(frame.iter().map(|lines| touchpad(*lines)));
+            scroll.rewrite(&mut events);
+            events
+                .iter()
+                .filter_map(|e| {
+                    if let Event::MouseWheel { delta, .. } = e {
+                        Some(delta.y)
+                    } else {
+                        None
+                    }
+                })
+                .filter(|y| *y != 0.0)
+                .collect()
+        })
+        .collect()
+}
+
+/// How far egui scrolls in each frame, one frame per entry of `frames`, with `prepare` run on
+/// each frame's events first: the `smooth_scroll_delta` every scroll area applies.
+fn scrolled_per_frame(
+    frames: Vec<Vec<Event>>,
+    mut prepare: impl FnMut(&mut Vec<Event>),
+) -> Vec<f32> {
     let mut harness = Harness::builder().with_step_dt(FRAME).build_ui_state(
         |ui, scrolled: &mut f32| *scrolled = -ui.input(|i| i.smooth_scroll_delta().y),
         0.0,
@@ -43,28 +71,34 @@ fn scrolled_per_frame(frames: Vec<Vec<Event>>, prepare: fn(&mut Vec<Event>)) -> 
     }
     scrolled
 }
+
+fn rewritten() -> impl FnMut(&mut Vec<Event>) {
+    let mut scroll = TouchpadScroll::default();
+    move |events| scroll.rewrite(events)
+}
+
 #[test]
-fn mark_precise_scroll_starts_a_gesture_before_the_first_fractional_delta() {
+fn a_gesture_starts_before_the_first_touchpad_delta() {
     let mut events = vec![
         Event::PointerMoved(pos2(1.0, 1.0)),
-        precise(-0.1),
-        precise(-0.2),
+        touchpad(-0.1),
+        touchpad(-0.2),
     ];
-    mark_precise_scroll(&mut events);
+    TouchpadScroll::default().rewrite(&mut events);
     let expected = vec![
         Event::PointerMoved(pos2(1.0, 1.0)),
         start(),
-        precise(-0.1),
-        precise(-0.2),
+        touchpad(-0.1),
+        touchpad(-0.2),
     ];
     assert_eq!(events, expected);
 }
 
 #[test]
-fn mark_precise_scroll_leaves_other_wheel_input_alone() {
+fn other_wheel_input_is_left_alone() {
     let cases = [
-        ("a whole notch", precise(-1.0)),
-        ("two notches", precise(2.0)),
+        ("a whole notch", touchpad(-1.0)),
+        ("two notches", touchpad(2.0)),
         (
             "a macOS trackpad",
             wheel(-0.1, TouchPhase::Move, MouseWheelSource::Trackpad),
@@ -86,7 +120,7 @@ fn mark_precise_scroll_leaves_other_wheel_input_alone() {
     ];
     for (case, event) in cases {
         let mut events = vec![event.clone()];
-        mark_precise_scroll(&mut events);
+        TouchpadScroll::default().rewrite(&mut events);
         assert_eq!(events, vec![event], "{case}");
     }
 }
@@ -94,10 +128,10 @@ fn mark_precise_scroll_leaves_other_wheel_input_alone() {
 /// Touchpad scrolling stuttered when the fingers lifted while still moving (most visible in
 /// settings): each fractional delta was eased in over ~100 ms like a wheel notch.
 #[test]
-fn mark_precise_scroll_applies_touchpad_deltas_in_the_frame_they_arrive() {
+fn touchpad_deltas_apply_in_the_frame_they_arrive() {
     let lines = -0.25;
-    let eased = scrolled_per_frame(vec![vec![precise(lines)]], |_| {});
-    let marked = scrolled_per_frame(vec![vec![precise(lines)]], mark_precise_scroll);
+    let eased = scrolled_per_frame(vec![vec![touchpad(lines)]], |_| {});
+    let marked = scrolled_per_frame(vec![vec![touchpad(lines)]], rewritten());
     assert!(
         eased[0] < -lines * LINE / 2.0,
         "egui eases it in: {eased:?}"
@@ -108,17 +142,17 @@ fn mark_precise_scroll_applies_touchpad_deltas_in_the_frame_they_arrive() {
 /// A stream like the momentum after a touchpad lift: eased, the content trails it and keeps
 /// moving after the last delta; marked, it moves with the stream and stops with it.
 #[test]
-fn mark_precise_scroll_moves_with_a_touchpad_stream_and_stops_with_it() {
+fn the_page_moves_with_a_touchpad_stream_and_stops_with_it() {
     let stream = || {
         let mut frames: Vec<Vec<Event>> = [-0.3, -0.2, -0.15, -0.1]
             .into_iter()
-            .map(|lines| vec![precise(lines)])
+            .map(|lines| vec![touchpad(lines)])
             .collect();
         frames.extend(std::iter::repeat_with(Vec::new).take(4));
         frames
     };
     let eased = scrolled_per_frame(stream(), |_| {});
-    let marked = scrolled_per_frame(stream(), mark_precise_scroll);
+    let marked = scrolled_per_frame(stream(), rewritten());
     let after = |scrolled: &[f32]| scrolled[4..].iter().sum::<f32>();
     assert!(
         after(&eased) > 1.0,
@@ -132,10 +166,109 @@ fn mark_precise_scroll_moves_with_a_touchpad_stream_and_stops_with_it() {
 }
 
 #[test]
-fn mark_precise_scroll_keeps_easing_mouse_wheel_notches() {
-    let moved = scrolled_per_frame(vec![vec![precise(-1.0)]], mark_precise_scroll);
+fn mouse_wheel_notches_keep_easing() {
+    let moved = scrolled_per_frame(vec![vec![touchpad(-1.0)]], rewritten());
     assert!(
         0.0 < moved[0] && moved[0] < LINE / 2.0,
         "a notch still eases in: {moved:?}"
     );
+}
+
+/// Recorded at the top of the settings page: pushes of +2.4 lines, one -0.53 among them, and
+/// the page jumped 21 pt down for a frame.
+#[test]
+fn a_lone_small_reversal_inside_a_stream_is_dropped() {
+    let out = filtered(&[&[2.45], &[2.4], &[2.6], &[-0.53], &[2.44], &[5.86]]);
+    let expected: Vec<Vec<f32>> = vec![
+        vec![2.45],
+        vec![2.4],
+        vec![2.6],
+        vec![],
+        vec![2.44],
+        vec![5.86],
+    ];
+    assert_eq!(out, expected);
+}
+
+/// Recorded at the bottom: -1.0s, then one +0.37, then -1.37.
+#[test]
+fn a_lone_reversal_against_a_downward_stream_is_dropped_too() {
+    let out = filtered(&[&[-0.98], &[-1.05], &[-1.08], &[-1.02], &[0.37], &[-1.37]]);
+    let expected: Vec<Vec<f32>> = vec![
+        vec![-0.98],
+        vec![-1.05],
+        vec![-1.08],
+        vec![-1.02],
+        vec![],
+        vec![-1.37],
+    ];
+    assert_eq!(out, expected);
+}
+
+/// Lifting one finger at an edge ends the stream on a stray reversal, with only pointer moves
+/// after it: it is dropped, so the page stays at the edge.
+#[test]
+fn a_reversal_that_ends_the_stream_is_dropped() {
+    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[0.4], &[], &[]]);
+    let expected: Vec<Vec<f32>> = vec![vec![-1.1], vec![-1.1], vec![-1.1], vec![], vec![], vec![]];
+    assert_eq!(out, expected);
+}
+
+/// The user turning round: a second reversed event confirms the turn and everything from it
+/// on passes; only the first small step is lost.
+#[test]
+fn a_real_change_of_direction_passes_from_its_second_event() {
+    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[0.4], &[0.8], &[1.2]]);
+    let expected: Vec<Vec<f32>> = vec![
+        vec![-1.1],
+        vec![-1.1],
+        vec![-1.1],
+        vec![],
+        vec![0.8],
+        vec![1.2],
+    ];
+    assert_eq!(out, expected);
+}
+
+/// A large reversal is a deliberate flick back, never noise.
+#[test]
+fn a_large_reversal_passes_at_once() {
+    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[3.3]]);
+    let expected: Vec<Vec<f32>> = vec![vec![-1.1], vec![-1.1], vec![-1.1], vec![3.3]];
+    assert_eq!(out, expected);
+}
+
+/// Before a stream is established, nothing is dropped.
+#[test]
+fn early_reversals_pass() {
+    let out = filtered(&[&[-1.1], &[0.5], &[-1.1]]);
+    let expected: Vec<Vec<f32>> = vec![vec![-1.1], vec![0.5], vec![-1.1]];
+    assert_eq!(out, expected);
+}
+
+/// Several events in one frame go through the same logic.
+#[test]
+fn the_filter_works_within_a_frame() {
+    let out = filtered(&[&[2.2, 2.2, 2.2, -0.3, 2.2]]);
+    let expected: Vec<Vec<f32>> = vec![vec![2.2, 2.2, 2.2, 2.2]];
+    assert_eq!(out, expected);
+}
+
+/// Once the touchpad has been quiet for a while the stream is over, and the first event of a
+/// new one is never taken for a glitch, whichever way it goes.
+#[test]
+fn a_new_stream_after_a_pause_starts_either_way() {
+    let mut frames: Vec<&[f32]> = vec![&[-1.1], &[-1.1], &[-1.1]];
+    frames.extend(std::iter::repeat_n(&[][..], IDLE_FRAMES as usize + 1));
+    frames.push(&[0.4]);
+    let out = filtered(&frames);
+    assert_eq!(out.last(), Some(&vec![0.4]));
+}
+
+/// Whole notches from a mouse wheel are not touchpad events and are never dropped.
+#[test]
+fn mouse_notches_are_never_dropped() {
+    let out = filtered(&[&[-1.0], &[-1.0], &[-1.0], &[1.0], &[-1.0]]);
+    let expected: Vec<Vec<f32>> = vec![vec![-1.0], vec![-1.0], vec![-1.0], vec![1.0], vec![-1.0]];
+    assert_eq!(out, expected);
 }
