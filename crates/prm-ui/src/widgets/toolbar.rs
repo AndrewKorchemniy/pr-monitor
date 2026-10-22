@@ -13,7 +13,10 @@ use crate::{
     frame::FrameCx,
     theme::{UiTheme, icons::Icon},
     view::columns::{COLUMNS, ColumnId},
-    widgets::{self, controls, fields},
+    widgets::{
+        controls, fields,
+        progress::{self, ProgressLine},
+    },
 };
 
 pub(crate) const FILTER_ID: &str = "filter";
@@ -75,6 +78,7 @@ pub(crate) fn toolbar(
     cx: &mut FrameCx<'_>,
     filter: &mut String,
     inputs: ToolbarInputs,
+    line: &mut ProgressLine,
 ) -> bool {
     let theme = cx.theme.clone();
     let rect = ui.max_rect();
@@ -95,11 +99,13 @@ pub(crate) fn toolbar(
             buttons(ui, cx, inputs, &fit);
         });
     });
-    if let Some(fraction) = cx.state.refresh_fraction() {
-        // why: edge to edge like the divider it sits on, not inside the toolbar's margin.
-        let full = rect.expand2(egui::vec2(theme.tokens.metrics.space.md, 0.0));
-        widgets::progress_line(ui, full, fraction, theme.colors.accent_base);
-    }
+    // why: edge to edge like the divider it sits on, not inside the toolbar's margin.
+    let full = rect.expand2(egui::vec2(theme.tokens.metrics.space.md, 0.0));
+    let bar = egui::Rect::from_min_max(
+        egui::pos2(full.left(), full.bottom() - progress::HEIGHT),
+        full.max,
+    );
+    line.show(ui, bar, cx.state.refresh_fraction(), &theme);
     focused
 }
 

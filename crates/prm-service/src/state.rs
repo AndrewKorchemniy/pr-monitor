@@ -73,21 +73,58 @@ impl AppState {
         tray_tooltip(&self.summary, self.any_org_broken())
     }
 
-    /// Overall progress of the running refresh (0..=1), when it can be known.
+    /// Overall progress of the running refresh (0..=1): each phase owns a span of the run, in
+    /// the order the phases go and sized by how long each tends to take, and a phase's items
+    /// fill its span. Several orgs refreshing at once give the mean of their fractions. So the
+    /// bar never restarts between phases or orgs. `None` when nothing is refreshing.
     pub fn refresh_fraction(&self) -> Option<f32> {
         if !self.refresh.in_progress {
             return None;
         }
-        let (done, total) = self
-            .refresh
-            .progress
-            .iter()
-            .fold((0_u32, 0_u32), |(d, t), p| (d + p.done, t + p.total));
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "progress counts are far below f32 precision"
-        )]
-        (total > 0).then(|| (done as f32 / total as f32).clamp(0.0, 1.0))
+        let runs = &self.refresh.progress;
+        if runs.is_empty() {
+            return Some(0.0);
+        }
+        #[expect(clippy::cast_precision_loss, reason = "a handful of organizations")]
+        let count = runs.len() as f32;
+        Some(runs.iter().map(RefreshProgress::fraction).sum::<f32>() / count)
+    }
+}
+
+impl RefreshProgress {
+    /// Where this org's refresh is on the whole run (0..=1).
+    pub fn fraction(&self) -> f32 {
+        phase_fraction(self.phase, self.done, self.total)
+    }
+}
+
+/// Where a refresh is on the whole run (0..=1) with `done` of `total` items of `phase`
+/// finished: at the phase's span start while its total is still unknown.
+pub fn phase_fraction(phase: RefreshPhase, done: u32, total: u32) -> f32 {
+    let (start, end) = phase.span();
+    if total == 0 {
+        return start;
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "progress counts are far below f32 precision"
+    )]
+    let within = (done as f32 / total as f32).clamp(0.0, 1.0);
+    start + (end - start) * within
+}
+
+impl RefreshPhase {
+    /// The share of the whole run this phase takes, as a span of 0..=1. Listing pull requests
+    /// is a few requests; reading their threads is one request per pull request and most of
+    /// the wait.
+    pub const fn span(self) -> (f32, f32) {
+        match self {
+            Self::Authenticating => (0.0, 0.04),
+            Self::Catalog => (0.04, 0.10),
+            Self::PullRequests => (0.10, 0.30),
+            Self::Threads => (0.30, 0.96),
+            Self::Resolving => (0.96, 1.0),
+        }
     }
 }
 

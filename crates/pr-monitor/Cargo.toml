@@ -1,6 +1,6 @@
 [package]
 name = "pr-monitor"
-version = "0.2.3"
+version = "0.2.4"
 description = "Tiny, fast tray app that tracks your team's Azure DevOps pull requests"
 edition.workspace = true
 rust-version.workspace = true

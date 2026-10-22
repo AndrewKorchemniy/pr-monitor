@@ -8,6 +8,7 @@ use prm_config::Severity;
 use prm_domain::view::age::AgeCache;
 use prm_service::state::Banner;
 
+use crate::widgets::progress::ProgressLine;
 use crate::{
     copy,
     frame::FrameCx,
@@ -98,6 +99,10 @@ pub(crate) struct DashboardUi {
     pub geometry: Option<TableGeometry>,
     /// How the list was drawn last, so a switch keeps the user's place.
     pub mode: Option<ListMode>,
+    /// The refresh line under the toolbar.
+    pub refresh_line: ProgressLine,
+    /// The loading bar of the empty state during the first refresh.
+    pub loading_line: ProgressLine,
 }
 
 impl DashboardUi {
@@ -113,6 +118,8 @@ impl DashboardUi {
             filter_focused: false,
             geometry: None,
             mode: None,
+            refresh_line: ProgressLine::default(),
+            loading_line: ProgressLine::default(),
         }
     }
 
@@ -173,7 +180,7 @@ pub(crate) fn dashboard(
         .exact_size(theme.toolbar_height())
         .frame(adapter::frame_chrome(&theme))
         .show(ui, |ui| {
-            d.filter_focused = toolbar(ui, cx, &mut d.filter, inputs);
+            d.filter_focused = toolbar(ui, cx, &mut d.filter, inputs, &mut d.refresh_line);
         });
     banner_panel(ui, cx, d);
     egui::Panel::bottom("status_bar")
@@ -302,7 +309,7 @@ fn body(
     if let Some(kind) = empty {
         d.geometry = None;
         let scope = scope_label(cx);
-        empty_state(ui, cx, &kind, &scope);
+        empty_state(ui, cx, &kind, &scope, &mut d.loading_line);
         return;
     }
     let first = d.mode.is_none();
