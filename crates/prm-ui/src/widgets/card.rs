@@ -29,7 +29,7 @@ pub(crate) fn anchored_card(
     let last = crate::widgets::recall(ui, measured);
     let top = fit::card_top(window.y, last, m.space.xxl);
     // why: an overlay scrollbar, so a card that scrolls stays centred between even margins.
-    ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+    ui.spacing_mut().scroll = adapter::floating_scroll();
     egui::ScrollArea::vertical()
         .id_salt(("anchored_card", salt))
         .auto_shrink(false)

@@ -138,7 +138,7 @@ fn list(
     let mut list = ui.new_child(egui::UiBuilder::new().max_rect(wide));
     list.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
     // why: an overlay scrollbar, so the rows keep their width once the list scrolls.
-    list.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+    list.spacing_mut().scroll = crate::theme::adapter::floating_scroll();
     egui::ScrollArea::vertical()
         .id_salt("palette_rows")
         .max_height(list_height(theme, rows, items.len()))

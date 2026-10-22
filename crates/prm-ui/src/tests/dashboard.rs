@@ -22,6 +22,7 @@ use crate::{
         screens::{Fixture, HARNESS_MARGIN, NARROW, Shown, WINDOW, harness_at},
     },
     theme::{self, adapter},
+    view::ScrollIntent,
 };
 
 /// The demo dashboard at the demo's "now", grouped by `group`, in a window of `size` points.
@@ -473,4 +474,25 @@ fn the_refresh_button_turns_off_while_a_refresh_runs() {
             .any(|a| matches!(a, UiAction::Run(CommandId::RefreshNow)));
         assert_eq!(ran, !busy, "busy: {busy}");
     }
+}
+
+/// When the list got shorter while scrolled to the end (a group collapsed, a refresh dropped
+/// rows, an offset kept past the end), egui sprang the offset back over a dozen frames, which
+/// read as rubber-banding at the end of a touchpad fling.
+#[test]
+fn an_offset_past_the_end_settles_in_one_frame() {
+    let mut h = demo(GroupBy::Status, egui::vec2(1280.0, 420.0));
+    h.state_mut().dash.view.scroll = ScrollIntent::Offset(5_000.0);
+    h.run();
+    let bottom = h.state().dash.view.offset_y;
+    assert!(bottom > 100.0, "the list did not scroll: {bottom}");
+    h.state_mut().dash.view.toggle_group(2);
+    h.step();
+    let mut offsets = Vec::new();
+    for _ in 0..6 {
+        h.step();
+        offsets.push(h.state().dash.view.offset_y);
+    }
+    let settled = offsets.windows(2).all(|p| (p[0] - p[1]).abs() < 0.5);
+    assert!(settled, "from {bottom}: {offsets:?}");
 }
