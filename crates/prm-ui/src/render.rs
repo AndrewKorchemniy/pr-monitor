@@ -4,6 +4,7 @@
 pub(crate) mod hover_bands;
 pub(crate) mod policy;
 pub(crate) mod repaint;
+pub(crate) mod wheel;
 
 use std::sync::Arc;
 

@@ -208,8 +208,7 @@ pub(crate) fn frame_chrome(theme: &UiTheme) -> egui::Frame {
         .inner_margin(Margin::symmetric(px(m.space.md), 0))
 }
 
-/// The peek drawer and settings cards.
-/// No border: the panel's separator draws its left edge, and the toolbar, status bar and
+/// The peek drawer. No border: the panel's separator draws its left edge, and the toolbar, status bar and
 /// window bound the rest, so a stroke here doubled those hairlines.
 pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;
@@ -230,11 +229,6 @@ pub(crate) fn frame_sunken(theme: &UiTheme) -> egui::Frame {
 /// The window background behind content (the dashboard body, settings pages).
 pub(crate) fn frame_canvas(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE.fill(theme.colors.surface_canvas)
-}
-
-/// The table area: the canvas, edge to edge (the last column keeps its own margin).
-pub(crate) fn frame_table(theme: &UiTheme) -> egui::Frame {
-    frame_canvas(theme)
 }
 
 /// A standalone card with a hairline border, like a dialog (first run).

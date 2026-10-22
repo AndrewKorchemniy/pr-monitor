@@ -76,3 +76,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 lowercase subject, for example `fix(ui): keep the selection after refresh`. Add `!` for a
 breaking change. PRs are squash-merged, so the PR title becomes the commit and drives the
 changelog.
+
+The release notes (`.github/scripts/release-notes.sh`) show each merged PR's title as a heading,
+then its description's "What and why" and its pre-squash commit titles. Write that section for
+someone reading the release: what changed for users and why, as short bullets. Keep each commit
+subject a meaningful change of its own.

@@ -28,7 +28,7 @@ pub(crate) fn token_dialog(
         buttons: &[copy::SAVE_TOKEN, copy::CANCEL],
         danger: false,
         width: widgets::modal::WIDTH,
-        nested: false,
+        ..ModalSpec::default()
     };
     let mut docs = false;
     let outcome = modal(ctx, theme, &spec, |ui| {

@@ -65,13 +65,19 @@ fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) 
     })
 }
 
-/// One license text, re-flowed to the dialog's width.
-fn license(ui: &mut egui::Ui, theme: &UiTheme, text: &str) {
-    for block in reflow(text) {
+/// One license text, re-flowed to the dialog's width. The texts are fixed, so each is re-flowed
+/// once and kept, not on every frame the dialog is open.
+fn license(ui: &mut egui::Ui, theme: &UiTheme, text: &'static str) {
+    let id = egui::Id::unique(("license", text.as_ptr().addr()));
+    let blocks = ui.data_mut(|d| {
+        d.get_temp_mut_or_insert_with::<std::sync::Arc<[Block]>>(id, || reflow(text).into())
+            .clone()
+    });
+    for block in blocks.iter() {
         match block {
             Block::Text(text) => {
                 ui.label(
-                    RichText::new(text)
+                    RichText::new(text.as_str())
                         .font(theme.fonts.mono.clone())
                         .color(theme.colors.text_secondary),
                 );
@@ -109,20 +115,17 @@ fn reflow(text: &str) -> Vec<Block> {
             flush(&mut para, &mut blocks);
             blocks.push(Block::Rule);
         } else {
+            let keep = keeps_line(line);
             let separator = if para.is_empty() {
                 ""
-            } else if keeps_line(line) {
+            } else if keep {
                 "
 "
             } else {
                 " "
             };
             para.push_str(separator);
-            para.push_str(if keeps_line(line) {
-                line.trim_end()
-            } else {
-                trimmed
-            });
+            para.push_str(if keep { line.trim_end() } else { trimmed });
         }
     }
     flush(&mut para, &mut blocks);

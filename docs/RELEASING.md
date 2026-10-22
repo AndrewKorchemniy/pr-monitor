@@ -63,7 +63,13 @@ latest release, or as a pre-release when the version has a suffix such as `-alph
 3. Run it on `main` with `mode=release-current`.
 4. When the publish job is done, check the draft release on GitHub, then approve `go-live`.
 
-Release notes come from GitHub's generated notes plus the unsigned-build and verify lines.
+Release notes come from `.github/scripts/release-notes.sh` plus the unsigned-build and verify
+lines. For each pull request merged since the last published release, the notes show:
+- its title, as a heading;
+- its description's "What and why" (the test notes, checklist and HTML comments are left out);
+- the titles of the commits it was squashed from, in a collapsed list.
+Preview them before a release with
+`PREV_TAG=v0.2.0 bash .github/scripts/release-notes.sh AndrewKorchemniy/pr-monitor <sha> v0.2.1`.
 `CHANGELOG.md` is only updated on the release-plz path.
 
 ## release-plz with a GitHub App (optional)

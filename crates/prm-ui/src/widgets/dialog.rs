@@ -70,8 +70,8 @@ pub(crate) fn header(ui: &mut egui::Ui, theme: &UiTheme, head: &DialogHead<'_>) 
 
 /// `add` (a title) in the `Ui`'s width short of a close button at its right, then the button:
 /// centred on the title's `first_line` (its height), or with none, halfway down the `Ui`'s rect
-/// with the title centred beside it. The title wraps or is cut short instead of pushing the button out, and it comes before
-/// the button in reading and Tab order. Returns true when the close button was clicked.
+/// with the title centred beside it. The title wraps or is cut short instead of pushing the
+/// button out, and it comes before the button in reading and Tab order. Returns true when the close button was clicked.
 pub(crate) fn with_close(
     ui: &mut egui::Ui,
     theme: &UiTheme,

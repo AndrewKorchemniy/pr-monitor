@@ -2,7 +2,7 @@
 //! request row answers the pointer (select, open, context menu, focus ring), the pending scroll
 //! request, and what the list records about where it scrolled.
 
-use eframe::egui::{self, Rect, Response, Stroke, StrokeKind, UiBuilder};
+use eframe::egui::{self, Rect, Response, Stroke, StrokeKind};
 use egui_extras::{TableBody, TableBuilder, TableRow};
 use prm_domain::view::{GroupBy, PrRow, group::GroupSpan};
 
@@ -69,19 +69,6 @@ pub(crate) fn group_row(
     if response.clicked() {
         pending.push(UiAction::ToggleGroup(span));
     }
-}
-
-/// Runs `add` in the cell short of the row margin on its right: the last column keeps a margin
-/// as wide as the first column, so the fills reach the list's edge and the text keeps clear.
-pub(crate) fn last_cell<R>(
-    ui: &mut egui::Ui,
-    theme: &UiTheme,
-    add: impl FnOnce(&mut egui::Ui) -> R,
-) -> R {
-    let rect = ui.max_rect();
-    let inner = rect.with_max_x(rect.right() - theme.tokens.metrics.row.margin_col);
-    let builder = UiBuilder::new().max_rect(inner).layout(*ui.layout());
-    ui.scope_builder(builder, add).inner
 }
 
 /// Paints a group header across the whole row from inside one of its cells.
@@ -179,6 +166,11 @@ pub(crate) fn answer_row(
     if response.double_clicked() {
         pending.push(UiAction::Open(pr.key.clone()));
     }
+    // why: rows are many and a menu is open on one at most; build it only for that row.
+    let menu = egui::Popup::default_response_id(response);
+    if !response.secondary_clicked() && !egui::Popup::is_id_open(&response.ctx, menu) {
+        return;
+    }
     egui::Popup::context_menu(response)
         .frame(controls::menu_frame(rcx.theme))
         .width(controls::MENU_WIDTH)
@@ -233,10 +225,7 @@ fn context_menu(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow, pending: &mut Ve
             ui.close();
         }
         if matches!(command, CommandId::PrOpen | CommandId::PrCopyTitle) {
-            let space = theme.tokens.metrics.space.xs;
-            ui.add_space(space);
-            controls::row_divider(ui, theme);
-            ui.add_space(space);
+            controls::spaced_divider(ui, theme, theme.tokens.metrics.space.xs);
         }
     }
 }

@@ -12,7 +12,7 @@ pub(crate) use self::{
         MENU_GAP, MENU_WIDTH, MenuMark, menu_button, menu_button_width, menu_check, menu_frame,
         menu_icon_button, menu_item, menu_item_detail,
     },
-    rows::{disclosure, row_divider, setting_row, toggle_row},
+    rows::{disclosure, row_divider, setting_row, spaced_divider, toggle_row},
     segmented::segmented,
 };
 use crate::theme::{
@@ -152,10 +152,10 @@ pub(crate) fn ghost_chrome(
     }
 }
 
-/// The side of `close_button`'s square, in points.
 /// The cross in a close button (points).
 pub(crate) const CLOSE_GLYPH: f32 = 14.0;
 
+/// The side of `close_button`'s square, in points.
 pub(crate) fn close_side(theme: &UiTheme) -> f32 {
     theme.control_height() - theme.tokens.metrics.space.xs
 }

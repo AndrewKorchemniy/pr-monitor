@@ -34,7 +34,7 @@ pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
         buttons: &[copy::CLOSE],
         danger: false,
         width: 560.0,
-        nested: false,
+        ..ModalSpec::default()
     };
     // why: the dialog's body scrolls, so the list needs no scroll area of its own.
     let outcome = modal(ctx, &theme, &spec, |ui| {
@@ -90,10 +90,7 @@ fn key_list(ui: &mut egui::Ui, cx: &FrameCx<'_>) {
     let theme = &cx.theme;
     let m = &theme.tokens.metrics;
     for (index, (category, title)) in CATEGORIES.into_iter().enumerate() {
-        if index > 0 {
-            ui.add_space(m.space.md);
-        }
-        ui.label(RichText::new(title).font(theme.fonts.body_strong.clone()));
+        heading(ui, theme, title, index > 0);
         for (command, chords) in bound(cx, category) {
             ui.add_space(m.space.xxs);
             ui.label(command);

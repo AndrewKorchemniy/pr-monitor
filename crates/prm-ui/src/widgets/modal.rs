@@ -2,7 +2,10 @@
 //! right-aligned buttons, separated by full-width dividers. Esc closes it. It fits the window:
 //! narrower than asked in a small window, and its body scrolls when it is taller than the room.
 
-use eframe::egui::{self, RichText};
+use eframe::{
+    egui::{self, RichText},
+    emath::GuiRounding as _,
+};
 
 use crate::{
     theme::{UiTheme, adapter},
@@ -22,6 +25,7 @@ pub(crate) enum ModalOutcome {
     Dismissed,
 }
 
+#[derive(Default)]
 pub(crate) struct ModalSpec<'a> {
     pub id: &'a str,
     pub title: &'a str,
@@ -55,40 +59,42 @@ pub(crate) fn modal(
     let mut outcome = ModalOutcome::Open;
     let frame = adapter::frame_dialog(theme, theme.policy).inner_margin(egui::Margin::ZERO);
     let chrome = frame.total_margin().sum();
-    let nested = if spec.nested {
-        egui::Vec2::splat(2.0 * NESTED_INSET)
-    } else {
-        egui::Vec2::ZERO
-    };
-    let room = (fit::room(ctx.content_rect().size()) - chrome - nested).max(egui::Vec2::ZERO);
+    let inset = if spec.nested { NESTED_INSET } else { 0.0 };
+    let room = (fit::room(ctx.content_rect().size()) - chrome - egui::Vec2::splat(2.0 * inset))
+        .max(egui::Vec2::ZERO);
     let id = egui::Id::unique(spec.id);
-    let response = egui::Modal::new(id).frame(frame).show(ctx, |ui| {
-        ui.set_width(spec.width.min(room.x));
-        let top = ui.cursor().top();
-        let head = DialogHead {
-            title: spec.title,
-            subtitle: spec.subtitle,
-            display: false,
-            close: true,
-        };
-        if dialog::header(ui, theme, &head) {
-            outcome = ModalOutcome::Dismissed;
-        }
-        let bar = id.with("action_bar");
-        let used = ui.cursor().top() - top + bar_height(ui, theme, spec, bar);
-        let height = (room.y - used).clamp(MIN_BODY, MAX_BODY);
-        // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
-        // when it starts to scroll (as the settings page does).
-        ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
-        egui::ScrollArea::vertical()
-            .id_salt(id.with("body"))
-            .max_height(height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| dialog::body(ui, theme, body));
-        if let Some(index) = action_bar(ui, theme, spec, bar) {
-            outcome = ModalOutcome::Button(index);
-        }
-    });
+    let width = spec.width.min(room.x);
+    let area = dialog_area(ctx, id, width + chrome.x, None);
+    let response = egui::Modal::new(id)
+        .area(area)
+        .frame(frame)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            let top = ui.cursor().top();
+            let head = DialogHead {
+                title: spec.title,
+                subtitle: spec.subtitle,
+                display: false,
+                close: true,
+            };
+            if dialog::header(ui, theme, &head) {
+                outcome = ModalOutcome::Dismissed;
+            }
+            let bar = id.with("action_bar");
+            let used = ui.cursor().top() - top + bar_height(ui, theme, spec, bar);
+            let height = (room.y - used).clamp(MIN_BODY, MAX_BODY);
+            // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
+            // when it starts to scroll (as the settings page does).
+            ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+            egui::ScrollArea::vertical()
+                .id_salt(id.with("body"))
+                .max_height(height)
+                .auto_shrink([false, true])
+                .show(ui, |ui| dialog::body(ui, theme, body));
+            if let Some(index) = action_bar(ui, theme, spec, bar) {
+                outcome = ModalOutcome::Button(index);
+            }
+        });
     // why: a click beside a dialog (or on a browser window over it) must not throw away what
     // was typed or chosen; Esc and the close button dismiss it.
     let escaped = response.should_close() && !response.backdrop_response.clicked();
@@ -98,13 +104,17 @@ pub(crate) fn modal(
     outcome
 }
 
+/// A one-line action bar's height: its buttons, the inset around them and the divider above.
+pub(crate) fn action_bar_height(theme: &UiTheme) -> f32 {
+    theme.control_height() + 2.0 * dialog::INSET + 1.0
+}
+
 /// The action bar's height as last drawn (stored under `bar`), or a single row before then.
 fn bar_height(ui: &egui::Ui, theme: &UiTheme, spec: &ModalSpec<'_>, bar: egui::Id) -> f32 {
     if spec.buttons.is_empty() {
         return 0.0;
     }
-    let single = theme.control_height() + 2.0 * dialog::INSET + 1.0;
-    ui.data(|d| d.get_temp(bar)).unwrap_or(single)
+    widgets::recall(ui, bar).unwrap_or_else(|| action_bar_height(theme))
 }
 
 /// The divider and the buttons, which wrap onto more lines when they do not fit side by side;
@@ -124,12 +134,7 @@ fn action_bar(
     let clicked = dialog::actions(ui, theme, |ui| {
         ui.with_layout(right, |ui| buttons(ui, theme, spec)).inner
     });
-    let height = ui.cursor().top() - top;
-    let before: Option<f32> = ui.data(|d| d.get_temp(bar));
-    if before.is_none_or(|b| (b - height).abs() > 0.5) {
-        ui.data_mut(|d| d.insert_temp(bar, height));
-        ui.ctx().request_repaint();
-    }
+    widgets::remember(ui, bar, ui.cursor().top() - top);
     clicked
 }
 
@@ -156,5 +161,31 @@ fn primary(ui: &mut egui::Ui, theme: &UiTheme, label: &str, danger: bool) -> egu
         ui.add(egui::Button::new(text).fill(tone.solid))
     } else {
         widgets::primary_button(ui, theme, label)
+    }
+}
+
+/// The area for a modal `outer` points wide (frame included), placed across the window from
+/// that known width: halfway across, on a whole pixel. egui centres an area by the size it
+/// measured the frame before, so a width that differed by a pixel from one frame to the next
+/// moved the whole dialog sideways and back on every repaint (each blink of a text cursor).
+/// `top` pins its top edge that far down; without it the dialog is centred down the window.
+pub(crate) fn dialog_area(
+    ctx: &egui::Context,
+    id: egui::Id,
+    outer: f32,
+    top: Option<f32>,
+) -> egui::Area {
+    let window = ctx.content_rect();
+    let ppp = ctx.pixels_per_point();
+    let left = ((window.width() - outer) / 2.0)
+        .max(0.0)
+        .round_to_pixels(ppp);
+    let area = egui::Modal::default_area(id);
+    match top {
+        Some(top) => area.anchor(
+            egui::Align2::LEFT_TOP,
+            egui::vec2(left, top.round_to_pixels(ppp)),
+        ),
+        None => area.anchor(egui::Align2::LEFT_CENTER, egui::vec2(left, 0.0)),
     }
 }

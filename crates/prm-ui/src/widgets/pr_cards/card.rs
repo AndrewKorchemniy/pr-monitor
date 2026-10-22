@@ -42,18 +42,17 @@ fn line_heights(ui: &egui::Ui, theme: &UiTheme) -> (f32, f32) {
     (row(&theme.fonts.body), detail)
 }
 
-/// Lays the card out in the cell: the title block is centred, so a one-line title does not
-/// leave a gap under it.
 /// How far a card's text starts from the list's left edge, past the margin column, the gap and
 /// the status glyph's lane; group labels line up with it.
 pub(super) fn text_x(theme: &UiTheme, gap: f32) -> f32 {
     theme.tokens.metrics.row.margin_col + gap + STATUS_LANE + theme.tokens.metrics.space.sm
 }
 
+/// Lays the card out in the cell: the title block is centred, so a one-line title does not
+/// leave a gap under it.
 pub(super) fn card(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, pr: &PrRow, index: usize) {
     let m = &rcx.theme.tokens.metrics;
-    let cell = ui.max_rect();
-    let inner = cell;
+    let inner = ui.max_rect();
     let (title_line, detail_line) = line_heights(ui, rcx.theme);
     let flags = cells::flags(rcx.theme, pr);
     let marks = flags.iter().filter(|(on, ..)| *on).count() as f32;

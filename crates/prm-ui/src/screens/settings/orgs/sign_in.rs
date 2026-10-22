@@ -73,7 +73,7 @@ fn headline(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
     // why: the buttons' drawn width, kept from the last frame, so the last one ends on the
     // content's edge; the estimate only stands in until then.
     let id = ui.scope_id().with("sign_in_buttons");
-    let buttons = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or_else(|| {
+    let buttons = widgets::recall(ui, id).unwrap_or_else(|| {
         widgets::button_width(ui, &theme, copy::CHANGE_SIGN_IN)
             + gap
             + widgets::button_width(ui, &theme, copy::SIGN_OUT)
@@ -88,15 +88,8 @@ fn headline(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, status: &OrgStatus) {
         // why: laid out left to right after a gap, not right to left, so the buttons come in
         // the same reading and Tab order as on the line below.
         ui.add_space((ui.available_width() - buttons).max(0.0));
-        let drawn = ui
-            .horizontal(|ui| signed_in_buttons(ui, cx, status))
-            .response
-            .rect
-            .width();
-        if (drawn - buttons).abs() > 0.5 {
-            ui.data_mut(|d| d.insert_temp(id, drawn));
-            ui.ctx().request_repaint();
-        }
+        let drawn = ui.horizontal(|ui| signed_in_buttons(ui, cx, status));
+        widgets::remember(ui, id, drawn.response.rect.width());
     });
 }
 

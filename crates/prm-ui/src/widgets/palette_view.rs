@@ -82,9 +82,10 @@ fn show(
     let window = ctx.content_rect().size();
     // why: a palette opens near the top, where the eye already is, not mid-window.
     let top = window.y * TOP_SHARE;
-    let area = egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, top));
     let frame = crate::theme::adapter::frame_popup(theme, theme.policy);
-    let width = WIDTH.min(fit::room(window).x - frame.total_margin().sum().x);
+    let chrome = frame.total_margin().sum().x;
+    let width = WIDTH.min(fit::room(window).x - chrome);
+    let area = widgets::modal::dialog_area(ctx, id, width + chrome, Some(top));
     let rows = rows_that_fit(theme, window.y - top - fit::window_margin(window.y));
     let mut clicked = None;
     let modal = egui::Modal::new(id)

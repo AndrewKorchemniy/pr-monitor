@@ -171,8 +171,9 @@ const FADE: f32 = 24.0;
 /// Fades the strip's ends where tabs are scrolled out of sight, so it reads as scrollable.
 fn edge_fades<R>(ui: &egui::Ui, shown: &egui::scroll_area::ScrollAreaOutput<R>) {
     let view = shown.inner_rect;
-    let hidden_left = shown.state.clamped_offset().x > 0.5;
-    let hidden_right = shown.state.clamped_offset().x + view.width() < shown.content_size.x - 0.5;
+    let offset = shown.state.clamped_offset().x;
+    let hidden_left = offset > 0.5;
+    let hidden_right = offset + view.width() < shown.content_size.x - 0.5;
     let solid = ui.visuals().window_fill;
     let clear = solid.gamma_multiply(0.0);
     let fade = |rect: Rect, (left, right): (egui::Color32, egui::Color32)| {

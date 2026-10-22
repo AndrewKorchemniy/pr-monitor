@@ -2,7 +2,7 @@
 
 use crate::view::{
     group::{GroupBy, GroupKey, GroupSpan},
-    query::{ParsedFilter, ViewQuery, parse_filter, row_matches},
+    query::{ViewQuery, broad_matches, parse_filter, toggles_match},
     row::PrRow,
     sort::{Sort, compare_rows},
     summary::{StatusSummary, summarize},
@@ -15,20 +15,27 @@ pub struct ViewModel {
     pub groups: Vec<GroupSpan>,
     /// Counts over the rows that pass the filter.
     pub counts: StatusSummary,
+    /// Counts over the rows the text, organization and draft filters keep, whatever the status
+    /// and changed-only filters: what the status bar's filter toggles count.
+    pub broad_counts: StatusSummary,
 }
 
 /// Filter, then stable-sort by (group, column sort), then cut into group spans.
 /// O(n log n); fast enough to rebuild on every keystroke for a thousand rows.
 pub fn build_view(rows: &[PrRow], query: &ViewQuery, sort: Sort, group: GroupBy) -> ViewModel {
     let filter = parse_filter(&query.text);
+    let broad: Vec<usize> = (0..rows.len())
+        .filter(|i| broad_matches(&rows[*i], query, &filter))
+        .collect();
     // Each visible row's group key is computed once, not once per comparison.
-    let mut visible = keyed_matching_rows(rows, query, &filter, group);
+    let mut visible = keyed_matching_rows(rows, &broad, query, group);
     visible.sort_by(|(ka, a), (kb, b)| {
         ka.order(kb)
             .then_with(|| compare_rows(&rows[*a], &rows[*b], sort))
     });
     ViewModel {
         counts: summarize(visible.iter().map(|(_, i)| &rows[*i])),
+        broad_counts: summarize(broad.iter().map(|i| &rows[*i])),
         indices: visible
             .iter()
             .map(|(_, i)| u32::try_from(*i).unwrap_or(u32::MAX))
@@ -37,16 +44,19 @@ pub fn build_view(rows: &[PrRow], query: &ViewQuery, sort: Sort, group: GroupBy)
     }
 }
 
+/// Of the rows the broad filters kept (`broad`), those the status and changed-only toggles keep
+/// too, each with its group key.
 fn keyed_matching_rows(
     rows: &[PrRow],
+    broad: &[usize],
     query: &ViewQuery,
-    filter: &ParsedFilter,
     group: GroupBy,
 ) -> Vec<(GroupKey, usize)> {
-    rows.iter()
-        .enumerate()
-        .filter(|(_, row)| row_matches(row, query, filter))
-        .map(|(i, row)| (GroupKey::of(row, group), i))
+    broad
+        .iter()
+        .copied()
+        .filter(|i| toggles_match(&rows[*i], query))
+        .map(|i| (GroupKey::of(&rows[i], group), i))
         .collect()
 }
 

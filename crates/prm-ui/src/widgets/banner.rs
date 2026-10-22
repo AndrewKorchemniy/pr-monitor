@@ -88,7 +88,7 @@ fn row(
     // why: the buttons' width is known once they are laid out, so it is kept from the last
     // pass; a new or changed width discards the pass, so a wrong layout is never shown.
     let id = egui::Id::unique(("banner_buttons", item.id.as_ref()));
-    let known = ui.data(|d| d.get_temp::<f32>(id));
+    let known = crate::widgets::recall(ui, id);
     let gap = ui.spacing().item_spacing.x;
     let beside = ui.available_width() - ICON - gap - known.unwrap_or(0.0) - gap;
     let stacked = fit.buttons && beside < TEXT_MIN;
@@ -114,10 +114,7 @@ fn row(
     } else {
         side_by_side(ui, cx, (item, more), (expanded, &fit), beside)
     };
-    if known.is_none_or(|width| (width - measured).abs() > 0.5) {
-        ui.data_mut(|d| d.insert_temp(id, measured));
-        ui.ctx().request_discard("banner buttons measured");
-    }
+    crate::widgets::remember(ui, id, measured);
 }
 
 /// The text wrapped to `width` points, then the buttons on the right, centred on the text.

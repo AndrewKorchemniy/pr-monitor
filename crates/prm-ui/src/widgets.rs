@@ -73,6 +73,15 @@ pub(crate) fn primary_button(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> 
     ui.add(egui::Button::new(label).fill(theme.colors.accent_base))
 }
 
+/// A plain button whose label is in the danger tone, for a destructive action that asks to be
+/// confirmed.
+pub(crate) fn danger_button(ui: &mut egui::Ui, theme: &UiTheme, text: &str) -> egui::Response {
+    let label = RichText::new(text)
+        .font(theme.fonts.button.clone())
+        .color(theme.colors.tone(crate::theme::Tone::Danger).fg);
+    ui.add(egui::Button::new(label))
+}
+
 /// The width a button labelled `text` takes (`primary_button` or `ui.button`), for laying out
 /// a row of buttons before drawing it.
 pub(crate) fn button_width(ui: &egui::Ui, theme: &UiTheme, text: &str) -> f32 {
@@ -82,6 +91,21 @@ pub(crate) fn button_width(ui: &egui::Ui, theme: &UiTheme, text: &str) -> f32 {
         theme.colors.text_primary,
     );
     galley.size().x + 2.0 * ui.spacing().button_padding.x
+}
+
+/// A size the layout measured under `id` on an earlier pass, if any (`remember`).
+pub(crate) fn recall(ui: &egui::Ui, id: egui::Id) -> Option<f32> {
+    ui.data(|d| d.get_temp(id))
+}
+
+/// Keeps `measured` under `id` for `recall`, for layouts that need a size before they can draw
+/// what has it. When it moved by more than half a point, the pass is laid out again, so a
+/// layout that used the old size is never shown.
+pub(crate) fn remember(ui: &egui::Ui, id: egui::Id, measured: f32) {
+    if recall(ui, id).is_none_or(|kept| (kept - measured).abs() > 0.5) {
+        ui.data_mut(|d| d.insert_temp(id, measured));
+        ui.ctx().request_discard("a remembered size changed");
+    }
 }
 
 /// A key cap ("Ctrl+K").

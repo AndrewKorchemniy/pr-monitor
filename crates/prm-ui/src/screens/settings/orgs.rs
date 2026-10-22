@@ -20,7 +20,7 @@ use crate::{
     frame::FrameCx,
     route::ModalKind,
     screens::settings::{Editor, SettingsState},
-    theme::{Tone, UiTheme},
+    theme::UiTheme,
     widgets::{
         self, card,
         controls::{self, setting_row, toggle_row},
@@ -65,9 +65,7 @@ pub(crate) fn page(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, st: &mut SettingsSta
     card::section(ui, &theme, copy::PEOPLE, None, |ui| people(ui, &theme, st));
     // why: set apart from the people lists above and in the danger tone, like its confirmation.
     ui.add_space(theme.tokens.metrics.space.xl);
-    let danger = theme.colors.tone(Tone::Danger).fg;
-    let remove = egui::Button::new(RichText::new(copy::REMOVE_ORG).color(danger));
-    if ui.add(remove).clicked() {
+    if widgets::danger_button(ui, &theme, copy::REMOVE_ORG).clicked() {
         cx.push(UiAction::Modal(ModalKind::RemoveOrg(st.org)));
     }
 }

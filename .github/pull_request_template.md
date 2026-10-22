@@ -3,6 +3,8 @@ feat|fix|perf|refactor|docs|test|build|ci|chore|revert|style, optional (scope), 
 `!` for breaking changes, e.g. `feat(ui)!: replace status column`. -->
 
 ## What and why
+<!-- Shown in the release notes under the PR title: what changed for users and why, as short
+bullets. -->
 
 ## How it was tested
 

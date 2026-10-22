@@ -26,7 +26,7 @@ pub(crate) fn anchored_card(
     let window = ui.available_size();
     let width = width.min(fit::room(window).x);
     let measured = egui::Id::unique(("anchored_card_height", salt));
-    let last: Option<f32> = ui.data(|d| d.get_temp(measured));
+    let last = crate::widgets::recall(ui, measured);
     let top = fit::card_top(window.y, last, m.space.xxl);
     // why: an overlay scrollbar, so a card that scrolls stays centred between even margins.
     ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
@@ -45,13 +45,9 @@ pub(crate) fn anchored_card(
                     add(ui);
                 });
             });
-            let height = card.response.rect.height();
-            if last.is_none_or(|last| (last - height).abs() > 0.5) {
-                ui.data_mut(|d| d.insert_temp(measured, height));
-                // why: the top depends on the card's height, so a card that changed height is
-                // laid out again before it is shown in the wrong place.
-                ui.ctx().request_discard("the card changed height");
-            }
+            // why: the top depends on the card's height, so a card that changed height is laid
+            // out again before it is shown in the wrong place.
+            crate::widgets::remember(ui, measured, card.response.rect.height());
             ui.add_space(top.min(m.space.xxl));
         });
 }

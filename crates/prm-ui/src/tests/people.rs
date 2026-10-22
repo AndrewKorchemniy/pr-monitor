@@ -250,3 +250,48 @@ fn closing_the_dialog_clears_the_field_for_next_time() {
             .is_none()
     );
 }
+
+/// With the dropdown open, the dialog moved sideways and back on every frame (each blink of the
+/// text cursor is a frame), so the layout never settled. Display scales make it fractional.
+#[test]
+fn the_dialog_holds_still_while_the_dropdown_is_open() {
+    let cases = [
+        (Editor::Reviewers, egui::vec2(1280.0, 800.0)),
+        (Editor::Tracked, egui::vec2(1280.0, 800.0)),
+        (Editor::Tracked, egui::vec2(1003.0, 731.0)),
+        (Editor::Tracked, egui::vec2(1537.0, 863.0)),
+    ];
+    for ((editor, size), scale) in cases
+        .into_iter()
+        .flat_map(|c| [1.0, 1.25, 1.5].map(|s| (c, s)))
+    {
+        let mut fixture = Fixture::new(Shown::Settings, demo_state());
+        fixture.settings.page = Page::Organizations;
+        fixture.settings.editing = Some(editor);
+        let mut h = Harness::builder()
+            .with_size(size)
+            .with_pixels_per_point(scale)
+            .with_step_dt(0.3)
+            .with_context_setup(crate::theme::fonts::install)
+            .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture);
+        // why: egui paints (and blinks) the text cursor only in a focused window.
+        h.event(egui::Event::WindowFocused(true));
+        h.run();
+        h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
+            .type_text("v");
+        h.run();
+        let mut places = Vec::new();
+        for _ in 0..12 {
+            h.step();
+            let done = h.get_by_role_and_label(Role::Button, copy::DONE).rect();
+            let field = h
+                .get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
+                .rect();
+            places.push((done.min, field.min));
+        }
+        assert!(
+            places.windows(2).all(|p| p[0] == p[1]),
+            "{editor:?} at {size:?} x{scale}: {places:?}"
+        );
+    }
+}
