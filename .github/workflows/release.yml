@@ -138,8 +138,11 @@ jobs:
                 if [ "$SIGNING" != signpath ] && [ "$SIGNING" != azure ]; then
                   notes="Binaries are not code-signed yet; Windows SmartScreen may warn (More info > Run anyway)."$'\n\n'"$notes"
                 fi
+                # why: one heading per merged pull request with its description and squashed
+                # commits, rather than GitHub's generated list of titles alone.
+                notes="$notes"$'\n\n'"$(bash .github/scripts/release-notes.sh "$REPO" "$SHA" "$tag")"
                 gh release create "$tag" -R "$REPO" --draft --target "$SHA" \
-                  --title "PR Monitor $tag" --notes "$notes" --generate-notes
+                  --title "PR Monitor $tag" --notes "$notes"
                 ;;
               recover)
                 [[ "$INPUT_TAG" =~ $semver ]] || { echo "::error::bad tag '$INPUT_TAG'"; exit 1; }
