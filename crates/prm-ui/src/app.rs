@@ -32,6 +32,7 @@ use crate::{
         hover_bands::HoverBands,
         policy::{RenderFacts, RenderPolicy},
         repaint::{RepaintInputs, next_repaint},
+        wheel::mark_precise_scroll,
     },
     route::{ModalKind, Overlay, Screen},
     screens::{dashboard::DashboardUi, first_run::FirstRun, settings::SettingsState},
@@ -278,6 +279,11 @@ impl eframe::App for PrMonitorApp {
         if let Some(callback) = self.on_first_frame.take() {
             callback();
         }
+    }
+
+    /// Touchpad scrolling lands in the frame it arrives in every scroll area.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        mark_precise_scroll(&mut raw_input.events);
     }
 
     /// The theme's canvas, so nothing shows through in light themes.
