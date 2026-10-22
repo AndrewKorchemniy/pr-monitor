@@ -127,7 +127,7 @@ pub(crate) fn style(theme: &UiTheme, policy: RenderPolicy) -> Style {
     spacing.tooltip_width = 420.0;
     spacing.menu_width = 240.0;
     spacing.combo_height = 320.0;
-    spacing.scroll = egui::style::ScrollStyle::thin();
+    spacing.scroll = no_spring_back(egui::style::ScrollStyle::thin());
     style.interaction.tooltip_delay = 0.45;
     style.interaction.selectable_labels = false;
     style.visuals = visuals(theme, policy);
@@ -206,6 +206,21 @@ pub(crate) fn frame_chrome(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE
         .fill(theme.colors.surface_canvas)
         .inner_margin(Margin::symmetric(px(m.space.md), 0))
+}
+
+/// A scroll bar that floats over the content, so the content keeps its width when it starts to
+/// scroll, without spring-back (see `no_spring_back`).
+pub(crate) fn floating_scroll() -> egui::style::ScrollStyle {
+    no_spring_back(egui::style::ScrollStyle::floating())
+}
+
+/// `style` without egui's rubber-band spring-back. When content got shorter at its end (a group
+/// collapsed, a refresh, wrapped text settling), the offset was past the new end and sprang back
+/// over a dozen frames, which read as the content bouncing at the end of a touchpad fling. This
+/// app has no gesture that pulls past the edge, so the offset simply stays within the content.
+fn no_spring_back(mut style: egui::style::ScrollStyle) -> egui::style::ScrollStyle {
+    style.kinetic.rubber_band = false;
+    style
 }
 
 /// The peek drawer. No border: the panel's separator draws its left edge, and the toolbar, status bar and

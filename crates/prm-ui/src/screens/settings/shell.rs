@@ -228,7 +228,7 @@ fn page_column(
     ui.scope_builder(builder, |ui| {
         // why: an overlay scrollbar, so rows keep their width when the page starts to scroll
         // (as it does when the Save bar appears).
-        ui.spacing_mut().scroll = egui::style::ScrollStyle::floating();
+        ui.spacing_mut().scroll = adapter::floating_scroll();
         egui::ScrollArea::vertical()
             .id_salt("settings_scroll")
             .auto_shrink(false)
