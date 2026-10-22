@@ -4,6 +4,7 @@ use eframe::egui::{self, RichText};
 use prm_domain::auth::SettingsSection;
 use prm_service::RefreshPhase;
 
+use crate::widgets::progress::ProgressLine;
 use crate::{
     actions::UiAction, commands::CommandId, copy, frame::FrameCx, route::ModalKind,
     view::empty::EmptyKind, widgets,
@@ -13,7 +14,8 @@ struct Content {
     headline: String,
     body: Option<String>,
     action: Option<(&'static str, UiAction)>,
-    progress: Option<f32>,
+    /// The first refresh is running: show its line.
+    loading: bool,
 }
 
 fn content(kind: &EmptyKind, scope: &str) -> Content {
@@ -21,7 +23,7 @@ fn content(kind: &EmptyKind, scope: &str) -> Content {
         headline: headline.to_owned(),
         body: None,
         action: None,
-        progress: None,
+        loading: false,
     };
     match kind {
         EmptyKind::Loading {
@@ -34,7 +36,7 @@ fn content(kind: &EmptyKind, scope: &str) -> Content {
             body: (*total > 0 && *phase == Some(RefreshPhase::PullRequests))
                 .then(|| copy::loading_body(*done, *total, org)),
             action: None,
-            progress: (*total > 0).then(|| *done as f32 / *total as f32),
+            loading: true,
         },
         EmptyKind::SignedOut => Content {
             body: Some(copy::EMPTY_SIGNED_OUT_BODY.to_owned()),
@@ -81,12 +83,18 @@ fn settings_fix(
         headline: headline.to_owned(),
         body: Some(body),
         action: Some((label, UiAction::OpenSettings(section))),
-        progress: None,
+        loading: false,
     }
 }
 
 /// Centered in the available space.
-pub(crate) fn empty_state(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, kind: &EmptyKind, scope: &str) {
+pub(crate) fn empty_state(
+    ui: &mut egui::Ui,
+    cx: &mut FrameCx<'_>,
+    kind: &EmptyKind,
+    scope: &str,
+    line: &mut ProgressLine,
+) {
     let theme = cx.theme.clone();
     let content = content(kind, scope);
     ui.vertical_centered(|ui| {
@@ -101,10 +109,10 @@ pub(crate) fn empty_state(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, kind: &EmptyK
             ui.label(RichText::new(body).color(theme.colors.text_secondary));
             ui.add_space(theme.tokens.metrics.space.lg);
         }
-        if let Some(fraction) = content.progress {
+        if content.loading {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(240.0, 4.0), egui::Sense::hover());
             ui.painter().rect_filled(rect, 0.0, theme.colors.control_bg);
-            widgets::progress_line(ui, rect, fraction, theme.colors.accent_base);
+            line.show(ui, rect, cx.state.refresh_fraction(), &theme);
         }
         if let Some((label, action)) = content.action
             && widgets::primary_button(ui, &theme, label).clicked()

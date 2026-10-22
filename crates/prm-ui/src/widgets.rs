@@ -13,6 +13,7 @@ pub(crate) mod peek;
 pub(crate) mod people_picker;
 pub(crate) mod pr_cards;
 pub(crate) mod pr_table;
+pub(crate) mod progress;
 pub(crate) mod scope_picker;
 pub(crate) mod slider;
 pub(crate) mod status_bar;
@@ -20,7 +21,7 @@ pub(crate) mod status_pill;
 pub(crate) mod toolbar;
 pub(crate) mod vote_tally;
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 use crate::theme::UiTheme;
 
@@ -136,16 +137,4 @@ pub(crate) fn kbd_row(ui: &mut egui::Ui, theme: &UiTheme, chords: &[String]) {
             }
         });
     });
-}
-
-/// A thin determinate progress line across `rect`'s bottom edge.
-pub(crate) fn progress_line(ui: &egui::Ui, rect: egui::Rect, fraction: f32, color: Color32) {
-    let line = egui::Rect::from_min_max(
-        egui::pos2(rect.left(), rect.bottom() - 2.0),
-        egui::pos2(
-            rect.left() + rect.width() * fraction.clamp(0.0, 1.0),
-            rect.bottom(),
-        ),
-    );
-    ui.painter().rect_filled(line, 0.0, color);
 }
