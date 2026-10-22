@@ -32,7 +32,7 @@ use crate::{
         hover_bands::HoverBands,
         policy::{RenderFacts, RenderPolicy},
         repaint::{RepaintInputs, next_repaint},
-        wheel::mark_precise_scroll,
+        wheel::{GlitchFilter, mark_precise_scroll},
     },
     route::{ModalKind, Overlay, Screen},
     screens::{dashboard::DashboardUi, first_run::FirstRun, settings::SettingsState},
@@ -94,6 +94,8 @@ pub(crate) struct PrMonitorApp {
     licenses: &'static str,
     chrome: Option<ChromeColors>,
     applied_config: Option<Arc<Config>>,
+    /// Drops the odd reversed touchpad event in a steady stream (`render::wheel::glitch`).
+    wheel_glitches: GlitchFilter,
 }
 
 /// Builds the app inside eframe's creator (the window exists; the first frame has not run).
@@ -150,6 +152,7 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
         chrome: None,
         applied_config: Some(state.config.clone()),
         state,
+        wheel_glitches: GlitchFilter::default(),
     };
     app.reload_keymap();
     cc.egui_ctx.set_zoom_factor(app.state.config.ui.font_scale);
@@ -283,6 +286,7 @@ impl eframe::App for PrMonitorApp {
 
     /// Touchpad scrolling lands in the frame it arrives in every scroll area.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.wheel_glitches.apply(&mut raw_input.events);
         mark_precise_scroll(&mut raw_input.events);
     }
 

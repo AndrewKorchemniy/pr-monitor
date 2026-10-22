@@ -3,6 +3,10 @@
 
 use eframe::egui::{Event, MouseWheelSource, MouseWheelUnit, TouchPhase, Vec2};
 
+mod glitch;
+
+pub(crate) use glitch::GlitchFilter;
+
 /// Marks this frame's high-resolution wheel deltas as a touch gesture, so egui applies them
 /// at once.
 ///
@@ -42,7 +46,7 @@ pub(crate) fn mark_precise_scroll(events: &mut Vec<Event>) {
 
 /// A line delta that is not a whole number of notches, from a backend that does not say what
 /// drives the scrolling (macOS does, and gets its trackpad phases from the OS).
-fn is_precise_wheel(event: &Event) -> bool {
+pub(super) fn is_precise_wheel(event: &Event) -> bool {
     let Event::MouseWheel {
         unit,
         delta,
