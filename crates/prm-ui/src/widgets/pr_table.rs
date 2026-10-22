@@ -46,9 +46,11 @@ pub(crate) struct TableOut {
 pub(crate) fn table_room(spacing: &egui::Spacing, theme: &UiTheme, width: f32) -> Room {
     Room {
         // why: egui_extras keeps the scroll bar's lane out of the columns' width, and the
-        // last column keeps a margin as wide as the first one's, so the fills reach the
-        // window's edge while the text keeps clear of it.
-        width: width - spacing.scroll.allocated_width() - theme.tokens.metrics.row.margin_col,
+        // trailing margin column (and the gap before it) is not a column the specs share.
+        width: width
+            - spacing.scroll.allocated_width()
+            - theme.tokens.metrics.row.margin_col
+            - spacing.item_spacing.x,
         gap: spacing.item_spacing.x,
         margin: theme.tokens.metrics.row.margin_col,
     }
@@ -207,6 +209,7 @@ fn squeezed_label(theme: &UiTheme, name: &str) -> egui::WidgetText {
     let c = &theme.colors;
     let format = |font: &egui::FontId, color| egui::TextFormat::simple(font.clone(), color);
     job.append(name, 0.0, format(&theme.fonts.body, c.text_primary));
+    // why: the spaces are part of the text, so screen readers hear "Repository  No room".
     let note = format!("  {}", copy::COLUMN_NO_ROOM);
     job.append(&note, 0.0, format(&theme.fonts.small, c.text_muted));
     job.into()
@@ -235,6 +238,9 @@ fn table_builder<'a>(
     for spec in columns {
         builder = builder.column(column(spec, margin));
     }
+    // why: a margin as wide as the first column's, so the fills reach the list's edge while
+    // the last column's text keeps clear of it.
+    builder = builder.column(Column::exact(margin).resizable(false));
     // why: showing, hiding or squeezing a column renames the table, and so its scroll area;
     // that must not move the rows.
     scroll_request(builder, view, renamed)
@@ -255,7 +261,13 @@ fn table_body(
         let index = row.index();
         match rcx.view.display.rows.get(index) {
             Some(DisplayRow::Group(span)) => {
-                group_row(&mut row, rcx, (*span, columns.len()), (full, clip), pending);
+                group_row(
+                    &mut row,
+                    rcx,
+                    (*span, columns.len() + 1),
+                    (full, clip),
+                    pending,
+                );
             }
             Some(DisplayRow::Pr(_)) => pr_row(&mut row, rcx, (columns, list), pending),
             None => {}
@@ -275,15 +287,9 @@ fn pr_row(
         return;
     };
     let selected = mark_selected(row, rcx, pr);
-    let last = columns.len().saturating_sub(1);
-    for (i, spec) in columns.iter().enumerate() {
-        row.col(|ui| {
-            if i == last {
-                rows::last_cell(ui, rcx.theme, |ui| cells::cell(ui, rcx, spec, pr, index));
-            } else {
-                cells::cell(ui, rcx, spec, pr, index);
-            }
-        });
+    for spec in columns {
+        row.col(|ui| cells::cell(ui, rcx, spec, pr, index));
     }
+    row.col(|_| {});
     answer_row(&row.response(), rcx, (pr, selected), list, pending);
 }

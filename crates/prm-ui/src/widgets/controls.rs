@@ -12,7 +12,7 @@ pub(crate) use self::{
         MENU_GAP, MENU_WIDTH, MenuMark, menu_button, menu_button_width, menu_check, menu_frame,
         menu_icon_button, menu_item, menu_item_detail,
     },
-    rows::{disclosure, row_divider, setting_row, toggle_row},
+    rows::{disclosure, row_divider, setting_row, spaced_divider, toggle_row},
     segmented::segmented,
 };
 use crate::theme::{

@@ -19,14 +19,13 @@ use crate::{
     widgets::pr_table::{
         TableInputs, TableOut, cells,
         rows::{
-            self, RowCx, answer_row, group_row, mark_selected, record_scroll, rows_rect,
-            scroll_request,
+            RowCx, answer_row, group_row, mark_selected, record_scroll, rows_rect, scroll_request,
         },
     },
 };
 
-/// The margin and the card.
-const CELLS: usize = 2;
+/// The margin, the card and the trailing margin.
+const CELLS: usize = 3;
 
 /// How far apart the cards and the group headers between them are laid out (points).
 pub(crate) fn card_pitch(ui: &egui::Ui, theme: &UiTheme) -> Pitch {
@@ -60,7 +59,9 @@ pub(crate) fn pr_cards(
         .animate_scrolling(theme.policy.animations)
         .cell_layout(Layout::left_to_right(Align::Center))
         .column(Column::exact(theme.tokens.metrics.row.margin_col).resizable(false))
-        .column(Column::remainder().clip(true).resizable(false));
+        .column(Column::remainder().clip(true).resizable(false))
+        // why: a margin as wide as the first, so the fills reach the edge and the text clears it.
+        .column(Column::exact(theme.tokens.metrics.row.margin_col).resizable(false));
     let builder = scroll_request(builder, view, false);
     let mut pending = Vec::new();
     let output = builder.body(|body| {
@@ -119,7 +120,8 @@ fn card_row(
     };
     let selected = mark_selected(row, rcx, pr);
     row.col(|ui| cells::change_bar(ui, rcx, pr));
-    row.col(|ui| rows::last_cell(ui, rcx.theme, |ui| card::card(ui, rcx, pr, index)));
+    row.col(|ui| card::card(ui, rcx, pr, index));
+    row.col(|_| {});
     answer_row(&row.response(), rcx, (pr, selected), list, pending);
 }
 

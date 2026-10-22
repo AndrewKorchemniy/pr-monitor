@@ -123,10 +123,11 @@ fn filtered_summary_follows_the_text_but_not_the_status_filter() {
         unread_only: true,
         ..ViewQuery::default()
     };
-    let counts = filtered_summary(&rows, &query);
+    let counts = build_view(&rows, &query, Sort::default(), GroupBy::None).broad_counts;
     assert_eq!(counts.total, 1);
     assert_eq!(counts.active_comments, 1);
-    assert_eq!(filtered_summary(&rows, &ViewQuery::default()).total, 3);
+    let all = build_view(&rows, &ViewQuery::default(), Sort::default(), GroupBy::None);
+    assert_eq!(all.broad_counts.total, 3);
 }
 
 #[test]

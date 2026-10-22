@@ -164,14 +164,10 @@ fn buttons(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, inputs: ToolbarInputs, fit: 
 
 /// Refresh, or while a refresh runs, the same button turned off with its arrow spinning.
 fn refresh_button(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, stopped: bool) {
-    if stopped {
-        ui.add_enabled_ui(false, |ui| {
+    if stopped || !cx.state.refresh.in_progress {
+        ui.add_enabled_ui(!stopped, |ui| {
             icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
         });
-        return;
-    }
-    if !cx.state.refresh.in_progress {
-        icon_button(ui, cx, Icon::Refresh, CommandId::RefreshNow);
         return;
     }
     let theme = cx.theme.clone();

@@ -63,12 +63,7 @@ pub(super) fn header_row(
             if index == 0 {
                 header_rule(ui, hcx.theme, hcx.span);
             }
-            let col = if index == last {
-                super::rows::last_cell(ui, hcx.theme, |ui| header_col(ui, hcx, spec, pending))
-            } else {
-                header_col(ui, hcx, spec, pending)
-            };
-            all = Some(join(all.take(), col));
+            all = Some(join(all.take(), header_col(ui, hcx, spec, pending)));
             if let Some(cell) = cells.get_mut(index) {
                 *cell = ui.max_rect();
             }
@@ -78,6 +73,8 @@ pub(super) fn header_row(
             }
         });
     }
+    // why: the trailing margin column (see `table_builder`).
+    header.col(|_| {});
     if let Some(all) = all {
         column_menu(&all, hcx, pending);
     }

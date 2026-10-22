@@ -3,14 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    classify::PrStatus,
-    ids::OrgId,
-    view::{
-        row::PrRow,
-        summary::{StatusSummary, summarize},
-    },
-};
+use crate::{classify::PrStatus, ids::OrgId, view::row::PrRow};
 
 /// What the user is filtering by, persisted with the UI state.
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -97,24 +90,21 @@ fn apply_is_flag(filter: &mut ParsedFilter, token: &str) -> bool {
     true
 }
 
-/// Counts of the rows that `query`'s text, organization and draft filters keep, whatever its
-/// status and changed-only filters: what the status bar's filter toggles count.
-pub fn filtered_summary(rows: &[PrRow], query: &ViewQuery) -> StatusSummary {
-    let filter = parse_filter(&query.text);
-    let broad = ViewQuery {
-        status: StatusFilter::All,
-        unread_only: false,
-        ..query.clone()
-    };
-    summarize(rows.iter().filter(|row| row_matches(row, &broad, &filter)))
+pub fn row_matches(row: &PrRow, query: &ViewQuery, filter: &ParsedFilter) -> bool {
+    broad_matches(row, query, filter) && toggles_match(row, query)
 }
 
-pub fn row_matches(row: &PrRow, query: &ViewQuery, filter: &ParsedFilter) -> bool {
-    query.status.matches(row.status)
-        && query.org.as_ref().is_none_or(|org| *org == row.key.org)
-        && (!query.unread_only || row.unread)
+/// What `query`'s text, organization and draft filters keep, whatever its status and
+/// changed-only filters (the status bar's toggles, which count these rows).
+pub(crate) fn broad_matches(row: &PrRow, query: &ViewQuery, filter: &ParsedFilter) -> bool {
+    query.org.as_ref().is_none_or(|org| *org == row.key.org)
         && (!query.hide_drafts || !row.draft)
         && filter_matches(row, filter)
+}
+
+/// The status and changed-only filters.
+pub(crate) fn toggles_match(row: &PrRow, query: &ViewQuery) -> bool {
+    query.status.matches(row.status) && (!query.unread_only || row.unread)
 }
 
 fn filter_matches(row: &PrRow, filter: &ParsedFilter) -> bool {

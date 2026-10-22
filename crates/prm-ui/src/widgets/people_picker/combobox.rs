@@ -12,7 +12,6 @@ use crate::{
     theme::{Tone, UiTheme},
     widgets::{
         controls::{self, MenuMark},
-        dialog,
         fields::{self, Field},
         fit,
     },
@@ -190,7 +189,7 @@ fn dropdown(
 /// fills the window, and never less than two rows.
 fn list_room(ui: &egui::Ui, theme: &UiTheme, anchor: Rect) -> f32 {
     let window = ui.ctx().content_rect();
-    let bar = theme.control_height() + 2.0 * dialog::INSET + 1.0;
+    let bar = crate::widgets::modal::action_bar_height(theme);
     let margin = fit::window_margin(window.height());
     let room = window.bottom() - margin - bar - anchor.bottom() - controls::MENU_GAP;
     room.max(2.0 * theme.control_height())

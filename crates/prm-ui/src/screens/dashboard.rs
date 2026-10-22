@@ -132,13 +132,11 @@ impl DashboardUi {
 }
 
 /// The narrowest list that shows the table rather than cards (points): the room a table worth
-/// showing needs (`columns::table_minimum`), the scroll bar's lane and the list's frame.
+/// showing needs (`columns::table_minimum`) and what `table_room` keeps out of a list's width.
 pub(crate) fn table_breakpoint(spacing: &egui::Spacing, theme: &UiTheme) -> f32 {
-    let frame = adapter::frame_table(theme).total_margin().sum().x;
-    // why: `table_room` takes the scroll bar's lane out of the width it is given, so the room
-    // in a list 0 pt wide is minus the lane.
+    // why: the room in a list 0 pt wide is minus what `table_room` keeps out of every width.
     let room = table_room(spacing, theme, 0.0);
-    table_minimum(room) - room.width + frame
+    table_minimum(room) - room.width
 }
 
 /// The table, or cards when a list `width` points wide has no room for a table worth showing.
@@ -182,7 +180,7 @@ pub(crate) fn dashboard(
         .exact_size(theme.tokens.metrics.row.statusbar_height)
         .frame(adapter::frame_chrome(&theme))
         .show(ui, |ui| {
-            let counts = (&d.view.query, d.view.bar_counts);
+            let counts = (&d.view.query, d.view.model.broad_counts);
             status_bar(ui, cx, counts, window_focused, stopped);
         });
     if let PeekPlace::Docked { width, max } = place {
@@ -196,7 +194,7 @@ pub(crate) fn dashboard(
         return;
     }
     egui::CentralPanel::no_frame()
-        .frame(adapter::frame_table(&theme))
+        .frame(adapter::frame_canvas(&theme))
         .show(ui, |ui| body(ui, cx, d, (mode, window_focused)));
 }
 
@@ -228,32 +226,36 @@ fn scrolled_banners(
     (visible, expanded): (&[&Banner], &mut bool),
     most: f32,
 ) {
-    let ends_id = egui::Id::unique("banner_ends");
-    let ends: Vec<f32> = ui.data(|d| d.get_temp(ends_id)).unwrap_or_default();
-    let height = ends
-        .iter()
-        .copied()
-        .take_while(|end| *end <= most)
-        .last()
-        .filter(|_| ends.last().is_some_and(|last| *last > most))
-        .unwrap_or(most);
+    let cut_id = egui::Id::unique("banner_cut");
+    let height = crate::widgets::recall(ui, cut_id).unwrap_or(most);
     // why: a panel lays its content out in the height it took last frame, so a scroll area
     // sized from the panel would never grow; it gets room of its own.
     let room = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), height));
     ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
         // why: the bar floats over the banners' own right inset, so both insets match.
         ui.spacing_mut().scroll.floating_allocated_width = 0.0;
-        let shown = egui::ScrollArea::vertical()
+        let ends = egui::ScrollArea::vertical()
             .id_salt("banners")
             .auto_shrink([false, true])
             .max_height(height)
             .show(ui, |ui| banners(ui, cx, visible, expanded))
             .inner;
-        if shown != ends {
-            ui.data_mut(|d| d.insert_temp(ends_id, shown));
-            ui.ctx().request_repaint();
-        }
+        crate::widgets::remember(ui, cut_id, whole_banners(&ends, most));
     });
+}
+
+/// How tall the banner stack may be within `most` points without cutting a banner: the end of
+/// the last banner that fits, or `most` when they all fit or not even the first does.
+fn whole_banners(ends: &[f32], most: f32) -> f32 {
+    match ends.last() {
+        Some(last) if *last > most => ends
+            .iter()
+            .copied()
+            .take_while(|end| *end <= most)
+            .last()
+            .unwrap_or(most),
+        Some(_) | None => most,
+    }
 }
 
 /// The peek at the right, `width` points wide (the saved width, at most `max`), resizable up to

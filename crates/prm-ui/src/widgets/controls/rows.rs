@@ -172,6 +172,13 @@ fn paint_switch(ui: &egui::Ui, theme: &UiTheme, track: Rect, on: bool, response:
         .circle_filled(pos2(x, track.center().y), radius - 3.0, knob);
 }
 
+/// A hairline with `space` above and below it, between groups of rows.
+pub(crate) fn spaced_divider(ui: &mut egui::Ui, theme: &UiTheme, space: f32) {
+    ui.add_space(space);
+    row_divider(ui, theme);
+    ui.add_space(space);
+}
+
 /// The hairline between settings rows.
 pub(crate) fn row_divider(ui: &mut egui::Ui, theme: &UiTheme) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
