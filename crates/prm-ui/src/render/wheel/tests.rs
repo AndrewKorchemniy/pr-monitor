@@ -205,40 +205,63 @@ fn a_lone_reversal_against_a_downward_stream_is_dropped_too() {
     assert_eq!(out, expected);
 }
 
-/// Lifting one finger at an edge ends the stream on a stray reversal, with only pointer moves
-/// after it: it is dropped, so the page stays at the edge.
+/// Recorded as one finger lifted at an edge: a spike of several lines the other way, then a
+/// small step back the old way. Held until that step arrives, the spike is dropped.
 #[test]
-fn a_reversal_that_ends_the_stream_is_dropped() {
-    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[0.4], &[], &[]]);
-    let expected: Vec<Vec<f32>> = vec![vec![-1.1], vec![-1.1], vec![-1.1], vec![], vec![], vec![]];
+fn the_spike_at_a_finger_lift_is_dropped() {
+    let out = filtered(&[&[-1.08], &[-1.1], &[-1.05], &[5.23], &[-1.26], &[-0.9]]);
+    let expected: Vec<Vec<f32>> = vec![
+        vec![-1.08],
+        vec![-1.1],
+        vec![-1.05],
+        vec![],
+        vec![-1.26],
+        vec![-0.9],
+    ];
     assert_eq!(out, expected);
 }
 
-/// The user turning round: a second reversed event confirms the turn and everything from it
-/// on passes; only the first small step is lost.
+/// The spike and its follower often share a frame.
 #[test]
-fn a_real_change_of_direction_passes_from_its_second_event() {
-    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[0.4], &[0.8], &[1.2]]);
+fn the_spike_is_dropped_within_a_frame_too() {
+    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1, 24.98, -0.54]]);
+    let expected: Vec<Vec<f32>> = vec![vec![-1.1], vec![-1.1], vec![-1.1, -0.54]];
+    assert_eq!(out, expected);
+}
+
+/// The user turning round: a second reversed event confirms the turn, and the first goes out
+/// ahead of it, one frame late.
+#[test]
+fn a_real_change_of_direction_passes_in_full() {
+    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[3.3], &[2.1], &[1.2]]);
     let expected: Vec<Vec<f32>> = vec![
         vec![-1.1],
         vec![-1.1],
         vec![-1.1],
         vec![],
-        vec![0.8],
+        vec![3.3, 2.1],
         vec![1.2],
     ];
     assert_eq!(out, expected);
 }
 
-/// A large reversal is a deliberate flick back, never noise.
+/// A reversal that ends the stream is held until the touchpad has been quiet for a while, then
+/// released: a real, if small, scroll is not lost, and a stray at the end does no harm.
 #[test]
-fn a_large_reversal_passes_at_once() {
-    let out = filtered(&[&[-1.1], &[-1.1], &[-1.1], &[3.3]]);
-    let expected: Vec<Vec<f32>> = vec![vec![-1.1], vec![-1.1], vec![-1.1], vec![3.3]];
-    assert_eq!(out, expected);
+fn a_reversal_that_ends_the_stream_is_released_once_the_stream_is_over() {
+    let mut frames: Vec<&[f32]> = vec![&[-1.1], &[-1.1], &[-1.1], &[0.4]];
+    frames.extend(std::iter::repeat_n(&[][..], IDLE_FRAMES as usize));
+    let quiet = filtered(&frames);
+    assert!(
+        quiet[3..].iter().all(Vec::is_empty),
+        "still held: {quiet:?}"
+    );
+    frames.push(&[]);
+    let released = filtered(&frames);
+    assert_eq!(released.last(), Some(&vec![0.4]));
 }
 
-/// Before a stream is established, nothing is dropped.
+/// Before a stream is established, nothing is held.
 #[test]
 fn early_reversals_pass() {
     let out = filtered(&[&[-1.1], &[0.5], &[-1.1]]);
@@ -265,7 +288,7 @@ fn a_new_stream_after_a_pause_starts_either_way() {
     assert_eq!(out.last(), Some(&vec![0.4]));
 }
 
-/// Whole notches from a mouse wheel are not touchpad events and are never dropped.
+/// Whole notches from a mouse wheel are not touchpad events and are never held or dropped.
 #[test]
 fn mouse_notches_are_never_dropped() {
     let out = filtered(&[&[-1.0], &[-1.0], &[-1.0], &[1.0], &[-1.0]]);
