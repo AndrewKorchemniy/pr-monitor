@@ -10,7 +10,7 @@ use prm_auth::ChunkedSecretStore;
 use prm_config::{
     AppPaths, ConfigLoad, FileRepo, StateLoad, load_catalogs, load_config, load_state,
 };
-use prm_domain::app::ENV_SECRET_STORE;
+use prm_domain::{app::ENV_SECRET_STORE, ports::Updater};
 use prm_platform::{
     HandoffServer, InstanceKey, PlatformAdapters, PlatformInit, SecretBackendPref, adapters,
 };
@@ -91,13 +91,25 @@ fn platform(root: &Root, base: &Base, key: &InstanceKey) -> PlatformAdapters {
     })
 }
 
+/// What the primary already decided before the service starts.
+pub(super) struct Launching<'a> {
+    pub args: &'a Args,
+    pub root: &'a Root,
+    pub key: &'a InstanceKey,
+    pub updater: Arc<dyn Updater>,
+}
+
 pub(super) fn start_service(
-    args: &Args,
-    root: &Root,
+    launching: &Launching<'_>,
     base: &Base,
-    key: &InstanceKey,
     act: &Activation,
 ) -> Result<Running, ExitCode> {
+    let Launching {
+        args,
+        root,
+        key,
+        updater,
+    } = launching;
     let (config, state, catalogs) = load(&base.paths);
     base.log
         .apply_level(&config.config.diagnostics.log_level, args.debug);
@@ -133,6 +145,7 @@ pub(super) fn start_service(
             notifier,
             autostart,
             opener,
+            updater: Arc::clone(updater),
         },
         ports,
         FileRepo::from_load(base.paths.clone(), &config),

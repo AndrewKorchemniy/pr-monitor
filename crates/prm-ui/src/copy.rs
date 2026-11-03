@@ -218,9 +218,33 @@ pub(crate) const RESTART_HELP: &str = "Takes effect after restart.";
 pub(crate) const RELOAD_THEMES: &str = "Reload themes";
 pub(crate) const COPY_THEME_TOML: &str = "Copy theme as TOML";
 pub(crate) const COPY_THEMES_FOLDER: &str = "Copy themes folder path";
-pub(crate) const PRIVACY: &str = "PR Monitor talks only to Azure DevOps and Microsoft sign-in. Settings and cached results stay on this computer in %LOCALAPPDATA%\\PRMonitor. Tokens are kept in Windows Credential Manager. Nothing is sent anywhere else.";
+pub(crate) const PRIVACY: &str = "PR Monitor talks only to Azure DevOps, Microsoft sign-in and, to look for updates, GitHub. Settings and cached results stay on this computer in %LOCALAPPDATA%\\PRMonitor. Tokens are kept in Windows Credential Manager. Nothing else is sent anywhere.";
 pub(crate) const LICENSES: &str = "Third-party licenses";
 pub(crate) const SOURCE_CODE: &str = "Source code";
+pub(crate) const WHATS_NEW: &str = "What's new";
+pub(crate) const SECTION_UPDATES: &str = "Updates";
+pub(crate) const AUTO_UPDATE: &str = "Check for updates automatically";
+pub(crate) const AUTO_UPDATE_HELP: &str = "Looks on GitHub every few hours and downloads in the background. The update is installed when PR Monitor next starts.";
+pub(crate) const UPDATE_NOT_CHECKED: &str = "Not checked for updates yet";
+pub(crate) const UPDATE_CHECKING: &str = "Checking for updates…";
+pub(crate) const UPDATE_UP_TO_DATE: &str = "Up to date";
+pub(crate) const UPDATE_CHECK_FAILED: &str = "Couldn't check for updates";
+pub(crate) const UPDATE_DOWNLOAD_FAILED: &str = "Couldn't download the update";
+pub(crate) const UPDATE_APPLY_FAILED: &str = "Couldn't restart to update";
+pub(crate) const UPDATE_NOT_INSTALLED: &str =
+    "Updates work in the installed version (Setup or the portable zip)";
+pub(crate) const UPDATE_ISOLATED_HOME: &str = "Updates are off while a --home folder is in use";
+pub(crate) const CHECK_NOW: &str = "Check now";
+pub(crate) const RESTART_TO_UPDATE: &str = "Restart to update";
+pub(crate) const RELEASES_PAGE: &str = "Releases page";
+
+pub(crate) fn update_downloading(percent: u8) -> String {
+    format!("Downloading update… {percent}%")
+}
+
+pub(crate) fn update_ready(version: &str) -> String {
+    format!("Version {version} is ready")
+}
 pub(crate) const REPORT_PROBLEM: &str = "Report a problem";
 pub(crate) const PALETTE_HINT: &str = "Type a command, or ! and a number to jump";
 pub(crate) const PALETTE_EMPTY: &str = "No matching commands.";

@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use prm_ado::{HttpAdoConnector, HttpTransport};
 use prm_auth::{DefaultAuthFactory, SecretStore, TokioCommandRunner};
 use prm_config::{Config, ConfigLoad, FileRepo, StateLoad};
-use prm_domain::ports::UrlOpener;
+use prm_domain::ports::{Updater, UrlOpener};
 use prm_domain::{OrgId, model::Catalog, ports::Clock};
 use prm_service::ports::{Autostart, Notifier};
 use prm_service::{EventSink, InitialData, ServiceDeps};
@@ -35,6 +35,7 @@ pub(crate) struct Platform {
     pub notifier: Arc<dyn Notifier>,
     pub autostart: Arc<dyn Autostart>,
     pub opener: Arc<dyn UrlOpener>,
+    pub updater: Arc<dyn Updater>,
 }
 
 /// What the service runs on.
@@ -63,6 +64,7 @@ pub(crate) fn deps(platform: Platform, ports: Ports, repo: FileRepo) -> ServiceD
         clock: ports.clock,
         opener: platform.opener,
         autostart: platform.autostart,
+        updater: platform.updater,
         repo: Arc::new(repo),
     }
 }

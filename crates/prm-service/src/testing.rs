@@ -22,7 +22,8 @@ use prm_domain::{
     model::Catalog,
     notify::{Notification, NotifierOp},
     ports::{Clock, PortError, PortErrorKind},
-    testing::RecordingUrlOpener,
+    testing::{FakeUpdater, RecordingUrlOpener},
+    update::DisabledReason,
 };
 use tokio::{
     sync::{mpsc, watch},
@@ -332,6 +333,14 @@ pub struct HarnessSetup {
     pub orgs: Vec<(OrgId, FakeOrg)>,
     pub startup_delay: Duration,
     pub base_wall: Timestamp,
+    /// Not installed unless a test says otherwise, so other tests never meet an update check.
+    pub updater: Arc<FakeUpdater>,
+}
+
+fn not_installed_updater() -> FakeUpdater {
+    let updater = FakeUpdater::default();
+    updater.set_availability(Err(DisabledReason::NotInstalled));
+    updater
 }
 
 impl Default for HarnessSetup {
@@ -343,6 +352,7 @@ impl Default for HarnessSetup {
             orgs: Vec::new(),
             startup_delay: Duration::ZERO,
             base_wall: prm_domain::testing::ts(prm_domain::testing::BASE_TIME_SECS),
+            updater: Arc::new(not_installed_updater()),
         }
     }
 }
@@ -360,6 +370,7 @@ pub struct ServiceHarness {
     pub gate: Arc<SaveGate>,
     pub opener: Arc<RecordingUrlOpener>,
     pub autostart: Arc<FakeAutostart>,
+    pub updater: Arc<FakeUpdater>,
     pub clock: Arc<TokioClock>,
     task: JoinHandle<()>,
     _release: ReleaseOnDrop,
@@ -404,6 +415,7 @@ impl ServiceHarness {
             clock: clock.clone(),
             opener: opener.clone(),
             autostart: autostart.clone(),
+            updater: setup.updater.clone(),
             repo: Arc::new(GatedRepo {
                 inner: repo.clone(),
                 gate: gate.clone(),
@@ -431,6 +443,7 @@ impl ServiceHarness {
             gate,
             opener,
             autostart,
+            updater: setup.updater,
             clock,
             task: tokio::spawn(service),
         }

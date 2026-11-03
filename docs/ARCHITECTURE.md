@@ -7,15 +7,15 @@ tested without a network, a credential store or a screen.
 ## Crates
 
 ```
-prm-domain   pure: ids, models, classification, diffing, notification planning, the view model
+prm-domain   pure: ids, models, classification, diffing, notification planning, the view model, update status, the Updater port
 prm-theme    pure: theme files, OKLab derivation, contrast checks, the brand mark
   prm-config   config.toml / state.json: schema, migration, validation, atomic writes
   prm-ado      Azure DevOps REST client: transport, paging, retries, rate limits, DTO mapping
     prm-auth   token sources (Azure CLI, PAT, Entra), single-flight cache, secret storage
-  prm-service  the actor: scheduler, refresh jobs, notifications, the published AppState
+  prm-service  the actor: scheduler, refresh jobs, update checks, notifications, the published AppState
     prm-platform  OS adapters: toasts, credential store, single instance and second-launch handoff, autostart, DWM
     prm-ui        egui: dashboard, settings, tray, keymap, theme runtime (no platform code)
-      pr-monitor  the binary: startup order, wiring, renderer choice, logging, panics
+      pr-monitor  the binary: startup order, wiring, renderer choice, logging, panics, the Velopack updater
 ```
 
 `prm-ui` does not depend on `prm-platform`. The binary bridges the two through the
@@ -66,20 +66,42 @@ UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread
 
 ## Startup (`pr-monitor/src/startup.rs`)
 
-1. Parse arguments. `--version`, `--help` and `--self-test` exit here.
+1. Run Velopack's hooks (`update::boot`: the installer and updater start the app with
+   `--veloapp-*` flags that they answer and exit on), then parse arguments. `--version`,
+   `--help` and `--self-test` exit here.
 2. Resolve the data folder (`--home`, `PRMONITOR_HOME`, else `%LOCALAPPDATA%\PRMonitor`).
 3. Take the single-instance lock. A second launch forwards (show, or open a link) and exits
    before any logging or GPU work.
 4. Create folders, the clock, logging and the panic hook.
 5. Register the shell identity: toast AUMID, the `prmonitor://` protocol, the icon file.
-6. Start the activation listener. Activations are buffered until the service exists.
-7. Load the config, state and catalogs. Build the platform adapters and the transport (the
+6. Apply a downloaded update if one is waiting: hand it to Velopack's Update.exe, which waits
+   for this process to exit, swaps the files and starts the app again; then exit. This is
+   done only by the primary (a second launch would stop the running one), once logging
+   exists (a failure is recorded), and before the listener, the service or any window.
+7. Start the activation listener. Activations are buffered until the service exists.
+8. Load the config, state and catalogs. Build the platform adapters and the transport (the
    proxy is resolved on a thread).
-8. Spawn the service, before the window, so the first frame paints the cached snapshot.
-9. Choose the renderer (OpenGL by default; wgpu over remote desktops, on arm64, or after an
+9. Spawn the service, before the window, so the first frame paints the cached snapshot.
+10. Choose the renderer (OpenGL by default; wgpu over remote desktops, on arm64, or after an
    OpenGL failure) and run eframe.
-10. On exit: stop the service (it persists), stop the handoff listener, release the lock. If the renderer
+11. On exit: stop the service (it persists), stop the handoff listener, release the lock. If the renderer
     failed to start, relaunch once with the other one.
+
+## Updates
+
+- Packages are Velopack releases on the repository's GitHub releases (installer, or the portable
+  zip, both updating in place). The `Updater` port (`prm-domain`) is blocking; the binary
+  implements it over `UpdateManager` (`pr-monitor/src/update.rs`).
+- The service owns the schedule: a check shortly after start, then every few hours, a retry
+  after a failure, each call with its own timeout (Velopack's HTTP client has none). It
+  downloads in the background and publishes `AppState.update` (`UpdateStatus`).
+- A downloaded update is applied on the next start, or at once from About › Restart to update:
+  `Command::ApplyUpdate` starts Update.exe, then `AppEvent::QuitForUpdate` makes the UI quit
+  through the normal graceful path, so state is saved and the lock released before files swap.
+- `[updates] auto = false` stops the background checks only; "Check now" and applying a package
+  that is already downloaded still work. A copy that Velopack did not install (`cargo run`, a
+  bare exe) or one started with `--home` reports `Disabled` and never calls the updater.
+- Debug builds read `PRMONITOR_UPDATE_FEED=<dir>` to update from a local folder of packages.
 
 ## Testing
 

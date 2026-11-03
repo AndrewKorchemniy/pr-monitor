@@ -42,6 +42,10 @@ impl PrMonitorApp {
             AppEvent::ConfigApplied { saved, .. } => self.on_config_applied(saved),
             AppEvent::Changes(changes) => self.changes.record(&changes),
             AppEvent::NotificationTestResult(result) => self.on_test_result(result),
+            AppEvent::QuitForUpdate => {
+                tracing::info!("quitting so the update can be applied");
+                self.quit(ctx);
+            }
             AppEvent::Stopped => self.on_service_stopped(),
         }
     }

@@ -13,7 +13,17 @@ all-features = true
 [advisories]
 unmaintained = "workspace"   # only direct deps; egui's graph has transitive unmaintained advisories (ttf-parser, zvariant…)
 yanked = "deny"
-ignore = []                  # format: { id = "RUSTSEC-YYYY-NNNN", reason = "…" }
+# format: { id = "RUSTSEC-YYYY-NNNN", reason = "…" }
+# zip 8.6 via velopack 1.2.161 (stable; only the 1.3 pre-release moves to zip 9). All four are in
+# ZipArchive::extract / ZipStreamReader::extract, which velopack never calls: it reads entries one
+# by one (bundle.rs, by_index), and only from our own release packages, checked against the feed's
+# SHA-256. Drop these once a stable velopack depends on zip >= 9.
+ignore = [
+    { id = "RUSTSEC-2026-0367", reason = "zip extract() SUID bits; velopack 1.2.161 never calls extract()" },
+    { id = "RUSTSEC-2026-0368", reason = "zip extract() symlink targets; velopack 1.2.161 never calls extract()" },
+    { id = "RUSTSEC-2026-0369", reason = "zip extract() permissions via symlinks; velopack 1.2.161 never calls extract()" },
+    { id = "RUSTSEC-2026-0429", reason = "zip extract() symlink size abort; velopack 1.2.161 never calls extract()" },
+]
 
 [licenses]
 confidence-threshold = 0.93

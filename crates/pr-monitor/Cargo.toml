@@ -40,11 +40,13 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
+velopack = { workspace = true }
 
 [dev-dependencies]
 prm-domain = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
 tempfile = { workspace = true }
+sha2 = { workspace = true }
 png = { workspace = true }
 http = { workspace = true }
 bytes = { workspace = true }

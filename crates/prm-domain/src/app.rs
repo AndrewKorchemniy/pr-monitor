@@ -34,6 +34,9 @@ pub const ENV_LOG: &str = "PRMONITOR_LOG";
 pub const ENV_SECRET_STORE: &str = "PRMONITOR_SECRET_STORE";
 /// `1` forces shell registration (AUMID, protocol) even in debug or isolated-home runs.
 pub const ENV_REGISTER: &str = "PRMONITOR_REGISTER";
+/// Debug builds only: a folder of Velopack packages (and `releases.<channel>.json`) to update from
+/// instead of GitHub, for trying an update locally.
+pub const ENV_UPDATE_FEED: &str = "PRMONITOR_UPDATE_FEED";
 pub const REPO_URL: &str = repo_url!();
 /// Product token in the HTTP User-Agent (no spaces allowed).
 pub const USER_AGENT_PRODUCT: &str = "PRMonitor";

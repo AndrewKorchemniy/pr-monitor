@@ -14,7 +14,11 @@ use std::{
 };
 
 use prm_config::AppPaths;
-use prm_domain::{app::ENV_HOME, ports::PortError, uri::AppUri};
+use prm_domain::{
+    app::ENV_HOME,
+    ports::{PortError, Updater},
+    uri::AppUri,
+};
 use prm_platform::{
     Acquired, ForwardOutcome, HandoffRequest, InstanceKey, InstanceLock, InstanceScope,
     acquire_instance, console, forward_to_primary, is_same_root,
@@ -34,6 +38,7 @@ use crate::{
     shutdown::{self, Held},
     ui_launch::{self, LaunchCtx},
     unregister,
+    update::{self, Boot, VelopackUpdater},
 };
 
 mod base;
@@ -41,7 +46,7 @@ mod service;
 
 use self::{
     base::base,
-    service::{Running, activation, start_service},
+    service::{Launching, Running, activation, start_service},
 };
 
 pub(crate) const EXIT_USAGE: u8 = 2;
@@ -60,6 +65,7 @@ pub(crate) const LOCK_RETRY: Duration = Duration::from_millis(100);
 /// What this process knows from its first line on.
 struct Launch {
     started: Instant,
+    boot: Boot,
     /// True until the first frame (from `panic::install`).
     init_phase: Arc<AtomicBool>,
 }
@@ -99,8 +105,9 @@ pub(crate) fn forward_request(args: &Args) -> Option<HandoffRequest> {
     }
 }
 
-pub(crate) fn run() -> ExitCode {
+pub(crate) fn run(boot: Boot) -> ExitCode {
     let launch = Launch {
+        boot,
         init_phase: panic::install(),
         started: Instant::now(),
     };
@@ -124,16 +131,33 @@ pub(crate) fn run() -> ExitCode {
             panic::suppress_dialogs();
             self_test::run()
         }
-        Mode::Unregister { purge } => match data_root(&args) {
-            // why: the purge guard needs the user's real home folder, not the `--home` override
-            // the data root came from.
-            Ok(root) => unregister::run(&root.path, root.scope, purge, dirs::home_dir().as_deref()),
-            Err(error) => fatal(&error),
-        },
+        Mode::Unregister { purge } => unregister(&args, purge),
         Mode::Run => match data_root(&args) {
             Ok(root) => primary_or_forward(&args, &root, &launch),
             Err(error) => fatal(&error),
         },
+    }
+}
+
+fn run_unregister(root: &Root, purge: bool) -> ExitCode {
+    // why: the purge guard needs the user's real home folder, not the `--home` override the data
+    // root came from.
+    unregister::run(&root.path, root.scope, purge, dirs::home_dir().as_deref())
+}
+
+/// `--unregister`.
+fn unregister(args: &Args, purge: bool) -> ExitCode {
+    match data_root(args) {
+        Ok(root) => run_unregister(&root, purge),
+        Err(error) => fatal(&error),
+    }
+}
+
+/// Velopack's uninstall hook: the same cleanup, keeping the data folder. It runs inside the
+/// uninstaller, which stops it after 30 seconds, so it never shows a dialog.
+pub(crate) fn uninstall_cleanup() {
+    if let Ok(root) = data_root(&Args::default()) {
+        let _ = run_unregister(&root, false);
     }
 }
 
@@ -274,6 +298,15 @@ fn not_responding() -> ExitCode {
     ExitCode::from(EXIT_NOT_RESPONDING)
 }
 
+/// Hands a downloaded update to Update.exe; `true` means this process must exit now. It runs
+/// after the lock (a second launch must never stop the running primary) and the log (a failed
+/// apply is recorded), but before the handoff listener, the service and any window. The log
+/// files are written unbuffered, so nothing is left to flush when the process exits.
+fn handed_to_updater(updater: &dyn Updater, boot: Boot) -> bool {
+    let restart_args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    update::apply_pending_at_start(updater, boot, &restart_args)
+}
+
 fn primary(
     args: &Args,
     root: &Root,
@@ -285,8 +318,18 @@ fn primary(
         Ok(base) => base,
         Err(code) => return code,
     };
+    let updater: Arc<dyn Updater> = Arc::new(VelopackUpdater::new(root.scope));
+    if handed_to_updater(updater.as_ref(), launch.boot) {
+        return ExitCode::SUCCESS;
+    }
     let act = activation(args, key);
-    let running = match start_service(args, root, &base, key, &act) {
+    let launching = Launching {
+        args,
+        root,
+        key,
+        updater,
+    };
+    let running = match start_service(&launching, &base, &act) {
         Ok(running) => running,
         Err(code) => return code,
     };

@@ -18,6 +18,7 @@ mod publish;
 mod scheduler;
 pub mod state;
 mod text;
+mod updates;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;

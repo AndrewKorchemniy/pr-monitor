@@ -1,8 +1,14 @@
-//! The version and the links to the licenses, the source and problem reports: at the foot of the
-//! sidebar, or as the last section of General once the sidebar folds into the page menu.
+//! The version, whether it is up to date, and the links to the release notes, the licenses, the
+//! source and problem reports: at the foot of the sidebar, or as the last section of General
+//! once the sidebar folds into the page menu.
+
+mod update;
 
 use eframe::egui::{self, RichText};
 use prm_domain::app::{DocLink, REPO_URL};
+use prm_service::Command;
+
+use self::update::Action;
 
 use crate::{
     actions::UiAction,
@@ -17,11 +23,16 @@ use crate::{
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Link {
     Url(&'static str),
+    /// The release notes of the running version.
+    WhatsNew,
+    /// Where releases are listed, for when updating does not work.
+    Releases,
     Licenses,
 }
 
 /// The links, in reading order.
-const LINKS: [(&str, Link); 3] = [
+const LINKS: [(&str, Link); 4] = [
+    (copy::WHATS_NEW, Link::WhatsNew),
     (copy::LICENSES_SHORT, Link::Licenses),
     (copy::SOURCE_CODE, Link::Url(REPO_URL)),
     (
@@ -46,10 +57,9 @@ pub(super) fn footer(
         }
     }
     ui.add_space(theme.tokens.metrics.space.xs);
+    let action = update::show(ui, cx, true);
     version(ui, &theme, env);
-    if let Some(link) = opened {
-        follow(cx, st, link);
-    }
+    finish(cx, st, env, opened, action);
 }
 
 /// The version, then the links on lines that wrap.
@@ -61,6 +71,7 @@ pub(super) fn section(
 ) {
     let theme = cx.theme.clone();
     version(ui, &theme, env);
+    let action = update::show(ui, cx, false);
     let mut opened = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.lg;
@@ -70,8 +81,23 @@ pub(super) fn section(
             }
         }
     });
-    if let Some(link) = opened {
-        follow(cx, st, link);
+    finish(cx, st, env, opened, action);
+}
+
+/// Runs what was clicked: an update action, or a link.
+fn finish(
+    cx: &mut FrameCx<'_>,
+    st: &mut SettingsState,
+    env: &SettingsEnv<'_>,
+    opened: Option<Link>,
+    action: Option<Action>,
+) {
+    let link = opened.or_else(|| action.and_then(Action::link));
+    if let Some(command) = action.and_then(Action::command) {
+        cx.push(UiAction::Send(command));
+    }
+    if let Some(link) = link {
+        follow(cx, st, env, link);
     }
 }
 
@@ -90,13 +116,34 @@ fn version(ui: &mut egui::Ui, theme: &UiTheme, env: &SettingsEnv<'_>) {
     widgets::muted(ui, theme, &version).on_hover_text(build);
 }
 
-fn follow(cx: &mut FrameCx<'_>, st: &mut SettingsState, link: Link) {
-    match link {
-        Link::Url(url) => {
-            if let Ok(url) = url::Url::parse(url) {
-                cx.push(UiAction::Send(prm_service::Command::OpenUrl(url)));
-            }
+fn follow(cx: &mut FrameCx<'_>, st: &mut SettingsState, env: &SettingsEnv<'_>, link: Link) {
+    let url = match link {
+        Link::Url(url) => url.to_owned(),
+        Link::WhatsNew => whats_new_url(env.build.version),
+        Link::Releases => releases_url(),
+        Link::Licenses => {
+            st.editing = Some(Editor::Licenses);
+            return;
         }
-        Link::Licenses => st.editing = Some(Editor::Licenses),
+    };
+    if let Ok(url) = url::Url::parse(&url) {
+        cx.push(UiAction::Send(Command::OpenUrl(url)));
     }
 }
+
+fn releases_url() -> String {
+    format!("{REPO_URL}/releases")
+}
+
+/// The release notes of `version`; a pre-release or dev version has no tag of its own, so it
+/// gets the list of releases.
+fn whats_new_url(version: &str) -> String {
+    if version.contains('-') {
+        releases_url()
+    } else {
+        format!("{REPO_URL}/releases/tag/v{version}")
+    }
+}
+
+#[cfg(test)]
+mod tests;

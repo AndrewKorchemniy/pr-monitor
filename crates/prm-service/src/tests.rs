@@ -9,3 +9,4 @@ mod notify;
 mod schedule;
 mod support;
 mod tracking;
+mod updates;

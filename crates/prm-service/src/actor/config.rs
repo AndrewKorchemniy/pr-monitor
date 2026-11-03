@@ -38,6 +38,9 @@ impl Service {
         if changes.autostart {
             self.spawn_autostart(Some(self.config.ui.launch_at_login));
         }
+        if changes.updates {
+            self.updates_config_changed();
+        }
         self.rows.dirty = true;
     }
 

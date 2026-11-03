@@ -59,6 +59,12 @@ impl Service {
                 set_error,
             } => self.on_autostart(seq, state, set_error.as_ref()),
             JobOutput::Opened(result) => Self::on_opened(result),
+            JobOutput::UpdatePending(pending) => self.on_update_pending(pending),
+            JobOutput::UpdateChecked(result) => self.on_update_checked(result),
+            JobOutput::UpdateDownloaded { version, result } => {
+                self.on_update_downloaded(version, result);
+            }
+            JobOutput::UpdateApplied(result) => self.on_update_applied(result),
             JobOutput::TestNotification(result) => {
                 let result = result.map_err(|e| UiError::port(text::NOTIFICATION_FAILED, &e));
                 self.deps
@@ -165,6 +171,7 @@ impl Service {
                     Some(UiError::internal("catalog task panicked"));
             }
             (JobKind::Save | JobKind::Flush, _) => self.on_save_panicked(job),
+            (JobKind::Update, _) => self.on_update_panicked(),
             (
                 JobKind::Refresh
                 | JobKind::Probe

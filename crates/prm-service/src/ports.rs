@@ -7,7 +7,7 @@ pub use crate::event::EventSink;
 pub use prm_ado::{AdoApi, AdoConnector, Credential, HttpTransport};
 pub use prm_auth::{AuthFactory, CommandRunner, OrgAuthenticator, SecretKey, SecretStore};
 pub use prm_config::StateRepo;
-pub use prm_domain::ports::{Clock, PortError, UrlOpener};
+pub use prm_domain::ports::{Clock, PortError, Updater, UrlOpener};
 
 /// Whether toasts can be shown right now, as the OS reports it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]

@@ -62,6 +62,12 @@ pub enum Command {
         until: Option<Timestamp>,
     },
     TestNotification,
+    /// "Check now": look for an update and download it, whether or not automatic checks are on.
+    /// Ignored while a check or download runs, or an update waits for a restart.
+    CheckForUpdates,
+    /// "Restart to update": hand the downloaded update to the updater; the UI then quits
+    /// (`AppEvent::QuitForUpdate`). Ignored unless an update is ready.
+    ApplyUpdate,
     Activate(AppUri),
     Shutdown,
 }

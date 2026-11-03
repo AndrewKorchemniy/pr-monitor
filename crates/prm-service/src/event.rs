@@ -44,6 +44,8 @@ pub enum AppEvent {
     /// Every diff result, including changes whose toasts were suppressed.
     Changes(Arc<[ChangeEvent]>),
     NotificationTestResult(Result<(), UiError>),
+    /// The updater will replace the app files once this process exits: quit gracefully now.
+    QuitForUpdate,
     /// The service loop has exited; no more state will be published.
     Stopped,
 }
