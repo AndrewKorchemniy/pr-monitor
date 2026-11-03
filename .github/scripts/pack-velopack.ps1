@@ -85,8 +85,11 @@ foreach ($f in 'LICENSE-MIT', 'LICENSE-APACHE', 'README.md') { Copy-Item (Join-P
 Copy-Item (Join-Path $root 'crates/prm-ui/assets/fonts/*.txt') (Join-Path $stage 'licenses')
 if ($NoticesDir) { Copy-Item (Join-Path $NoticesDir 'THIRD-PARTY-LICENSES.html') $stage }
 
-# 3. Previous release, anonymously: with a token the API also lists drafts, and a re-run could
-#    pick this release's own draft as the "previous" one. Having no release is not an error.
+# 3. Previous release, for the delta package. Having no release is not an error.
+#    Anonymous on purpose: with a token the API also lists drafts, so a re-run (recover) would
+#    offer this release's own draft as the "previous" one. The price is the unauthenticated limit
+#    of 60 API requests per hour per IP, which GitHub-hosted runners share, so a busy IP can be
+#    rate limited. Retry for about ten minutes before giving up (the job can be re-run via recover).
 if (-not $NoDownload) {
     $attempt = 0
     while ($true) {
@@ -94,9 +97,9 @@ if (-not $NoDownload) {
             Invoke-Native $vpk @('download', 'github', '--repoUrl', "https://github.com/$Repo", '--channel', $Rid, '--outputDir', $out)
             break
         } catch {
-            if (++$attempt -ge 4) { throw }
+            if (++$attempt -ge 5) { throw }
             Write-Host "::warning::vpk download failed ($($_.Exception.Message)); retrying"
-            Start-Sleep -Seconds (20 * $attempt)
+            Start-Sleep -Seconds (60 * $attempt)
         }
     }
 }
@@ -114,8 +117,9 @@ if ($NotesFile) { $pack += '--releaseNotes', (Resolve-Path $NotesFile).Path }
 Invoke-Native $vpk $pack
 
 # 5. Keep this build's files only. `download` left the previous full package in $out, and the
-#    pack's releases.<rid>.json lists it too. The GitHub update source resolves each feed entry's
-#    file from the same release as the feed, so a feed must name only files attached to its own release.
+#    pack's releases.<rid>.json lists it too. Velopack's docs want each release to carry one full
+#    and one delta package, and `vpk upload` itself builds the feed from the current build's
+#    assets only, so we upload exactly that.
 $assets = Get-Content -Raw (Join-Path $out "assets.$Rid.json") | ConvertFrom-Json
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 foreach ($a in $assets) { Copy-Item (Join-Path $out $a.RelativeFileName) $OutDir -Force }
