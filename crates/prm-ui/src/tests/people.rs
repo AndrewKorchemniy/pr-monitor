@@ -13,6 +13,7 @@ use prm_domain::{
 };
 use prm_service::{AppEvent, Command, SearchPhase};
 
+use super::dialogs::{self, ROOMY, assert_title_still, dialog_harness, frames};
 use crate::{
     actions::UiAction,
     copy,
@@ -294,4 +295,60 @@ fn the_dialog_holds_still_while_the_dropdown_is_open() {
             "{editor:?} at {size:?} x{scale}: {places:?}"
         );
     }
+}
+
+/// A person the directory knows, `n` apart from the others.
+fn candidate(n: u128) -> PersonCandidate {
+    Person {
+        unique_name: Some(Arc::from(format!("person{n}@contoso.com"))),
+        ..person(n, &format!("Person Number{n}"))
+    }
+    .to_candidate(CandidateSource::Harvested)
+}
+
+fn people_title(editor: Editor) -> (&'static str, &'static str) {
+    (dialogs::editor_title(editor), copy::DONE)
+}
+
+fn add_field<'h>(h: &'h Harness<'_, Fixture>) -> egui_kittest::Node<'h> {
+    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
+}
+
+/// Typing opened the dropdown (and its spacer), so the dialog grew a frame later and its top
+/// moved on the next blink of the cursor.
+#[test]
+fn the_title_holds_still_while_typing() {
+    for editor in [Editor::Tracked, Editor::Reviewers, Editor::Ignored] {
+        for (size, scale) in dialogs::windows() {
+            let mut h = dialog_harness(dialogs::settings_fixture(editor), size, scale);
+            let mut seen = frames(&mut h, 2, people_title(editor));
+            add_field(&h).click();
+            for letter in ["p", "r", "i", "y"] {
+                add_field(&h).type_text(letter);
+                seen.extend(frames(&mut h, 4, people_title(editor)));
+            }
+            assert_title_still(&seen, &format!("{editor:?} at {size:?} x{scale}"));
+        }
+    }
+}
+
+/// Every editor had the area id `edit_people`, so one opened at the size of the last.
+#[test]
+fn each_editor_opens_at_its_own_place() {
+    let title = people_title(Editor::Tracked);
+    let mut fresh = dialog_harness(dialogs::settings_fixture(Editor::Tracked), ROOMY, 1.0);
+    let fresh = frames(&mut fresh, 3, title);
+    let mut h = dialog_harness(dialogs::settings_fixture(Editor::Reviewers), ROOMY, 1.0);
+    add_field(&h).click();
+    for n in 0..10 {
+        let request = type_query(&mut h, "per");
+        deliver(&mut h, request, &[candidate(60 + n)]);
+        h.key_press(egui::Key::Enter);
+        h.run();
+    }
+    h.state_mut().settings.editing = None;
+    h.run();
+    h.state_mut().settings.editing = Some(Editor::Tracked);
+    let opened = frames(&mut h, 3, title);
+    assert_eq!(opened, fresh, "the first frames of a second editor");
 }

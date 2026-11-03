@@ -66,8 +66,9 @@ pub(crate) fn settings_modal(
     let nav = Nav::for_width(size.x);
     let id = egui::Id::unique("settings");
     let outer = size + frame.total_margin().sum();
-    let top = (ctx.content_rect().height() - outer.y) / 2.0;
-    let modal = widgets::modal::show_modal(ctx, id, frame, (outer.x, Some(top)), |ui| {
+    let window = ctx.content_rect().height();
+    let top = fit::modal_top(window, outer.y, fit::window_margin(window));
+    let modal = widgets::modal::show_modal(ctx, id, frame, (outer.x, top), |ui| {
         let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
         match nav {
             Nav::Sidebar => with_sidebar(ui, cx, st, env, rect),

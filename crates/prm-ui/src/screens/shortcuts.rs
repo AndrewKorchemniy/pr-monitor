@@ -30,6 +30,7 @@ pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
     let spec = ModalSpec {
         buttons: &[copy::CLOSE],
         width: 560.0,
+        body_height: Some(widgets::modal::MAX_BODY),
         ..ModalSpec::new("shortcuts", copy::SHORTCUTS_TITLE)
     };
     // why: the dialog's body scrolls, so the list needs no scroll area of its own.

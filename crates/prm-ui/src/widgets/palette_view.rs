@@ -88,7 +88,7 @@ fn show(
     let rows = rows_that_fit(theme, window.y - top - fit::window_margin(window.y));
     let margin: f32 = frame.inner_margin.left.into();
     let mut clicked = None;
-    let modal = widgets::modal::show_modal(ctx, id, frame, (width + chrome, Some(top)), |ui| {
+    let modal = widgets::modal::show_modal(ctx, id, frame, (width + chrome, top), |ui| {
         ui.set_width(width);
         let field = (egui::Id::unique("palette_query"), copy::PALETTE_HINT);
         let response = fields::search_field(ui, theme, &mut state.query, field, (width, width));

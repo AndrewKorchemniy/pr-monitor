@@ -38,6 +38,9 @@ pub(crate) struct ModalSpec<'a> {
     /// Opens over the settings sheet: kept further in from the window's edges so it reads as
     /// a dialog on the sheet rather than lining up with it.
     pub nested: bool,
+    /// The body is this tall (less in a short window) however little is in it, so what is in it
+    /// can change without moving the buttons. Without it the body is as tall as its content.
+    pub body_height: Option<f32>,
 }
 
 impl<'a> ModalSpec<'a> {
@@ -52,6 +55,7 @@ impl<'a> ModalSpec<'a> {
             danger: false,
             width: WIDTH,
             nested: false,
+            body_height: None,
         }
     }
 }
@@ -61,9 +65,14 @@ const NESTED_INSET: f32 = 14.0;
 /// The usual dialog width.
 pub(crate) const WIDTH: f32 = 420.0;
 /// The tallest a dialog's body gets before it scrolls, however tall the window (points).
-const MAX_BODY: f32 = 520.0;
+pub(crate) const MAX_BODY: f32 = 520.0;
 /// The least room a body keeps in a very short window (points).
 const MIN_BODY: f32 = 80.0;
+/// The body height a dialog without a `body_height` is placed for (points): about a short form.
+/// Taller content grows the dialog downward from where it was placed.
+const NOMINAL_BODY: f32 = 160.0;
+/// The header's height when placing a dialog (points): the inset round a title line.
+const HEAD_HEIGHT: f32 = 80.0;
 
 pub(crate) fn modal(
     ctx: &egui::Context,
@@ -73,14 +82,10 @@ pub(crate) fn modal(
 ) -> ModalOutcome {
     let mut outcome = ModalOutcome::Open;
     let frame = adapter::frame_dialog(theme, theme.policy).inner_margin(egui::Margin::ZERO);
-    let chrome = frame.total_margin().sum();
-    let inset = if spec.nested { NESTED_INSET } else { 0.0 };
-    let room = (fit::room(ctx.content_rect().size()) - chrome - egui::Vec2::splat(2.0 * inset))
-        .max(egui::Vec2::ZERO);
+    let place = Placement::of(ctx, theme, spec, frame.total_margin().sum());
     let id = egui::Id::unique(spec.id);
-    let width = spec.width.min(room.x);
-    let response = show_modal(ctx, id, frame, (width + chrome.x, None), |ui| {
-        ui.set_width(width);
+    let response = show_modal(ctx, id, frame, (place.outer, place.top), |ui| {
+        ui.set_width(place.width);
         let top = ui.cursor().top();
         let head = DialogHead {
             title: spec.title,
@@ -93,15 +98,12 @@ pub(crate) fn modal(
         }
         let bar = id.with("action_bar");
         let used = ui.cursor().top() - top + bar_height(ui, theme, spec, bar);
-        let height = (room.y - used).clamp(MIN_BODY, MAX_BODY);
         // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
         // when it starts to scroll (as the settings page does).
         ui.spacing_mut().scroll = adapter::floating_scroll();
-        egui::ScrollArea::vertical()
-            .id_salt(id.with("body"))
-            .max_height(height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| dialog::body(ui, theme, body));
+        body_area(id, spec.body_height, place.below - used).show(ui, |ui| {
+            dialog::body(ui, theme, body);
+        });
         if let Some(index) = action_bar(ui, theme, spec, bar) {
             outcome = ModalOutcome::Button(index);
         }
@@ -113,6 +115,61 @@ pub(crate) fn modal(
         outcome = ModalOutcome::Dismissed;
     }
     outcome
+}
+
+/// Where a dialog sits and how much room it has, from the window and the spec alone: nothing
+/// in it can move it. egui places an area from the size it had the frame before, so a dialog
+/// anchored by its middle moved a frame late whenever its content changed height.
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct Placement {
+    /// The content width, in points.
+    width: f32,
+    /// The width with the frame around it.
+    outer: f32,
+    /// How far down the window the dialog's top edge sits.
+    top: f32,
+    /// The height from the top edge to the window's margin, less the frame: what the header,
+    /// body and action bar share.
+    below: f32,
+}
+
+impl Placement {
+    /// `chrome` is the frame's margin and stroke on both axes.
+    fn of(ctx: &egui::Context, theme: &UiTheme, spec: &ModalSpec<'_>, chrome: egui::Vec2) -> Self {
+        let window = ctx.content_rect().size();
+        let inset = if spec.nested { NESTED_INSET } else { 0.0 };
+        let room_x = (fit::room(window).x - chrome.x - 2.0 * inset).max(0.0);
+        let bar = if spec.buttons.is_empty() {
+            0.0
+        } else {
+            action_bar_height(theme)
+        };
+        let body = spec.body_height.unwrap_or(NOMINAL_BODY);
+        let nominal = chrome.y + HEAD_HEIGHT + body + bar;
+        let margin = fit::window_margin(window.y) + inset;
+        let top = fit::modal_top(window.y, nominal, margin);
+        let width = spec.width.min(room_x);
+        Self {
+            width,
+            outer: width + chrome.x,
+            top,
+            below: fit::room_below(window.y, top, margin) - chrome.y,
+        }
+    }
+}
+
+/// The body's scroll area: `fixed` points tall when given (or as tall as `room` allows), else
+/// as tall as its content, up to `MAX_BODY` or `room`.
+fn body_area(id: egui::Id, fixed: Option<f32>, room: f32) -> egui::ScrollArea {
+    let area = egui::ScrollArea::vertical().id_salt(id.with("body"));
+    match fixed {
+        Some(height) => area
+            .max_height(room.clamp(MIN_BODY, height))
+            .auto_shrink([false, false]),
+        None => area
+            .max_height(room.clamp(MIN_BODY, MAX_BODY))
+            .auto_shrink([false, true]),
+    }
 }
 
 /// A one-line action bar's height: its buttons, the inset around them and the divider above.
@@ -181,7 +238,7 @@ pub(crate) fn show_modal<R>(
     ctx: &egui::Context,
     id: egui::Id,
     frame: egui::Frame,
-    (outer, top): (f32, Option<f32>),
+    (outer, top): (f32, f32),
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::ModalResponse<R> {
     egui::Modal::new(id)
@@ -190,25 +247,20 @@ pub(crate) fn show_modal<R>(
         .show(ctx, add)
 }
 
-/// The area for a modal `outer` points wide (frame included), placed across the window from
-/// that known width: halfway across, on a whole pixel. egui centres an area by the size it
-/// measured the frame before, so a width that differed by a pixel from one frame to the next
-/// moved the whole dialog sideways and back on every repaint (each blink of a text cursor).
-/// `top` pins its top edge that far down; without it the dialog is centred down the window.
-fn dialog_area(ctx: &egui::Context, id: egui::Id, outer: f32, top: Option<f32>) -> egui::Area {
-    let window = ctx.content_rect();
+/// The area for a modal `outer` points wide (frame included), `top` points down the window:
+/// halfway across, on a whole pixel. egui places an area by the size it measured the frame
+/// before, so anything but its top-left corner (a width that differed by a pixel, a middle
+/// that moved with the height) moved the whole dialog on every repaint (each blink of a text
+/// cursor).
+fn dialog_area(ctx: &egui::Context, id: egui::Id, outer: f32, top: f32) -> egui::Area {
     let ppp = ctx.pixels_per_point();
-    let left = ((window.width() - outer) / 2.0)
+    let left = ((ctx.content_rect().width() - outer) / 2.0)
         .max(0.0)
         .round_to_pixels(ppp);
-    let area = egui::Modal::default_area(id);
-    match top {
-        Some(top) => area.anchor(
-            egui::Align2::LEFT_TOP,
-            egui::vec2(left, top.round_to_pixels(ppp)),
-        ),
-        None => area.anchor(egui::Align2::LEFT_CENTER, egui::vec2(left, 0.0)),
-    }
+    egui::Modal::default_area(id).anchor(
+        egui::Align2::LEFT_TOP,
+        egui::vec2(left, top.round_to_pixels(ppp)),
+    )
 }
 
 #[cfg(test)]

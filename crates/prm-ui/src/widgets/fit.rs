@@ -56,6 +56,18 @@ pub(crate) fn card_top(window: f32, card: Option<f32>, floor: f32) -> f32 {
     })
 }
 
+/// Where a dialog `nominal` points tall starts in a window `window` points tall: centred, and no
+/// nearer the window's top than `margin`. `nominal` is what the dialog is placed for, not what
+/// it measures, so its top stays where it is as its content changes.
+pub(crate) fn modal_top(window: f32, nominal: f32, margin: f32) -> f32 {
+    ((window - nominal) / 2.0).max(margin)
+}
+
+/// The room from `top` down to `margin` above the foot of a window `window` points tall.
+pub(crate) fn room_below(window: f32, top: f32, margin: f32) -> f32 {
+    (window - margin - top).max(0.0)
+}
+
 /// `want` cut down to the room a dialog has in `window`.
 pub(crate) fn fit(want: Vec2, window: Vec2) -> Vec2 {
     want.min(room(window))

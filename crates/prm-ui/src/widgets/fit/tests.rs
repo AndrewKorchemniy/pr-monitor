@@ -131,3 +131,26 @@ fn per_line_fits_the_width() {
     assert_eq!(per_line(2000.0, (item, gap), 2), 2, "never more than asked");
     assert_eq!(per_line(2000.0, (item, gap), 0), 1, "always at least one");
 }
+
+#[test]
+fn modal_top_centres_a_dialog_but_keeps_the_margin() {
+    let cases = [
+        (760.0, 300.0, 32.0, 230.0),
+        (760.0, 740.0, 32.0, 32.0),
+        (420.0, 800.0, 8.0, 8.0),
+    ];
+    for (window, nominal, margin, expected) in cases {
+        let top = modal_top(window, nominal, margin);
+        assert_eq!(
+            top, expected,
+            "{nominal} pt in {window} pt, margin {margin}"
+        );
+    }
+}
+
+#[test]
+fn room_below_stops_at_the_margin_and_never_goes_negative() {
+    assert_eq!(room_below(760.0, 100.0, 32.0), 628.0);
+    assert_eq!(room_below(420.0, 400.0, 8.0), 12.0);
+    assert_eq!(room_below(420.0, 430.0, 8.0), 0.0);
+}

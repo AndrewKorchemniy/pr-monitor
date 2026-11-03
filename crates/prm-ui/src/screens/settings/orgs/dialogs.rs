@@ -47,6 +47,7 @@ fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) 
         buttons: &[copy::CLOSE],
         width: 640.0,
         nested: true,
+        body_height: Some(modal::MAX_BODY),
         ..ModalSpec::new("licenses", copy::LICENSES)
     };
     // why: the dialog's body scrolls, so the long text needs no scroll area of its own.
@@ -228,11 +229,13 @@ fn people_dialog(
         return ModalOutcome::Dismissed;
     };
     let id = saved.then(|| org.org_id().cloned()).flatten();
-    let picker = match editor {
-        Editor::Reviewers => &mut st.pickers.reviewers,
-        Editor::Ignored => &mut st.pickers.ignored,
+    // why: each editor has its own modal id, so one never opens at the size (and place) the
+    // last one left in egui's memory.
+    let (picker, modal_id) = match editor {
+        Editor::Reviewers => (&mut st.pickers.reviewers, "edit_reviewers"),
+        Editor::Ignored => (&mut st.pickers.ignored, "edit_ignored"),
         Editor::Tracked | Editor::AddOrg | Editor::Licenses | Editor::Repositories => {
-            &mut st.pickers.tracked
+            (&mut st.pickers.tracked, "edit_tracked")
         }
     };
     let (title, help) = list_copy(editor);
@@ -242,7 +245,7 @@ fn people_dialog(
         buttons: &[copy::DONE],
         width: 480.0,
         nested: true,
-        ..ModalSpec::new("edit_people", title)
+        ..ModalSpec::new(modal_id, title)
     };
     let list = people_list(org, editor);
     let outcome = modal::modal(ctx, &theme, &spec, |ui| {
