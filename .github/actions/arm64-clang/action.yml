@@ -1,0 +1,19 @@
+name: clang for ring on Windows arm64
+description: >-
+  ring (pulled in by Velopack's ureq/rustls) assembles its aarch64 code with clang on
+  aarch64-pc-windows-msvc. The windows-11-arm image ships LLVM but may not put it on PATH. This puts it
+  there, or fails with a clear message. It does nothing on other runners, so callers can use it unconditionally.
+runs:
+  using: composite
+  steps:
+    - name: Find clang (windows-arm64 only)
+      if: runner.os == 'Windows' && runner.arch == 'ARM64'
+      shell: pwsh
+      run: |
+        $llvm = 'C:\Program Files\LLVM\bin'
+        if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
+          if (-not (Test-Path "$llvm\clang.exe")) { throw "clang is not on PATH and not in $llvm; ring cannot build for arm64" }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $llvm
+          $env:PATH += ";$llvm"
+        }
+        clang --version

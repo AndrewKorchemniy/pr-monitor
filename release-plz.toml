@@ -25,14 +25,8 @@ git_release_enable = true
 git_release_name = "PR Monitor v{{ version }}"
 git_release_draft = true        # assets attached before publish (immutable releases)
 git_release_type = "auto"       # -alpha/-beta -> pre-release
-git_release_body = """
-{{ changelog }}
-
----
-Binaries are not code-signed yet; Windows SmartScreen may warn (More info > Run anyway). Verify with the attestation and SHA256SUMS.txt.
-
-Verify: `gh attestation verify pr-monitor-windows-x64.exe -R AndrewKorchemniy/pr-monitor` · checksums in `SHA256SUMS.txt` · PDBs attached for crash symbolization.
-"""
+# The install and verify footer is added by .github/scripts/release-footer.sh (called from release.yml).
+git_release_body = "{{ changelog }}"
 
 [changelog]
 protect_breaking_commits = true
