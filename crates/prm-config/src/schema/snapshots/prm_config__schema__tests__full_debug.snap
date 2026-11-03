@@ -54,6 +54,9 @@ Config {
     diagnostics: DiagnosticsConfig {
         log_level: "info",
     },
+    updates: UpdatesConfig {
+        auto: true,
+    },
     orgs: [
         OrgProfile {
             id: Some(

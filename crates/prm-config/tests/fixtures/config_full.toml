@@ -51,6 +51,9 @@ max_concurrency = 6         # per org, 1..=8
 [diagnostics]
 log_level = "info"          # bin reads; PRMONITOR_LOG env overrides
 
+[updates]
+auto = true                 # check in the background and download; false: only "Check now"
+
 [[orgs]]
 id = "contoso"                              # optional; derived from url
 url = "https://dev.azure.com/contoso"

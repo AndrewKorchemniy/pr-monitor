@@ -44,6 +44,8 @@ pub struct ConfigChanges {
     pub network: bool,
     /// Launch at login: update the OS registration.
     pub autostart: bool,
+    /// Background update checks turned on or off.
+    pub updates: bool,
 }
 
 /// Both configs must already be normalized (ids set). For a duplicated org id the first
@@ -59,6 +61,7 @@ pub fn diff_configs(old: &Config, new: &Config) -> ConfigChanges {
         refresh: old.refresh != new.refresh,
         network: old.network != new.network,
         autostart: old.ui.launch_at_login != new.ui.launch_at_login,
+        updates: old.updates != new.updates,
         ..ConfigChanges::default()
     };
     for (id, new_org) in &new_orgs {
