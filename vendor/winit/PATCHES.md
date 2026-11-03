@@ -12,9 +12,6 @@ cargo fetch --locked
 diff -ru ~/.cargo/registry/src/index.crates.io-*/winit-0.30.13 vendor/winit
 ```
 
-(The first commit that added this directory is the pristine copy, so
-`git diff <that commit> HEAD -- vendor/winit` shows the same thing.)
-
 ## Patch: a stale monitor handle must not panic
 
 Upstream issue: <https://github.com/rust-windowing/winit/issues/3102> ("Invalid monitor handle",

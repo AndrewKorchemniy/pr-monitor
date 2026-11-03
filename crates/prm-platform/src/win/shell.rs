@@ -124,8 +124,9 @@ impl DesktopShell for WinShell {
         .map(|()| enabled.as_bool())
     }
 
-    fn rect_visible(&self, x: f32, y: f32, w: f32, _h: f32) -> Option<bool> {
-        let [left, top, right, bottom] = title_bar_probe(x, y, w);
+    fn title_bar_visible(&self, position: [f32; 2], width: f32) -> Option<bool> {
+        let [x, y] = position;
+        let [left, top, right, bottom] = title_bar_probe(x, y, width);
         let probe = RECT {
             left,
             top,

@@ -1,4 +1,4 @@
-use eframe::egui::{RawInput, Vec2, ViewportId, ViewportInfo, pos2, vec2};
+use eframe::egui::{RawInput, ViewportId, ViewportInfo, pos2, vec2};
 use prm_config::UiPrefs;
 use prm_domain::testing::ts;
 use prm_service::AppState;

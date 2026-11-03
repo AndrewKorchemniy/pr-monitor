@@ -24,10 +24,11 @@ pub trait DesktopShell: Send + Sync + 'static {
     fn os_description(&self) -> &str;
     /// The OS "animate controls" preference, when known.
     fn system_animations_enabled(&self) -> Option<bool>;
-    /// Whether a saved window rect (in points) still has its title bar on a connected monitor;
-    /// `None` when the OS cannot tell.
-    fn rect_visible(&self, x: f32, y: f32, w: f32, h: f32) -> Option<bool> {
-        let _ = (x, y, w, h);
+    /// Whether the title bar of a saved window, given its top-left `position` and `width` in
+    /// points, is still on a connected monitor; `None` when the OS cannot tell. The height does
+    /// not matter: only the title-bar strip has to be reachable.
+    fn title_bar_visible(&self, position: [f32; 2], width: f32) -> Option<bool> {
+        let _ = (position, width);
         None
     }
 }

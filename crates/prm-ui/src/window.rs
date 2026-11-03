@@ -3,7 +3,7 @@
 
 mod reveal;
 
-use eframe::egui::{self, Pos2, Rect, ViewportCommand};
+use eframe::egui::{self, Pos2, Rect, Vec2, ViewportCommand};
 use prm_config::WindowRect;
 use prm_domain::Timestamp;
 use prm_service::Command;
@@ -18,9 +18,6 @@ const TOGGLE_FOCUS_WINDOW: std::time::Duration = std::time::Duration::from_milli
 pub(crate) const OFFSCREEN: Pos2 = egui::pos2(-32_000.0, -32_000.0);
 /// Where an off-screen window goes when the monitor size is unknown (unzoomed points).
 const FALLBACK_POSITION: Pos2 = egui::pos2(100.0, 100.0);
-
-/// eframe forces the first frame visible; flip once eframe honors `with_visible(false)`.
-pub const EFRAME_HONORS_HIDDEN_ROOT: bool = false;
 
 /// How the window starts (from `UiInit`).
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -282,10 +279,10 @@ fn restore_position(ctx: &egui::Context, restore: Restore) -> Pos2 {
 /// points. An unknown window size, or a monitor that is missing or empty, gives
 /// `FALLBACK_POSITION`: winit reports a monitor that has just been unplugged or reconfigured as
 /// 0x0, and centering on it would park the window at the corner.
-fn centered_position(monitor: Option<egui::Vec2>, outer: Option<egui::Vec2>, zoom: f32) -> Pos2 {
+fn centered_position(monitor: Option<Vec2>, outer: Option<Vec2>, zoom: f32) -> Pos2 {
     match (monitor, outer) {
         (Some(monitor), Some(outer)) if monitor.x > 0.0 && monitor.y > 0.0 => {
-            ((monitor - outer) / 2.0).max(egui::Vec2::ZERO).to_pos2()
+            ((monitor - outer) / 2.0).max(Vec2::ZERO).to_pos2()
         }
         _ => zoomed(FALLBACK_POSITION, zoom),
     }
