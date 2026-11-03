@@ -88,8 +88,9 @@ There is no bare exe any more: the app cannot update itself from outside an inst
   `verify-package.ps1` (all files present, the feed matches the files, the exe in the Portable
   zip is the one that was verified).
 - The feed, `releases.win-<arch>.json`, is cut down to this version's packages. vpk's own copy
-  also lists the previous full package it downloaded, but the app resolves each file from the
-  same release as the feed it read, so a feed may name only files attached to its own release.
+  also lists the previous full package it downloaded, but Velopack's docs want one full and one
+  delta package per release, and `vpk upload` builds the feed from the current build's assets
+  only, so the feed we upload does the same.
 - `publish` attests, checksums and uploads to the **draft**. It uses `gh release upload`, not
   `vpk upload github`, because vpk refuses a draft that already holds the feed (that would
   break `recover`). Nothing in the workflow publishes except `go-live`.
@@ -180,6 +181,11 @@ about to release.
   ruleset). Bump the patch version and release again.
 - **`release-current` says the release exists:** bump the version; a version is released at
   most once.
+- **An install or update misbehaves on a user's machine:** `Update.exe` logs to
+  `%LocalAppData%\velopack\velopack_AndrewKorchemniy.PRMonitor.log`; the app's own logs stay in
+  `%LOCALAPPDATA%\PRMonitor\logs`.
+- **Two copies of the app:** a Portable copy and an installed copy share the data folder
+  `%LOCALAPPDATA%\PRMonitor` and the single-instance key, so only one of them runs at a time.
 
 ## Verifying a release
 
