@@ -188,6 +188,17 @@ fn picking_a_known_person_adds_them_and_clears_the_field() {
     assert_eq!(picker.query, "");
     assert!(!picker.open, "the dropdown closes for the next name");
     assert_eq!(picker.search, Search::Idle);
+    assert!(picker.just_added, "the pills scroll to the new person");
+}
+
+#[test]
+fn a_dialog_closing_forgets_that_someone_was_just_added() {
+    let (mut picker, _) = searching();
+    picker.pick(&known(1, "Maya Patel", "maya@contoso.com"));
+
+    picker.reset();
+
+    assert!(!picker.just_added);
 }
 
 #[test]
@@ -213,6 +224,7 @@ fn picking_a_directory_entry_shows_adding_until_it_resolves() {
     assert_eq!(picker.on_event(&event), Some(resolved));
     assert_eq!(picker.resolving, Vec::<RequestId>::new());
     assert!(!picker.open);
+    assert!(picker.just_added, "the resolved person is added too");
 }
 
 #[test]

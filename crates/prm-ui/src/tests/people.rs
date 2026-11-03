@@ -360,6 +360,26 @@ fn the_dialog_keeps_its_size_as_results_arrive_and_change() {
     }
 }
 
+/// Each added person is another pill and, until the list scrolls, another line.
+#[test]
+fn adding_ten_people_does_not_move_or_resize_the_dialog() {
+    for size in [ROOMY, SMALLEST] {
+        let title = people_title(Editor::Reviewers);
+        let mut h = dialog_harness(dialogs::settings_fixture(Editor::Reviewers), size, 1.0);
+        let mut seen = frames(&mut h, 2, title);
+        add_field(&h).click();
+        for n in 0..10 {
+            let request = type_query(&mut h, "per");
+            seen.extend(frames(&mut h, 2, title));
+            deliver(&mut h, request, &[candidate(40 + n)]);
+            h.key_press(egui::Key::Enter);
+            seen.extend(frames(&mut h, 3, title));
+        }
+        assert_eq!(reviewers(&h).len(), 12);
+        assert_title_still(&seen, &format!("{size:?}"));
+    }
+}
+
 /// Every editor had the area id `edit_people`, so one opened at the size of the last.
 #[test]
 fn each_editor_opens_at_its_own_place() {

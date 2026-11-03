@@ -22,6 +22,7 @@ use crate::{copy, frame::FrameCx, widgets};
 mod combobox;
 mod pills;
 
+use pills::scrolling_chips;
 pub(crate) use pills::{chips, placeholder};
 
 /// Directory searches start at this many characters.
@@ -80,6 +81,8 @@ pub(crate) struct PeoplePicker {
     open: bool,
     /// The highlighted row, an index into the offered matches.
     highlight: usize,
+    /// A person was just added: the list of pills scrolls to the end once.
+    just_added: bool,
 }
 
 impl PeoplePicker {
@@ -93,6 +96,7 @@ impl PeoplePicker {
             error: None,
             open: false,
             highlight: 0,
+            just_added: false,
         }
     }
 
@@ -157,6 +161,7 @@ impl PeoplePicker {
         match result {
             Ok(person) => {
                 self.open &= self.has_rows();
+                self.just_added = true;
                 Some(person.clone())
             }
             Err(error) => {
@@ -203,6 +208,7 @@ impl PeoplePicker {
         self.reset();
         if let Some(person) = candidate.to_person() {
             self.open = !self.resolving.is_empty();
+            self.just_added = true;
             return Pick::Add(person);
         }
         let request = next_request();
@@ -220,6 +226,7 @@ impl PeoplePicker {
         self.error = None;
         self.highlight = 0;
         self.open = false;
+        self.just_added = false;
     }
 
     /// Closes the dropdown and keeps what was typed.
@@ -309,7 +316,8 @@ pub(crate) fn people_picker(
     // changing it never resizes (and so never moves) a dialog.
     if !people.is_empty() {
         ui.add_space(theme.tokens.metrics.space.sm);
-        chips(ui, &theme, people);
+        let show_last = std::mem::take(&mut picker.just_added);
+        scrolling_chips(ui, &theme, people, (picker.id, show_last));
     }
 }
 
