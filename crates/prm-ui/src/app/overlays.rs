@@ -89,13 +89,9 @@ impl PrMonitorApp {
         let outcome = match kind {
             ModalKind::DiscardSettings => {
                 let spec = ModalSpec {
-                    id: "discard",
-                    title: copy::DISCARD_TITLE,
-                    subtitle: None,
                     buttons: &[copy::DISCARD, copy::KEEP_EDITING],
                     danger: true,
-                    width: widgets::modal::WIDTH,
-                    ..ModalSpec::default()
+                    ..ModalSpec::new("discard", copy::DISCARD_TITLE)
                 };
                 let outcome = modal(ctx, &theme, &spec, |ui| {
                     ui.label(copy::DISCARD_BODY);
@@ -109,13 +105,8 @@ impl PrMonitorApp {
             ModalKind::Pat(org) => self.pat_modal(ctx, org),
             ModalKind::ContactAdmin(message) => {
                 let spec = ModalSpec {
-                    id: "admin",
-                    title: copy::ADMIN_TITLE,
-                    subtitle: None,
                     buttons: &[copy::COPY_MESSAGE, copy::CLOSE],
-                    danger: false,
-                    width: widgets::modal::WIDTH,
-                    ..ModalSpec::default()
+                    ..ModalSpec::new("admin", copy::ADMIN_TITLE)
                 };
                 let outcome = modal(ctx, &theme, &spec, |ui| {
                     ui.add(
@@ -147,13 +138,9 @@ impl PrMonitorApp {
             .unwrap_or_default();
         let title = copy::remove_org_title(&label);
         let spec = ModalSpec {
-            id: "remove_org",
-            title: &title,
-            subtitle: None,
             buttons: &[copy::REMOVE, copy::CANCEL],
             danger: true,
-            width: widgets::modal::WIDTH,
-            ..ModalSpec::default()
+            ..ModalSpec::new("remove_org", &title)
         };
         let outcome = modal(ctx, &theme, &spec, |ui| {
             ui.add(egui::Label::new(copy::REMOVE_ORG_BODY).wrap());
@@ -199,13 +186,8 @@ impl PrMonitorApp {
     fn auth_menu(&mut self, ctx: &egui::Context) -> ModalOutcome {
         let theme = self.theme.current(ctx).clone();
         let spec = ModalSpec {
-            id: "auth_menu",
-            title: copy::TRAY_SIGN_IN.trim_end_matches('…'),
-            subtitle: None,
             buttons: &[copy::CLOSE],
-            danger: false,
-            width: widgets::modal::WIDTH,
-            ..ModalSpec::default()
+            ..ModalSpec::new("auth_menu", copy::TRAY_SIGN_IN.trim_end_matches('…'))
         };
         let orgs: Vec<_> = self
             .state

@@ -28,13 +28,9 @@ const CATEGORIES: [(Category, &str); 6] = [
 pub(crate) fn shortcuts(ctx: &egui::Context, cx: &FrameCx<'_>) -> bool {
     let theme = cx.theme.clone();
     let spec = ModalSpec {
-        id: "shortcuts",
-        title: copy::SHORTCUTS_TITLE,
-        subtitle: None,
         buttons: &[copy::CLOSE],
-        danger: false,
         width: 560.0,
-        ..ModalSpec::default()
+        ..ModalSpec::new("shortcuts", copy::SHORTCUTS_TITLE)
     };
     // why: the dialog's body scrolls, so the list needs no scroll area of its own.
     let outcome = modal(ctx, &theme, &spec, |ui| {

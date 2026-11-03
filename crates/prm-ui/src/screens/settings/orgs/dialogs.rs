@@ -44,13 +44,10 @@ pub(crate) fn editor(
 /// Third-party licenses and the bundled fonts' licenses, in a scrolling dialog.
 fn licenses_dialog(ctx: &egui::Context, theme: &UiTheme, env: &SettingsEnv<'_>) -> ModalOutcome {
     let spec = ModalSpec {
-        id: "licenses",
-        title: copy::LICENSES,
-        subtitle: None,
         buttons: &[copy::CLOSE],
-        danger: false,
         width: 640.0,
         nested: true,
+        ..ModalSpec::new("licenses", copy::LICENSES)
     };
     // why: the dialog's body scrolls, so the long text needs no scroll area of its own.
     modal::modal(ctx, theme, &spec, |ui| {
@@ -155,13 +152,8 @@ fn add_org_dialog(
 ) -> ModalOutcome {
     let theme = &cx.theme.clone();
     let spec = ModalSpec {
-        id: "add_org",
-        title: copy::ADD_ORG,
-        subtitle: None,
-        buttons: &[],
-        danger: false,
-        width: modal::WIDTH,
         nested: true,
+        ..ModalSpec::new("add_org", copy::ADD_ORG)
     };
     let mut added = false;
     let outcome = modal::modal(ctx, theme, &spec, |ui| {
@@ -198,13 +190,11 @@ fn repositories_dialog(
         .get(st.org)
         .map(|o| o.display_label().to_string());
     let spec = ModalSpec {
-        id: "choose_repositories",
-        title: copy::STEP_REPOS,
         subtitle: org_label.as_deref(),
         buttons: &[copy::DONE],
-        danger: false,
         width: 560.0,
         nested: true,
+        ..ModalSpec::new("choose_repositories", copy::STEP_REPOS)
     };
     let Some(org) = st.draft.orgs.get_mut(st.org) else {
         return ModalOutcome::Dismissed;
@@ -248,13 +238,11 @@ fn people_dialog(
     let (title, help) = list_copy(editor);
     let org_label = org.display_label().to_string();
     let spec = ModalSpec {
-        id: "edit_people",
-        title,
         subtitle: Some(&org_label),
         buttons: &[copy::DONE],
-        danger: false,
         width: 480.0,
         nested: true,
+        ..ModalSpec::new("edit_people", title)
     };
     let list = people_list(org, editor);
     let outcome = modal::modal(ctx, &theme, &spec, |ui| {

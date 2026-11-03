@@ -85,30 +85,26 @@ fn show(
     let frame = crate::theme::adapter::frame_popup(theme, theme.policy);
     let chrome = frame.total_margin().sum().x;
     let width = WIDTH.min(fit::room(window).x - chrome);
-    let area = widgets::modal::dialog_area(ctx, id, width + chrome, Some(top));
     let rows = rows_that_fit(theme, window.y - top - fit::window_margin(window.y));
+    let margin: f32 = frame.inner_margin.left.into();
     let mut clicked = None;
-    let modal = egui::Modal::new(id)
-        .area(area)
-        .frame(frame)
-        .show(ctx, |ui| {
-            ui.set_width(width);
-            let field = (egui::Id::unique("palette_query"), copy::PALETTE_HINT);
-            let response = fields::search_field(ui, theme, &mut state.query, field, (width, width));
-            response.request_focus();
-            if response.changed() {
-                state.selected = 0;
-                state.revealed = None;
-            }
-            rule(ui, theme);
-            if items.is_empty() {
-                widgets::muted(ui, theme, copy::PALETTE_EMPTY);
-            }
-            let margin = frame.inner_margin.left.into();
-            clicked = list(ui, theme, state, items, (rows, margin));
-            rule(ui, theme);
-            widgets::muted(ui, theme, copy::PALETTE_FOOTER);
-        });
+    let modal = widgets::modal::show_modal(ctx, id, frame, (width + chrome, Some(top)), |ui| {
+        ui.set_width(width);
+        let field = (egui::Id::unique("palette_query"), copy::PALETTE_HINT);
+        let response = fields::search_field(ui, theme, &mut state.query, field, (width, width));
+        response.request_focus();
+        if response.changed() {
+            state.selected = 0;
+            state.revealed = None;
+        }
+        rule(ui, theme);
+        if items.is_empty() {
+            widgets::muted(ui, theme, copy::PALETTE_EMPTY);
+        }
+        clicked = list(ui, theme, state, items, (rows, margin));
+        rule(ui, theme);
+        widgets::muted(ui, theme, copy::PALETTE_FOOTER);
+    });
     let close = clicked.is_none() && modal.should_close();
     (clicked, close)
 }

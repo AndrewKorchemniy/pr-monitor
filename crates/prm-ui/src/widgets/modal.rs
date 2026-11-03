@@ -25,7 +25,6 @@ pub(crate) enum ModalOutcome {
     Dismissed,
 }
 
-#[derive(Default)]
 pub(crate) struct ModalSpec<'a> {
     pub id: &'a str,
     pub title: &'a str,
@@ -39,6 +38,22 @@ pub(crate) struct ModalSpec<'a> {
     /// Opens over the settings sheet: kept further in from the window's edges so it reads as
     /// a dialog on the sheet rather than lining up with it.
     pub nested: bool,
+}
+
+impl<'a> ModalSpec<'a> {
+    /// A dialog with no buttons, as wide as usual, over the page: set the rest with a struct
+    /// update (`ModalSpec { buttons, ..ModalSpec::new(id, title) }`).
+    pub(crate) const fn new(id: &'a str, title: &'a str) -> Self {
+        Self {
+            id,
+            title,
+            subtitle: None,
+            buttons: &[],
+            danger: false,
+            width: WIDTH,
+            nested: false,
+        }
+    }
 }
 
 /// How much further in from the window a dialog over the settings sheet sits (points).
@@ -64,37 +79,33 @@ pub(crate) fn modal(
         .max(egui::Vec2::ZERO);
     let id = egui::Id::unique(spec.id);
     let width = spec.width.min(room.x);
-    let area = dialog_area(ctx, id, width + chrome.x, None);
-    let response = egui::Modal::new(id)
-        .area(area)
-        .frame(frame)
-        .show(ctx, |ui| {
-            ui.set_width(width);
-            let top = ui.cursor().top();
-            let head = DialogHead {
-                title: spec.title,
-                subtitle: spec.subtitle,
-                display: false,
-                close: true,
-            };
-            if dialog::header(ui, theme, &head) {
-                outcome = ModalOutcome::Dismissed;
-            }
-            let bar = id.with("action_bar");
-            let used = ui.cursor().top() - top + bar_height(ui, theme, spec, bar);
-            let height = (room.y - used).clamp(MIN_BODY, MAX_BODY);
-            // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
-            // when it starts to scroll (as the settings page does).
-            ui.spacing_mut().scroll = adapter::floating_scroll();
-            egui::ScrollArea::vertical()
-                .id_salt(id.with("body"))
-                .max_height(height)
-                .auto_shrink([false, true])
-                .show(ui, |ui| dialog::body(ui, theme, body));
-            if let Some(index) = action_bar(ui, theme, spec, bar) {
-                outcome = ModalOutcome::Button(index);
-            }
-        });
+    let response = show_modal(ctx, id, frame, (width + chrome.x, None), |ui| {
+        ui.set_width(width);
+        let top = ui.cursor().top();
+        let head = DialogHead {
+            title: spec.title,
+            subtitle: spec.subtitle,
+            display: false,
+            close: true,
+        };
+        if dialog::header(ui, theme, &head) {
+            outcome = ModalOutcome::Dismissed;
+        }
+        let bar = id.with("action_bar");
+        let used = ui.cursor().top() - top + bar_height(ui, theme, spec, bar);
+        let height = (room.y - used).clamp(MIN_BODY, MAX_BODY);
+        // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
+        // when it starts to scroll (as the settings page does).
+        ui.spacing_mut().scroll = adapter::floating_scroll();
+        egui::ScrollArea::vertical()
+            .id_salt(id.with("body"))
+            .max_height(height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| dialog::body(ui, theme, body));
+        if let Some(index) = action_bar(ui, theme, spec, bar) {
+            outcome = ModalOutcome::Button(index);
+        }
+    });
     // why: a click beside a dialog (or on a browser window over it) must not throw away what
     // was typed or chosen; Esc and the close button dismiss it.
     let escaped = response.should_close() && !response.backdrop_response.clicked();
@@ -164,17 +175,27 @@ fn primary(ui: &mut egui::Ui, theme: &UiTheme, label: &str, danger: bool) -> egu
     }
 }
 
+/// Shows a modal in `frame`, `outer` points wide (frame included) with its top `top` points down
+/// (see `dialog_area`). Every dialog, the settings window and the palette are placed through it.
+pub(crate) fn show_modal<R>(
+    ctx: &egui::Context,
+    id: egui::Id,
+    frame: egui::Frame,
+    (outer, top): (f32, Option<f32>),
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::ModalResponse<R> {
+    egui::Modal::new(id)
+        .area(dialog_area(ctx, id, outer, top))
+        .frame(frame)
+        .show(ctx, add)
+}
+
 /// The area for a modal `outer` points wide (frame included), placed across the window from
 /// that known width: halfway across, on a whole pixel. egui centres an area by the size it
 /// measured the frame before, so a width that differed by a pixel from one frame to the next
 /// moved the whole dialog sideways and back on every repaint (each blink of a text cursor).
 /// `top` pins its top edge that far down; without it the dialog is centred down the window.
-pub(crate) fn dialog_area(
-    ctx: &egui::Context,
-    id: egui::Id,
-    outer: f32,
-    top: Option<f32>,
-) -> egui::Area {
+fn dialog_area(ctx: &egui::Context, id: egui::Id, outer: f32, top: Option<f32>) -> egui::Area {
     let window = ctx.content_rect();
     let ppp = ctx.pixels_per_point();
     let left = ((window.width() - outer) / 2.0)
@@ -189,3 +210,6 @@ pub(crate) fn dialog_area(
         None => area.anchor(egui::Align2::LEFT_CENTER, egui::vec2(left, 0.0)),
     }
 }
+
+#[cfg(test)]
+mod tests;

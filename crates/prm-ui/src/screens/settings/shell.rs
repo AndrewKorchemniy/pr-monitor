@@ -67,19 +67,16 @@ pub(crate) fn settings_modal(
     let id = egui::Id::unique("settings");
     let outer = size + frame.total_margin().sum();
     let top = (ctx.content_rect().height() - outer.y) / 2.0;
-    let modal = egui::Modal::new(id)
-        .area(widgets::modal::dialog_area(ctx, id, outer.x, Some(top)))
-        .frame(frame)
-        .show(ctx, |ui| {
-            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-            match nav {
-                Nav::Sidebar => with_sidebar(ui, cx, st, env, rect),
-                Nav::Menu => {
-                    let builder = UiBuilder::new().id_salt("settings_page").max_rect(rect);
-                    ui.scope_builder(builder, |ui| page_column(ui, cx, st, env, nav));
-                }
+    let modal = widgets::modal::show_modal(ctx, id, frame, (outer.x, Some(top)), |ui| {
+        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        match nav {
+            Nav::Sidebar => with_sidebar(ui, cx, st, env, rect),
+            Nav::Menu => {
+                let builder = UiBuilder::new().id_salt("settings_page").max_rect(rect);
+                ui.scope_builder(builder, |ui| page_column(ui, cx, st, env, nav));
             }
-        });
+        }
+    });
     if modal.backdrop_response.clicked() && !busy(cx, st) {
         cx.push(UiAction::LeaveSettings);
     }
