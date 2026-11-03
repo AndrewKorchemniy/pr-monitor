@@ -5,7 +5,11 @@
     reason = "test fixtures fail loudly on bad literals; the lint is silent under cfg(test), so expect would be unfulfilled there"
 )]
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::{
+    collections::VecDeque,
+    ffi::OsString,
+    sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError},
+};
 
 use url::Url;
 
@@ -16,8 +20,9 @@ use crate::{
         ThreadDigest, ThreadStatus, Vote,
     },
     person::Person,
-    ports::{Clock, PortError, PortErrorKind, UrlOpener},
+    ports::{Clock, PortError, PortErrorKind, Updater, UrlOpener},
     time::Timestamp,
+    update::{ApplyMode, DisabledReason, UpdateOffer},
 };
 
 /// Base time for builders: 2023-11-14T22:13:20Z.
@@ -322,6 +327,171 @@ impl UrlOpener for RecordingUrlOpener {
             .push(url.clone());
         Ok(())
     }
+}
+
+/// What a `FakeUpdater` was asked, in order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UpdaterCall {
+    Check,
+    Download(Arc<str>),
+    Apply(Vec<OsString>, ApplyMode),
+}
+
+/// A scripted updater: answers from queues (no newer release, and a download that succeeds,
+/// when a queue is empty), records every call, and can hold checks and downloads until released.
+pub struct FakeUpdater {
+    availability: Mutex<Result<(), DisabledReason>>,
+    pending: Mutex<Option<Arc<str>>>,
+    checks: Mutex<VecDeque<Result<Option<UpdateOffer>, PortError>>>,
+    downloads: Mutex<VecDeque<Result<(), PortError>>>,
+    apply_fails: Mutex<bool>,
+    calls: Mutex<Vec<UpdaterCall>>,
+    /// Signalled when a call is recorded.
+    called: Condvar,
+    held: Mutex<bool>,
+    released: Condvar,
+}
+
+impl Default for FakeUpdater {
+    fn default() -> Self {
+        Self {
+            availability: Mutex::new(Ok(())),
+            pending: Mutex::default(),
+            checks: Mutex::default(),
+            downloads: Mutex::default(),
+            apply_fails: Mutex::default(),
+            calls: Mutex::default(),
+            called: Condvar::new(),
+            held: Mutex::default(),
+            released: Condvar::new(),
+        }
+    }
+}
+
+impl FakeUpdater {
+    pub fn set_availability(&self, availability: Result<(), DisabledReason>) {
+        *lock(&self.availability) = availability;
+    }
+
+    pub fn set_pending(&self, version: Option<&str>) {
+        *lock(&self.pending) = version.map(Arc::from);
+    }
+
+    /// The next `check` answers with a release of this version.
+    pub fn offer(&self, version: &str) {
+        let offer = UpdateOffer {
+            version: version.into(),
+        };
+        lock(&self.checks).push_back(Ok(Some(offer)));
+    }
+
+    pub fn fail_next_check(&self) {
+        lock(&self.checks).push_back(Err(scripted_failure()));
+    }
+
+    pub fn fail_next_download(&self) {
+        lock(&self.downloads).push_back(Err(scripted_failure()));
+    }
+
+    pub fn fail_apply(&self) {
+        *lock(&self.apply_fails) = true;
+    }
+
+    /// Later checks and downloads wait for `release`.
+    pub fn hold(&self) {
+        *lock(&self.held) = true;
+    }
+
+    pub fn release(&self) {
+        *lock(&self.held) = false;
+        self.released.notify_all();
+    }
+
+    pub fn calls(&self) -> Vec<UpdaterCall> {
+        lock(&self.calls).clone()
+    }
+
+    /// How many times `check` ran.
+    pub fn checks(&self) -> usize {
+        self.calls()
+            .iter()
+            .filter(|call| **call == UpdaterCall::Check)
+            .count()
+    }
+
+    /// Blocks (in real time, bounded) until `count` calls were recorded; for jobs that run on the
+    /// blocking pool.
+    pub fn wait_for_calls(&self, count: usize) {
+        let calls = lock(&self.calls);
+        let (_calls, waited) = self
+            .called
+            .wait_timeout_while(calls, std::time::Duration::from_secs(10), |calls| {
+                calls.len() < count
+            })
+            .unwrap_or_else(PoisonError::into_inner);
+        assert!(!waited.timed_out(), "{count} updater calls never happened");
+    }
+
+    fn record(&self, call: UpdaterCall) {
+        lock(&self.calls).push(call);
+        self.called.notify_all();
+    }
+
+    fn wait_released(&self) {
+        let held = lock(&self.held);
+        let _released = self
+            .released
+            .wait_while(held, |held| *held)
+            .unwrap_or_else(PoisonError::into_inner);
+    }
+}
+
+fn scripted_failure() -> PortError {
+    PortError::new(PortErrorKind::Failed, "scripted failure")
+}
+
+impl Updater for FakeUpdater {
+    fn availability(&self) -> Result<(), DisabledReason> {
+        *lock(&self.availability)
+    }
+
+    fn pending(&self) -> Option<Arc<str>> {
+        lock(&self.pending).clone()
+    }
+
+    fn check(&self) -> Result<Option<UpdateOffer>, PortError> {
+        self.record(UpdaterCall::Check);
+        self.wait_released();
+        lock(&self.checks).pop_front().unwrap_or(Ok(None))
+    }
+
+    fn download(
+        &self,
+        offer: &UpdateOffer,
+        progress: &(dyn Fn(u8) + Sync),
+    ) -> Result<(), PortError> {
+        self.record(UpdaterCall::Download(offer.version.clone()));
+        self.wait_released();
+        let result = lock(&self.downloads).pop_front().unwrap_or(Ok(()));
+        if result.is_ok() {
+            progress(50);
+            progress(100);
+            *lock(&self.pending) = Some(offer.version.clone());
+        }
+        result
+    }
+
+    fn apply_on_exit(&self, restart_args: &[OsString], mode: ApplyMode) -> Result<(), PortError> {
+        self.record(UpdaterCall::Apply(restart_args.to_vec(), mode));
+        if *lock(&self.apply_fails) {
+            return Err(scripted_failure());
+        }
+        Ok(())
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Rows for one org ("contoso") built through the real pipeline, with `reviewers` listed and
