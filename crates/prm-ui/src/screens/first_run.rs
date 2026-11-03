@@ -22,7 +22,7 @@ use crate::{
         dialog::{self, DialogHead},
         fields::{self, Field},
         people_picker::people_picker,
-        scope_picker::{CatalogState, scope_picker},
+        scope_picker::{CatalogState, ListBox, scope_picker},
     },
 };
 
@@ -145,7 +145,7 @@ fn repositories(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
             ui.add_space(theme.tokens.metrics.space.md);
         }
         let filter = &mut st.scope_filter;
-        scope_picker(ui, &theme, filter, catalog, &mut org.scope)
+        scope_picker(ui, &theme, (filter, catalog), &mut org.scope, ListBox::Auto)
     });
     if reload && let Some(id) = org.org_id() {
         cx.push(UiAction::Send(prm_service::Command::LoadCatalog {

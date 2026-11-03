@@ -16,9 +16,15 @@ use crate::{
         fields::{self, Field},
         modal::{self, ModalOutcome, ModalSpec},
         people_picker::people_picker,
-        scope_picker::{CatalogState, scope_picker},
+        scope_picker::{CatalogState, ListBox, scope_picker},
     },
 };
+
+/// The people dialogs' body height (points): the help, the field and three lines of pills. The
+/// dropdown floats over what is under the field.
+const PEOPLE_BODY: f32 = 240.0;
+/// The repositories dialog's body height (points): the header, the search field and a list.
+const REPOS_BODY: f32 = 420.0;
 
 /// The open dialog over the page, if any: add an org, choose repositories, or edit people.
 pub(crate) fn editor(
@@ -195,6 +201,7 @@ fn repositories_dialog(
         buttons: &[copy::DONE],
         width: 560.0,
         nested: true,
+        body_height: Some(REPOS_BODY),
         ..ModalSpec::new("choose_repositories", copy::STEP_REPOS)
     };
     let Some(org) = st.draft.orgs.get_mut(st.org) else {
@@ -206,7 +213,7 @@ fn repositories_dialog(
     let filter = &mut st.scope_filter;
     let mut reload = false;
     let outcome = modal::modal(ctx, &theme, &spec, |ui| {
-        reload = scope_picker(ui, &theme, filter, catalog, &mut org.scope);
+        reload = scope_picker(ui, &theme, (filter, catalog), &mut org.scope, ListBox::Fill);
     });
     if reload && let Some(id) = id {
         cx.push(UiAction::Send(Command::LoadCatalog {
@@ -229,8 +236,8 @@ fn people_dialog(
         return ModalOutcome::Dismissed;
     };
     let id = saved.then(|| org.org_id().cloned()).flatten();
-    // why: each editor has its own modal id, so one never opens at the size (and place) the
-    // last one left in egui's memory.
+    // why: each editor has its own modal id, so one never opens with the size and the scroll
+    // position the last one left in egui's memory.
     let (picker, modal_id) = match editor {
         Editor::Reviewers => (&mut st.pickers.reviewers, "edit_reviewers"),
         Editor::Ignored => (&mut st.pickers.ignored, "edit_ignored"),
@@ -245,6 +252,7 @@ fn people_dialog(
         buttons: &[copy::DONE],
         width: 480.0,
         nested: true,
+        body_height: Some(PEOPLE_BODY),
         ..ModalSpec::new(modal_id, title)
     };
     let list = people_list(org, editor);

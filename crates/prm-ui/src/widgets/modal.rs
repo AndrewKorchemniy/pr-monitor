@@ -101,7 +101,14 @@ pub(crate) fn modal(
         // why: an overlay scrollbar, so the body keeps even padding and does not shift sideways
         // when it starts to scroll (as the settings page does).
         ui.spacing_mut().scroll = adapter::floating_scroll();
-        body_area(id, spec.body_height, place.below - used).show(ui, |ui| {
+        let height = body_height(spec.body_height, place.below - used);
+        let fixed = spec.body_height.is_some();
+        body_area(id, fixed, height).show(ui, |ui| {
+            if fixed {
+                // why: the scroll area leaves its content unbounded, and a body that fills the
+                // dialog (a list that takes what is left) needs to know how much is.
+                ui.set_max_height(height);
+            }
             dialog::body(ui, theme, body);
         });
         if let Some(index) = action_bar(ui, theme, spec, bar) {
@@ -158,18 +165,19 @@ impl Placement {
     }
 }
 
-/// The body's scroll area: `fixed` points tall when given (or as tall as `room` allows), else
-/// as tall as its content, up to `MAX_BODY` or `room`.
-fn body_area(id: egui::Id, fixed: Option<f32>, room: f32) -> egui::ScrollArea {
-    let area = egui::ScrollArea::vertical().id_salt(id.with("body"));
-    match fixed {
-        Some(height) => area
-            .max_height(room.clamp(MIN_BODY, height))
-            .auto_shrink([false, false]),
-        None => area
-            .max_height(room.clamp(MIN_BODY, MAX_BODY))
-            .auto_shrink([false, true]),
-    }
+/// The body's height when `room` points are left for it: `fixed` (or less in a short window),
+/// else at most `MAX_BODY`.
+fn body_height(fixed: Option<f32>, room: f32) -> f32 {
+    room.min(fixed.unwrap_or(MAX_BODY)).max(MIN_BODY)
+}
+
+/// The body's scroll area, `height` points tall: exactly so when `fixed`, else as tall as its
+/// content up to that.
+fn body_area(id: egui::Id, fixed: bool, height: f32) -> egui::ScrollArea {
+    egui::ScrollArea::vertical()
+        .id_salt(id.with("body"))
+        .max_height(height)
+        .auto_shrink([false, !fixed])
 }
 
 /// A one-line action bar's height: its buttons, the inset around them and the divider above.

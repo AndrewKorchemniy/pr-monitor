@@ -18,7 +18,7 @@ use crate::{
 
 /// The smallest window the app allows (`render::MIN_SIZE`).
 pub(super) const SMALLEST: egui::Vec2 = crate::testing::screens::NARROW;
-pub(super) const ROOMY: egui::Vec2 = egui::vec2(1280.0, 760.0);
+pub(super) const ROOMY: egui::Vec2 = crate::testing::screens::WINDOW;
 
 /// Where a dialog's head and foot sit, in points.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -79,18 +79,23 @@ pub(super) fn frames(
 
 /// Every mark in `seen` is the first one.
 pub(super) fn assert_still(seen: &[Marks], what: &str) {
-    let first = seen[0];
     for (frame, mark) in seen.iter().enumerate() {
-        assert_eq!(*mark, first, "{what}: frame {frame} of {seen:?}");
+        assert_eq!(*mark, seen[0], "{what}: frame {frame} of {seen:?}");
     }
 }
 
 /// Every title is where the first one was, whatever the rest of the dialog did.
 pub(super) fn assert_title_still(seen: &[Marks], what: &str) {
-    let first = seen[0].title_top;
     for (frame, mark) in seen.iter().enumerate() {
+        let first = seen[0].title_top;
         assert_eq!(mark.title_top, first, "{what}: frame {frame} of {seen:?}");
     }
+}
+
+/// The text field showing `placeholder`.
+pub(super) fn field<'h>(h: &'h Harness<'_, Fixture>, placeholder: &str) -> egui_kittest::Node<'h> {
+    let want = placeholder.to_owned();
+    h.get_by(move |n| n.data().placeholder() == Some(want.as_str()))
 }
 
 pub(super) fn editor_title(editor: Editor) -> &'static str {
@@ -115,6 +120,36 @@ pub(super) fn windows() -> impl Iterator<Item = (egui::Vec2, f32)> {
     [ROOMY, egui::vec2(1003.0, 731.0), SMALLEST]
         .into_iter()
         .flat_map(|size| [1.0, 1.25, 1.5].map(|scale| (size, scale)))
+}
+
+fn search_field<'h>(h: &'h Harness<'_, Fixture>) -> egui_kittest::Node<'h> {
+    field(h, &copy::search_scope(3, 10))
+}
+
+/// Filtering the repositories re-opens and re-closes projects, so the list changed height on
+/// every letter and the dialog moved with it.
+#[test]
+fn filtering_repositories_does_not_move_or_resize_the_dialog() {
+    let title = (copy::STEP_REPOS, copy::DONE);
+    for (size, scale) in windows() {
+        let mut h = dialog_harness(settings_fixture(Editor::Repositories), size, scale);
+        let mut seen = frames(&mut h, 2, title);
+        search_field(&h).click();
+        for letter in ["p", "a", "y", "x"] {
+            search_field(&h).type_text(letter);
+            seen.extend(frames(&mut h, 3, title));
+        }
+        for _ in 0..4 {
+            h.key_press(egui::Key::Backspace);
+            seen.extend(frames(&mut h, 3, title));
+        }
+        for _ in 0..3 {
+            let closed = h.query_all_by_label(copy::EXPAND).next();
+            closed.expect("a closed project").click();
+            seen.extend(frames(&mut h, 3, title));
+        }
+        assert_still(&seen, &format!("{size:?} x{scale}"));
+    }
 }
 
 /// An error under the token field grows the dialog; it may only grow downward.

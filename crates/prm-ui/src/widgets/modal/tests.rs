@@ -13,7 +13,10 @@ fn a_new_spec_is_usually_wide_and_has_no_buttons() {
     assert!(!spec.danger && !spec.nested);
 }
 
-/// `spec` placed in a window of `window` points, with a frame of `CHROME` on each axis.
+/// The frame's margin and stroke, on each axis.
+const CHROME: egui::Vec2 = egui::vec2(2.0, 2.0);
+
+/// `spec` placed in a window of `window` points, in a frame of `CHROME`.
 fn placed(window: egui::Vec2, spec: &ModalSpec<'_>) -> Placement {
     let ctx = egui::Context::default();
     let input = egui::RawInput {
@@ -26,8 +29,6 @@ fn placed(window: egui::Vec2, spec: &ModalSpec<'_>) -> Placement {
     output.textures_delta.clear();
     placement
 }
-
-const CHROME: egui::Vec2 = egui::vec2(2.0, 2.0);
 
 /// The top is what keeps a dialog from moving as its content changes height, so it may depend
 /// on the window and the spec's height only, never on the title, subtitle or text it holds.
@@ -85,5 +86,22 @@ fn the_room_below_the_top_ends_inside_the_window() {
                 spec.id
             );
         }
+    }
+}
+
+/// A fixed body is as tall as asked in a roomy window and as tall as the room in a short one,
+/// but never less than `MIN_BODY`; any other body stops growing at `MAX_BODY`.
+#[test]
+fn a_fixed_body_keeps_its_height_until_the_window_is_too_short() {
+    let cases = [
+        (Some(240.0), 1000.0, 240.0),
+        (Some(240.0), 150.0, 150.0),
+        (Some(240.0), 10.0, MIN_BODY),
+        (Some(40.0), 1000.0, MIN_BODY),
+        (None, 1000.0, MAX_BODY),
+        (None, 300.0, 300.0),
+    ];
+    for (fixed, room, expected) in cases {
+        assert_eq!(body_height(fixed, room), expected, "{fixed:?} in {room} pt");
     }
 }

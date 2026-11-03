@@ -56,19 +56,17 @@ fn reviewers_dialog() -> Harness<'static, Fixture> {
 }
 
 fn field_text(h: &Harness<'_, Fixture>) -> String {
-    let field = h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE));
+    let field = add_field(h);
     field.value().unwrap_or_default()
 }
 
 fn field_focused(h: &Harness<'_, Fixture>) -> bool {
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .is_focused()
+    add_field(h).is_focused()
 }
 
 /// Types into the field and returns the search it sent.
 fn type_query(h: &mut Harness<'_, Fixture>, text: &str) -> RequestId {
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .type_text(text);
+    add_field(h).type_text(text);
     h.run();
     let actions = h.state_mut().take_actions();
     actions
@@ -107,11 +105,9 @@ fn reviewers(h: &Harness<'_, Fixture>) -> Vec<String> {
 #[test]
 fn typing_opens_the_dropdown_with_the_hint_then_the_matches() {
     let mut h = reviewers_dialog();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .click();
+    add_field(&h).click();
     h.run();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .type_text("pr");
+    add_field(&h).type_text("pr");
     h.run();
     h.get_by_label(copy::SEARCH_MIN);
 
@@ -127,8 +123,7 @@ fn typing_opens_the_dropdown_with_the_hint_then_the_matches() {
 #[test]
 fn enter_adds_the_highlighted_person_and_keeps_typing_in_the_field() {
     let mut h = reviewers_dialog();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .click();
+    add_field(&h).click();
     h.run();
     let request = type_query(&mut h, "pri");
     deliver(&mut h, request, &[priya(), priyanka()]);
@@ -151,8 +146,7 @@ fn enter_adds_the_highlighted_person_and_keeps_typing_in_the_field() {
 #[test]
 fn people_already_added_are_not_offered_and_arrows_pick_a_directory_entry() {
     let mut h = reviewers_dialog();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .click();
+    add_field(&h).click();
     h.run();
     let rita = person(7, "Rita Okafor").to_candidate(CandidateSource::Configured);
     let request = type_query(&mut h, "pri");
@@ -180,8 +174,7 @@ fn people_already_added_are_not_offered_and_arrows_pick_a_directory_entry() {
 #[test]
 fn esc_closes_the_dropdown_and_keeps_the_text() {
     let mut h = reviewers_dialog();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .click();
+    add_field(&h).click();
     h.run();
     let request = type_query(&mut h, "pri");
     deliver(&mut h, request, &[priya()]);
@@ -209,8 +202,7 @@ fn esc_closes_the_dropdown_and_keeps_the_text() {
 #[test]
 fn clicking_a_match_adds_it_and_a_pill_removes_it() {
     let mut h = reviewers_dialog();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .click();
+    add_field(&h).click();
     h.run();
     let request = type_query(&mut h, "pri");
     deliver(&mut h, request, &[priya()]);
@@ -235,8 +227,7 @@ fn clicking_a_match_adds_it_and_a_pill_removes_it() {
 #[test]
 fn closing_the_dialog_clears_the_field_for_next_time() {
     let mut h = reviewers_dialog();
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-        .click();
+    add_field(&h).click();
     h.run();
     let request = type_query(&mut h, "pri");
     deliver(&mut h, request, &[priya()]);
@@ -268,28 +259,14 @@ fn the_dialog_holds_still_while_the_dropdown_is_open() {
         .into_iter()
         .flat_map(|c| [1.0, 1.25, 1.5].map(|s| (c, s)))
     {
-        let mut fixture = Fixture::new(Shown::Settings, demo_state());
-        fixture.settings.page = Page::Organizations;
-        fixture.settings.editing = Some(editor);
-        let mut h = Harness::builder()
-            .with_size(size)
-            .with_pixels_per_point(scale)
-            .with_step_dt(0.3)
-            .with_context_setup(crate::theme::fonts::install)
-            .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture);
-        // why: egui paints (and blinks) the text cursor only in a focused window.
-        h.event(egui::Event::WindowFocused(true));
-        h.run();
-        h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-            .type_text("v");
+        let mut h = dialog_harness(dialogs::settings_fixture(editor), size, scale);
+        add_field(&h).type_text("v");
         h.run();
         let mut places = Vec::new();
         for _ in 0..12 {
             h.step();
             let done = h.get_by_role_and_label(Role::Button, copy::DONE).rect();
-            let field = h
-                .get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
-                .rect();
+            let field = add_field(&h).rect();
             places.push((done.min, field.min));
         }
         assert!(
@@ -313,7 +290,15 @@ fn people_title(editor: Editor) -> (&'static str, &'static str) {
 }
 
 fn add_field<'h>(h: &'h Harness<'_, Fixture>) -> egui_kittest::Node<'h> {
-    h.get_by(|n| n.data().placeholder() == Some(copy::ADD_PEOPLE))
+    dialogs::field(h, copy::ADD_PEOPLE)
+}
+
+/// Searches for "per", has the directory answer with person `n`, and picks them with Enter.
+fn add_person(h: &mut Harness<'_, Fixture>, n: u128) {
+    let request = type_query(h, "per");
+    deliver(h, request, &[candidate(n)]);
+    h.key_press(egui::Key::Enter);
+    h.run();
 }
 
 /// Typing opened the dropdown (and its spacer), so the dialog grew a frame later and its top
@@ -376,7 +361,19 @@ fn adding_ten_people_does_not_move_or_resize_the_dialog() {
             seen.extend(frames(&mut h, 3, title));
         }
         assert_eq!(reviewers(&h).len(), 12);
-        assert_title_still(&seen, &format!("{size:?}"));
+        assert_still(&seen, &format!("{size:?}"));
+        // why: the newest person is scrolled into view, above the dialog's buttons.
+        let newest = copy::remove_person("Person Number49");
+        let pill = h
+            .query_all_by_label(&newest)
+            .last()
+            .expect("the newest pill");
+        let done = h.get_by_role_and_label(Role::Button, copy::DONE).rect();
+        assert!(
+            pill.rect().max.y <= done.min.y,
+            "{size:?}: {:?}",
+            pill.rect()
+        );
     }
 }
 
@@ -389,10 +386,7 @@ fn each_editor_opens_at_its_own_place() {
     let mut h = dialog_harness(dialogs::settings_fixture(Editor::Reviewers), ROOMY, 1.0);
     add_field(&h).click();
     for n in 0..10 {
-        let request = type_query(&mut h, "per");
-        deliver(&mut h, request, &[candidate(60 + n)]);
-        h.key_press(egui::Key::Enter);
-        h.run();
+        add_person(&mut h, 60 + n);
     }
     h.state_mut().settings.editing = None;
     h.run();
