@@ -551,3 +551,7 @@ features = [
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+# Local deviation (see PATCHES.md): CI denies warnings in every local crate, and this is not ours.
+[lints.rust]
+warnings = "allow"

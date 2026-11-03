@@ -114,6 +114,10 @@ impl MonitorHandle {
     }
 
     /// Returns the monitor's resolution.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **Windows:** Returns a zero size if the monitor doesn't exist anymore.
     #[inline]
     pub fn size(&self) -> PhysicalSize<u32> {
         self.inner.size()

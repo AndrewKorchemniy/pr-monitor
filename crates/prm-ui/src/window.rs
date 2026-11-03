@@ -260,22 +260,34 @@ fn placement_of(outer: Rect, inner: Rect, zoom: f32) -> Option<Rect> {
     (!parked).then(|| Rect::from_min_size(min, inner.size() * zoom))
 }
 
+/// `position` (unzoomed points) in the zoomed points that `OuterPosition` takes.
+fn zoomed(position: Pos2, zoom: f32) -> Pos2 {
+    (position.to_vec2() / zoom).to_pos2()
+}
+
 /// `OuterPosition` is in zoomed points.
 fn restore_position(ctx: &egui::Context, restore: Restore) -> Pos2 {
     let zoom = ctx.zoom_factor().max(f32::EPSILON);
-    let zoomed = |p: Pos2| (p.to_vec2() / zoom).to_pos2();
     match restore {
-        Restore::Saved(position) => zoomed(position),
+        Restore::Saved(position) => zoomed(position, zoom),
         Restore::Centered => {
             let (monitor, outer) =
                 ctx.input(|i| (i.viewport().monitor_size, i.viewport().outer_rect));
-            match (monitor, outer) {
-                (Some(monitor), Some(outer)) => ((monitor - outer.size()) / 2.0)
-                    .max(egui::Vec2::ZERO)
-                    .to_pos2(),
-                (None, _) | (_, None) => zoomed(FALLBACK_POSITION),
-            }
+            centered_position(monitor, outer.map(|rect| rect.size()), zoom)
         }
+    }
+}
+
+/// Where a window of size `outer` sits centered on a monitor of size `monitor`, all in zoomed
+/// points. An unknown window size, or a monitor that is missing or empty, gives
+/// `FALLBACK_POSITION`: winit reports a monitor that has just been unplugged or reconfigured as
+/// 0x0, and centering on it would park the window at the corner.
+fn centered_position(monitor: Option<egui::Vec2>, outer: Option<egui::Vec2>, zoom: f32) -> Pos2 {
+    match (monitor, outer) {
+        (Some(monitor), Some(outer)) if monitor.x > 0.0 && monitor.y > 0.0 => {
+            ((monitor - outer) / 2.0).max(egui::Vec2::ZERO).to_pos2()
+        }
+        _ => zoomed(FALLBACK_POSITION, zoom),
     }
 }
 

@@ -1,4 +1,4 @@
-use eframe::egui::{RawInput, ViewportId, ViewportInfo, pos2, vec2};
+use eframe::egui::{RawInput, Vec2, ViewportId, ViewportInfo, pos2, vec2};
 use prm_config::UiPrefs;
 use prm_domain::testing::ts;
 use prm_service::AppState;
@@ -94,6 +94,65 @@ fn window_offscreen_start_without_a_saved_position_centers_on_the_monitor() {
     });
     let commands = pass(&ctx, info, |ctx| show_now(&mut window, ctx));
     assert_eq!(moves(&commands), [pos2(320.0, 160.0)]);
+}
+
+/// winit reports a monitor that was just unplugged or reconfigured as 0x0 (it used to panic).
+/// The window must land at the fallback, not centered on nothing at the corner.
+#[test]
+fn window_offscreen_start_on_a_vanished_monitor_uses_the_fallback_position() {
+    let ctx = egui::Context::default();
+    let (link, _ends) = link(AppState::default());
+    let mut window = WindowController::new(launch(true, None), &UiPrefs::default());
+    let info = ViewportInfo {
+        monitor_size: Some(Vec2::ZERO),
+        outer_rect: Some(Rect::from_min_size(OFFSCREEN, vec2(1280.0, 760.0))),
+        ..ViewportInfo::default()
+    };
+    pass(&ctx, info.clone(), |ctx| {
+        window.begin_frame(ctx, &link, ts(0), true);
+    });
+    let commands = pass(&ctx, info, |ctx| show_now(&mut window, ctx));
+    assert_eq!(moves(&commands), [FALLBACK_POSITION]);
+}
+
+#[test]
+fn centered_position_centers_on_the_monitor() {
+    let at = centered_position(Some(vec2(1920.0, 1080.0)), Some(vec2(1280.0, 760.0)), 1.0);
+    assert_eq!(at, pos2(320.0, 160.0));
+}
+
+#[test]
+fn centered_position_never_goes_negative_for_a_window_larger_than_the_monitor() {
+    let at = centered_position(Some(vec2(800.0, 600.0)), Some(vec2(1280.0, 760.0)), 1.0);
+    assert_eq!(at, Pos2::ZERO);
+}
+
+#[test]
+fn centered_position_falls_back_when_the_monitor_is_unknown_or_empty() {
+    let outer = Some(vec2(1280.0, 760.0));
+    for monitor in [
+        None,
+        Some(Vec2::ZERO),
+        Some(vec2(0.0, 1080.0)),
+        Some(vec2(1920.0, 0.0)),
+    ] {
+        assert_eq!(
+            centered_position(monitor, outer, 1.0),
+            FALLBACK_POSITION,
+            "{monitor:?}"
+        );
+    }
+}
+
+#[test]
+fn centered_position_falls_back_when_the_window_size_is_unknown() {
+    let at = centered_position(Some(vec2(1920.0, 1080.0)), None, 1.0);
+    assert_eq!(at, FALLBACK_POSITION);
+}
+
+#[test]
+fn the_fallback_is_given_in_zoomed_points() {
+    assert_eq!(centered_position(None, None, 2.0), pos2(50.0, 50.0));
 }
 
 /// A cloaked start-hidden window stays cloaked while hidden, and its first show asks for the

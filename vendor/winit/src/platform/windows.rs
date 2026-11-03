@@ -626,6 +626,8 @@ impl WindowAttributesExtWindows for WindowAttributes {
 /// Additional methods on `MonitorHandle` that are specific to Windows.
 pub trait MonitorHandleExtWindows {
     /// Returns the name of the monitor adapter specific to the Win32 API.
+    ///
+    /// Returns an empty string if the monitor doesn't exist anymore.
     fn native_id(&self) -> String;
 
     /// Returns the handle of the monitor - `HMONITOR`.
