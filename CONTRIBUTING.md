@@ -8,6 +8,7 @@ Thanks for helping. This page covers what you need to build, test and send a cha
   the first time you run `cargo` in the repo.
 - **Windows:** Visual Studio Build Tools with the C++ build tools (VCTools) workload. The
   release check in `.github/scripts/verify-exe.ps1` also uses its `dumpbin.exe`.
+- **.NET SDK (optional):** only to run `.github/scripts/pack-velopack.ps1` locally (it installs `vpk`).
 - **Linux:** the system packages listed in `.github/actions/linux-deps/action.yml`.
 - **Cargo tools:**
 
@@ -50,7 +51,7 @@ cargo shear
 ## Dependencies
 
 - A new dependency's license must be on the allowlist in both `deny.toml` and `about.toml`.
-- Note the binary-size change in the PR. The release exe must stay under the 20 MiB budget
+- Note the binary-size change in the PR. The release exe must stay under the 24 MiB budget
   checked by `verify-exe.ps1`.
 - Declare the dependency in `[workspace.dependencies]` with minimal features.
 
