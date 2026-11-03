@@ -7,6 +7,7 @@ use prm_config::UiPrefs;
 use super::*;
 use crate::{
     render::policy::RenderPolicy,
+    route::{EscapeInputs, EscapeTarget, Screen, escape_target},
     theme::{ThemeRuntime, fonts},
 };
 
@@ -15,12 +16,14 @@ const TOLERANCE: f32 = 0.5;
 const START: u32 = 20;
 const UNIT: &str = " min";
 
-/// One slider in a window.
+/// One slider in a window that behaves like Settings for Esc.
 struct Fx {
     theme: ThemeRuntime,
     value: u32,
     /// The slider's field, as laid out on the last frame.
     field: Rect,
+    /// False once Esc has left Settings.
+    settings_open: bool,
 }
 
 impl Fx {
@@ -34,6 +37,7 @@ impl Fx {
             theme: ThemeRuntime::new(Path::new("no-such-themes-dir"), &UiPrefs::default(), policy),
             value: START,
             field: Rect::NOTHING,
+            settings_open: true,
         }
     }
 
@@ -44,6 +48,12 @@ impl Fx {
     fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.theme.apply(&ctx);
+        if self.settings_open && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.escape(&ctx);
+        }
+        if !self.settings_open {
+            return;
+        }
         let theme = self.theme.current(&ctx).clone();
         let spec = SliderSpec {
             id: egui::Id::unique("test_slider"),
@@ -55,6 +65,19 @@ impl Fx {
         let at = ui.cursor().min;
         slider_field(ui, &theme, &mut self.value, 1..=60, &spec);
         self.field = Rect::from_min_size(at, vec2(SLIDER_WIDTH, theme.control_height()));
+    }
+
+    /// What `App::escape` does with Esc on the Settings screen.
+    fn escape(&mut self, ctx: &egui::Context) {
+        let input = EscapeInputs {
+            popup_open: crate::app::esc_is_owned(ctx, false),
+            screen: Screen::Settings,
+            ..EscapeInputs::default()
+        };
+        if escape_target(&input) == EscapeTarget::LeaveSettings {
+            self.settings_open = false;
+            ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+        }
     }
 }
 
@@ -243,6 +266,26 @@ fn slider_edit_applies_the_typed_digits_on_enter() {
     type_over(&mut h, "45");
     press(&mut h, Key::Enter);
     assert_eq!(h.state().value, 45);
+    assert!(!value_edit_active(&h.ctx));
+}
+
+/// Esc left Settings at once, because the app took it before the editor could cancel.
+#[test]
+fn slider_edit_first_esc_cancels_and_only_the_second_leaves_settings() {
+    let mut h = start_editing();
+    assert!(value_edit_active(&h.ctx), "the editor should own Esc");
+    type_over(&mut h, "45");
+
+    press(&mut h, Key::Escape);
+    assert!(
+        h.state().settings_open,
+        "the first Esc must not leave Settings"
+    );
+    assert_eq!(h.state().value, START, "the first Esc restores the value");
+    assert!(!value_edit_active(&h.ctx), "the edit should be over");
+
+    press(&mut h, Key::Escape);
+    assert!(!h.state().settings_open, "the second Esc leaves Settings");
 }
 
 #[test]

@@ -6,6 +6,10 @@ mod events;
 mod overlays;
 mod run;
 
+// why: the slider tests route Esc through the same decision the app does.
+#[cfg(test)]
+pub(crate) use run::esc_is_owned;
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},

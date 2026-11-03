@@ -9,7 +9,10 @@ use eframe::egui::{
     vec2,
 };
 
-use crate::{theme::UiTheme, widgets::fields::bare_edit};
+use crate::{
+    theme::UiTheme,
+    widgets::fields::{bare_edit, keep_escape},
+};
 
 const VALUE_WIDTH: f32 = 64.0;
 /// How far the value's right edge sits inside the field's right border (points).
@@ -141,6 +144,17 @@ fn step_keys(
     }
 }
 
+/// The editor a slider value is being typed in, left in egui's data for `value_edit_active`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ActiveEditor(egui::Id);
+
+/// Whether a slider's value is being typed, so Esc belongs to the editor (it cancels the edit)
+/// and the app must not act on it.
+pub(crate) fn value_edit_active(ctx: &egui::Context) -> bool {
+    let editor: Option<ActiveEditor> = ctx.data(|d| d.get_temp(egui::Id::NULL));
+    editor.is_some_and(|ActiveEditor(id)| ctx.memory(|m| m.has_focus(id)))
+}
+
 /// Double-click the value to type a number; Enter or clicking away applies it, Esc cancels.
 /// The editor takes the digits' place and the unit stays where it was, so nothing moves.
 fn edit_value(
@@ -167,6 +181,8 @@ fn edit_value(
         spec.id.with("edit"),
         egui::Align2::RIGHT_CENTER,
     );
+    // why: Esc cancels the edit; egui would otherwise take the focus away before we see it.
+    let edit = keep_escape(edit, true);
     let field = ui
         .put(edit_rect(rect, unit.size().x), edit)
         .accessible_name(spec.name);
@@ -175,13 +191,24 @@ fn edit_value(
         field.request_focus();
     }
     let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
-    if field.lost_focus() || cancel {
+    // why: an editor that is on screen without focus (it was hidden mid-edit) is over too.
+    if field.lost_focus() || cancel || (!starting && !field.has_focus()) {
         if !cancel && let Some(typed) = parse_typed(&text, spec) {
             *v = typed;
         }
-        ui.data_mut(|d| d.remove::<String>(key));
+        ui.data_mut(|d| {
+            d.remove::<String>(key);
+            // why: only this editor's own claim, never another slider's.
+            if d.get_temp(egui::Id::NULL) == Some(ActiveEditor(field.id)) {
+                d.remove::<ActiveEditor>(egui::Id::NULL);
+            }
+        });
+        field.surrender_focus();
     } else {
-        ui.data_mut(|d| d.insert_temp(key, text));
+        ui.data_mut(|d| {
+            d.insert_temp(key, text);
+            d.insert_temp(egui::Id::NULL, ActiveEditor(field.id));
+        });
     }
     value | field
 }
