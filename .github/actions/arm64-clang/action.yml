@@ -9,7 +9,7 @@ runs:
     - name: Find clang (windows-arm64 only)
       if: runner.os == 'Windows' && runner.arch == 'ARM64'
       shell: pwsh
-      run: |
+      run: |   # zizmor: ignore[github-env] appends only the constant LLVM folder, no untrusted input
         $llvm = 'C:\Program Files\LLVM\bin'
         if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
           if (-not (Test-Path "$llvm\clang.exe")) { throw "clang is not on PATH and not in $llvm; ring cannot build for arm64" }
