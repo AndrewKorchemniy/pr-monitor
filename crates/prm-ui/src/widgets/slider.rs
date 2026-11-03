@@ -2,16 +2,18 @@
 //! the value at the right edge. Drag or click the rail, use the arrow keys, or double-click the
 //! value to type one. It shrinks to fit narrow rows and spans a justified layout.
 
-use std::ops::RangeInclusive;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use eframe::egui::{
-    self, Color32, CornerRadius, Rect, Sense, Stroke, StrokeKind, TextEdit, emath::Numeric, pos2,
+    self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, emath::Numeric, pos2,
     vec2,
 };
 
-use crate::theme::UiTheme;
+use crate::{theme::UiTheme, widgets::fields::bare_edit};
 
 const VALUE_WIDTH: f32 = 64.0;
+/// How far the value's right edge sits inside the field's right border (points).
+const VALUE_INSET: f32 = 12.0;
 /// The usual width of a settings slider.
 pub(crate) const SLIDER_WIDTH: f32 = crate::widgets::fit::CONTROL_WIDTH;
 const KNOB: f32 = 7.0;
@@ -44,7 +46,7 @@ pub(crate) fn slider_field<N: Numeric>(
         spec.width.min(ui.available_width())
     };
     let (rect, _) = ui.allocate_exact_size(vec2(width, theme.control_height()), Sense::hover());
-    let value_rect = Rect::from_min_max(pos2(rect.right() - VALUE_WIDTH, rect.top()), rect.max);
+    let value_rect = value_slot(rect);
     let rail = Rect::from_min_max(
         pos2(rect.left() + KNOB + 8.0, rect.top()),
         pos2(value_rect.left() - KNOB - 4.0, rect.bottom()),
@@ -67,6 +69,7 @@ pub(crate) fn slider_field<N: Numeric>(
     }
     let fraction = fraction_of(v, (lo, hi));
     let editing = ui.data(|d| d.get_temp::<String>(spec.id.with("editing")).is_some());
+    let text = shown(v, spec);
     let focused = response.has_focus() || editing;
     paint(
         ui,
@@ -76,9 +79,9 @@ pub(crate) fn slider_field<N: Numeric>(
         &response,
     );
     if !editing {
-        paint_value(ui, theme, value_rect, &shown(v, spec));
+        paint_galley(ui, theme, value_rect, value_galley(ui, theme, &text));
     }
-    let (enabled, name, text) = (ui.is_enabled(), spec.name, shown(v, spec));
+    let (enabled, name) = (ui.is_enabled(), spec.name);
     response.widget_info(|| {
         let mut info = egui::WidgetInfo::labeled(egui::Role::Slider, enabled, name);
         info.value = Some(v);
@@ -139,6 +142,7 @@ fn step_keys(
 }
 
 /// Double-click the value to type a number; Enter or clicking away applies it, Esc cancels.
+/// The editor takes the digits' place and the unit stays where it was, so nothing moves.
 fn edit_value(
     ui: &mut egui::Ui,
     theme: &UiTheme,
@@ -156,32 +160,57 @@ fn edit_value(
     let Some(mut text) = buffer else {
         return value.on_hover_text(crate::copy::DOUBLE_CLICK_TO_TYPE);
     };
-    let edit = TextEdit::singleline(&mut text)
-        .id(spec.id.with("edit"))
-        .frame(egui::Frame::NONE)
-        .font(theme.fonts.body.clone())
-        .align(egui::Align2::RIGHT_CENTER)
-        .desired_width(f32::INFINITY);
-    let field = ui.put(rect.shrink2(vec2(10.0, 6.0)), edit);
+    let unit = value_galley(ui, theme, spec.unit);
+    let edit = bare_edit(
+        theme,
+        &mut text,
+        spec.id.with("edit"),
+        egui::Align2::RIGHT_CENTER,
+    );
+    let field = ui
+        .put(edit_rect(rect, unit.size().x), edit)
+        .accessible_name(spec.name);
+    paint_galley(ui, theme, rect, unit);
     if starting {
         field.request_focus();
     }
     let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if field.lost_focus() || cancel {
-        if !cancel
-            && let Ok(typed) = text
-                .trim()
-                .trim_end_matches(spec.unit)
-                .trim()
-                .parse::<f64>()
-        {
-            *v = typed / spec.scale;
+        if !cancel && let Some(typed) = parse_typed(&text, spec) {
+            *v = typed;
         }
         ui.data_mut(|d| d.remove::<String>(key));
     } else {
         ui.data_mut(|d| d.insert_temp(key, text));
     }
     value | field
+}
+
+/// The stored value a typed `text` stands for, if it reads as a number (a pasted unit is fine).
+fn parse_typed(text: &str, spec: &SliderSpec<'_>) -> Option<f64> {
+    let digits = text.trim().trim_end_matches(spec.unit).trim();
+    let typed: f64 = digits.parse().ok()?;
+    typed.is_finite().then_some(typed / spec.scale)
+}
+
+/// The editor's rect: the value slot's full height (the input's own minimum, so it never sits
+/// off-centre), ending where the unit begins.
+fn edit_rect(slot: Rect, unit_width: f32) -> Rect {
+    let right = (slot.right() - VALUE_INSET - unit_width).max(slot.left());
+    Rect::from_min_max(slot.min, pos2(right, slot.bottom()))
+}
+
+/// The value's slot: the field's right `VALUE_WIDTH` points, at its full height.
+fn value_slot(field: Rect) -> Rect {
+    Rect::from_min_max(pos2(field.right() - VALUE_WIDTH, field.top()), field.max)
+}
+
+/// Where a galley of `size` sits in the value slot: flush right at the inset, centred.
+fn value_pos(slot: Rect, size: Vec2) -> Pos2 {
+    pos2(
+        slot.right() - VALUE_INSET - size.x,
+        slot.center().y - size.y / 2.0,
+    )
 }
 
 /// Where `v` sits between `lo` and `hi`, from 0 to 1.
@@ -237,15 +266,18 @@ fn paint(
     painter.circle_filled(pos2(knob_x, mid), size, colors.accent_base);
 }
 
-fn paint_value(ui: &egui::Ui, theme: &UiTheme, rect: Rect, text: &str) {
-    let galley = ui.painter().layout_no_wrap(
+fn value_galley(ui: &egui::Ui, theme: &UiTheme, text: &str) -> Arc<egui::Galley> {
+    ui.painter().layout_no_wrap(
         text.to_owned(),
         theme.fonts.body.clone(),
         theme.colors.text_primary,
-    );
-    let at = pos2(
-        rect.right() - 12.0 - galley.size().x,
-        rect.center().y - galley.size().y / 2.0,
-    );
+    )
+}
+
+fn paint_galley(ui: &egui::Ui, theme: &UiTheme, slot: Rect, galley: Arc<egui::Galley>) {
+    let at = value_pos(slot, galley.size());
     ui.painter().galley(at, galley, theme.colors.text_primary);
 }
+
+#[cfg(test)]
+mod tests;
