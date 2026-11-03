@@ -104,3 +104,13 @@ pub struct WindowRect {
     #[serde(default)]
     pub maximized: bool,
 }
+
+impl WindowRect {
+    /// The top-left corner, as `[x, y]`.
+    pub const fn position(&self) -> [f32; 2] {
+        [self.x, self.y]
+    }
+}
+
+#[cfg(test)]
+mod tests;

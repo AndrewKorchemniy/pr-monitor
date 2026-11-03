@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"                      # MSRV-aware resolution against rust-version
 members = ["crates/*"]
+exclude = ["vendor"]
 
 [workspace.package]
 edition = "2024"
@@ -127,3 +128,7 @@ inherits = "dev"
 
 [profile.dev-ui.package."*"]
 opt-level = 2
+
+# Vendored winit with a stale-monitor-handle fix; remove when winit#3102 is fixed (vendor/winit/PATCHES.md).
+[patch.crates-io]
+winit = { path = "vendor/winit" }

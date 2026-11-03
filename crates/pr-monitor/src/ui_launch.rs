@@ -67,7 +67,7 @@ pub(crate) fn rect_on_screen(
 pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
     let on_screen = ctx
         .window
-        .filter(|r| rect_on_screen(r, |r| ctx.shell.rect_visible(r.x, r.y, r.w, r.h)));
+        .filter(|r| rect_on_screen(r, |r| ctx.shell.title_bar_visible(r.position(), r.w)));
     let spec = LaunchSpec {
         renderer: ctx.choice.kind,
         start_hidden: ctx.start_hidden,
@@ -91,7 +91,7 @@ pub(crate) fn run(ctx: LaunchCtx<'_>) -> Result<(), eframe::Error> {
         },
         start_hidden: ctx.start_hidden,
         hide_offscreen: HIDE_OFFSCREEN,
-        restore_position: on_screen.map(|r| [r.x, r.y]),
+        restore_position: on_screen.map(|r| r.position()),
         activation: None,
         quit_requested: ctx.quit,
         hover_bands: Arc::new(HoverBands::default()),

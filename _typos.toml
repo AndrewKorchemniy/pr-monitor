@@ -1,6 +1,6 @@
 [files]
 extend-exclude = [
-  "CHANGELOG.md", "Cargo.lock", "LICENSE-*", "*.svg",
+  "CHANGELOG.md", "Cargo.lock", "LICENSE-*", "*.svg", "vendor/**",
   "crates/*/assets/**", "crates/*/tests/fixtures/**", "**/snapshots/**",
 ]
 

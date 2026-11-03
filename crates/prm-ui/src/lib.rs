@@ -24,7 +24,6 @@ pub use app::create_app;
 pub use deps::{BuildInfo, ChromeColors, NoopHost, UiHost, UiInit};
 pub use render::{LaunchSpec, RenderEnv, RendererKind, hover_bands::HoverBands, native_options};
 pub use tray::window_icon;
-pub use window::EFRAME_HONORS_HIDDEN_ROOT;
 
 #[cfg(test)]
 mod testing;

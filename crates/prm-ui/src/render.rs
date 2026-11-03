@@ -89,7 +89,7 @@ pub fn native_options(spec: &LaunchSpec) -> eframe::NativeOptions {
     let mut centered = true;
     if let Some(rect) = spec.window {
         viewport = viewport
-            .with_position([rect.x, rect.y])
+            .with_position(rect.position())
             .with_inner_size([rect.w, rect.h])
             .with_maximized(rect.maximized);
         centered = false;
