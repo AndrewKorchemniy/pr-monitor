@@ -13,29 +13,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use prm_auth::ChunkedSecretStore;
-use prm_config::{
-    AppPaths, ConfigLoad, FileRepo, StateLoad, load_catalogs, load_config, load_state,
-};
-use prm_domain::{
-    app::{ENV_HOME, ENV_LOG, ENV_REGISTER, ENV_SECRET_STORE},
-    ports::{Clock, PortError},
-    uri::AppUri,
-};
+use prm_config::AppPaths;
+use prm_domain::{app::ENV_HOME, ports::PortError, uri::AppUri};
 use prm_platform::{
-    Acquired, BuildKind, ForwardOutcome, HandoffRequest, HandoffServer, IdentityStatus,
-    InstanceKey, InstanceLock, InstanceScope, PlatformAdapters, PlatformInit, RegisterOverride,
-    RegistrationScope, RegistrationSpec, SecretBackendPref, acquire_instance, adapters, console,
-    ensure_shell_identity, forward_to_primary, is_same_root, registration_scope,
+    Acquired, ForwardOutcome, HandoffRequest, InstanceKey, InstanceLock, InstanceScope,
+    acquire_instance, console, forward_to_primary, is_same_root,
 };
-use prm_service::{ServiceHandle, SystemClock, channel_sink};
 use prm_ui::RendererKind;
 
 use crate::{
-    activation::{ActivationRouter, UiWaker},
-    assets, build_info,
+    build_info,
     cli::{self, Args, Mode},
-    copy, logging, net,
+    copy,
     panic::{self, Phase},
     renderer::{
         MarkerFile, RendererChoice, RendererInputs, RendererReason, choose_renderer,
@@ -45,7 +34,14 @@ use crate::{
     shutdown::{self, Held},
     ui_launch::{self, LaunchCtx},
     unregister,
-    wiring::{self, Platform, Ports},
+};
+
+mod base;
+mod service;
+
+use self::{
+    base::base,
+    service::{Running, activation, start_service},
 };
 
 pub(crate) const EXIT_USAGE: u8 = 2;
@@ -278,188 +274,6 @@ fn not_responding() -> ExitCode {
     ExitCode::from(EXIT_NOT_RESPONDING)
 }
 
-fn env_flag(name: &str) -> bool {
-    std::env::var(name).is_ok_and(|v| matches!(v.trim(), "1" | "true" | "yes"))
-}
-
-/// Files, logging, crash reports and the shell identity, before any window exists.
-struct Base {
-    paths: AppPaths,
-    clock: Arc<dyn Clock>,
-    log: logging::LogHandle,
-    toast_identity: IdentityStatus,
-    registration_scope: RegistrationScope,
-    exe: PathBuf,
-}
-
-fn register_override() -> RegisterOverride {
-    if env_flag(ENV_REGISTER) {
-        RegisterOverride::Forced
-    } else {
-        RegisterOverride::Auto
-    }
-}
-
-fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
-    let paths = AppPaths::from_root(root.path.clone());
-    if let Err(error) = paths.ensure_dirs() {
-        console::fatal_dialog(copy::DATA_FOLDER, &error.to_string());
-        return Err(ExitCode::FAILURE);
-    }
-    panic::set_log_dir(&paths.logs);
-    // why: the local UTC offset must be read before other threads start (time crate soundness).
-    let clock: Arc<dyn Clock> = Arc::new(SystemClock::new());
-    let log = logging::init(&paths.logs, args.debug, std::env::var(ENV_LOG).ok());
-    if !log.file_ok {
-        tracing::warn!("log files unavailable; logging to the console only");
-    }
-    panic::prune_crash_logs(&paths.logs, panic::CRASH_LOGS_KEPT);
-    let exe =
-        std::env::current_exe().unwrap_or_else(|_| PathBuf::from(prm_domain::app::APP_EXE_NAME));
-    let registration = registration_scope(root.scope, BuildKind::current(), register_override());
-    let toast_identity = ensure_shell_identity(&RegistrationSpec {
-        exe: &exe,
-        icon_png_path: &paths.icon_png,
-        icon_png: assets::ICON_256_PNG,
-        scope: registration,
-    });
-    Ok(Base {
-        paths,
-        clock,
-        log,
-        toast_identity,
-        registration_scope: registration,
-        exe,
-    })
-}
-
-/// Activation (second launches and our own `--activate`), buffered until the service exists.
-struct Activation {
-    waker: Arc<UiWaker>,
-    quit: Arc<AtomicBool>,
-    router: Arc<ActivationRouter>,
-    handoff: Option<HandoffServer>,
-}
-
-fn activation(args: &Args, key: &InstanceKey) -> Activation {
-    let waker = Arc::new(UiWaker::default());
-    let quit = Arc::new(AtomicBool::new(false));
-    let router = Arc::new(ActivationRouter::new(Arc::clone(&waker), Arc::clone(&quit)));
-    let handoff = HandoffServer::start(
-        key,
-        Arc::clone(&router) as Arc<dyn prm_platform::ActivationSink>,
-    )
-    .inspect_err(|error| tracing::warn!(%error, "activation listener disabled"))
-    .ok();
-    if let Some(raw) = &args.activate {
-        router.activate_raw(raw);
-    }
-    Activation {
-        waker,
-        quit,
-        router,
-        handoff,
-    }
-}
-
-/// Loaded files plus the service started on them.
-struct Running {
-    handle: ServiceHandle,
-    events: std::sync::mpsc::Receiver<prm_service::AppEvent>,
-    shell: Arc<dyn prm_platform::DesktopShell>,
-    remote: bool,
-    start_hidden: bool,
-    window: Option<prm_config::WindowRect>,
-    renderer_pref: prm_config::schema::RendererPref,
-}
-
-/// The config, the persisted state and the cached catalogs.
-fn load(
-    paths: &AppPaths,
-) -> (
-    ConfigLoad,
-    StateLoad,
-    std::collections::HashMap<prm_domain::OrgId, prm_domain::model::Catalog>,
-) {
-    let config = load_config(paths);
-    let state = load_state(paths);
-    let catalogs = load_catalogs(paths, &config.config.org_ids());
-    (config, state, catalogs)
-}
-
-fn platform(root: &Root, base: &Base, key: &InstanceKey) -> PlatformAdapters {
-    adapters(&PlatformInit {
-        paths: &base.paths,
-        exe: &base.exe,
-        scope: root.scope,
-        instance_suffix: &key.suffix,
-        toast_identity: base.toast_identity,
-        registration_scope: base.registration_scope,
-        secret_pref: SecretBackendPref::parse(std::env::var(ENV_SECRET_STORE).ok().as_deref()),
-        home_override: root.home.as_deref(),
-    })
-}
-
-fn start_service(
-    args: &Args,
-    root: &Root,
-    base: &Base,
-    key: &InstanceKey,
-    act: &Activation,
-) -> Result<Running, ExitCode> {
-    let (config, state, catalogs) = load(&base.paths);
-    base.log
-        .apply_level(&config.config.diagnostics.log_level, args.debug);
-    let PlatformAdapters {
-        notifier,
-        autostart,
-        opener,
-        shell,
-        secrets,
-    } = platform(root, base, key);
-    let session = shell.session();
-    tracing::info!(
-        version = build_info::VERSION,
-        sha = build_info::GIT_SHA,
-        os = shell.os_description(),
-        ?session,
-        ?args,
-        "starting"
-    );
-    let waker = Arc::clone(&act.waker);
-    let (sink, events) = channel_sink(move || waker.wake());
-    let ports = Ports {
-        transport: net::deferred_transport(&config.config.network),
-        secrets: Arc::new(ChunkedSecretStore::new(secrets)),
-        clock: Arc::clone(&base.clock),
-        events: Arc::new(sink),
-    };
-    let start_hidden = wiring::start_hidden(args, &config.config);
-    let renderer_pref = config.config.ui.renderer;
-    let window = state.state.ui.window;
-    let deps = wiring::deps(
-        Platform {
-            notifier,
-            autostart,
-            opener,
-        },
-        ports,
-        FileRepo::from_load(base.paths.clone(), &config),
-    );
-    let handle = prm_service::spawn(deps, wiring::initial_data(config, state, catalogs, args))
-        .map_err(|e| fatal(&e))?;
-    act.router.attach(Arc::new(handle.sender()));
-    Ok(Running {
-        handle,
-        events,
-        shell,
-        remote: session.is_remote(),
-        start_hidden,
-        window,
-        renderer_pref,
-    })
-}
-
 fn primary(
     args: &Args,
     root: &Root,
@@ -508,6 +322,7 @@ fn primary(
     };
     let end = RunEnd {
         held,
+        exe: &base.exe,
         marker: &marker,
         tried: choice.kind,
         result,
@@ -545,6 +360,8 @@ fn renderer(args: &Args, paths: &AppPaths, running: &Running) -> (RendererChoice
 /// How the window run ended, and what the run still holds.
 struct RunEnd<'a> {
     held: Held,
+    /// This process's exe, for the relaunch.
+    exe: &'a Path,
     marker: &'a MarkerFile,
     tried: RendererKind,
     result: Result<(), eframe::Error>,
@@ -554,6 +371,7 @@ fn finish(args: &Args, end: RunEnd<'_>, launch: &Launch) -> ExitCode {
     let phase = Phase::of(&launch.init_phase);
     let RunEnd {
         held,
+        exe,
         marker,
         tried,
         result,
@@ -571,7 +389,7 @@ fn finish(args: &Args, end: RunEnd<'_>, launch: &Launch) -> ExitCode {
             marker.mark_failed(tried);
             let relaunch: Vec<OsString> =
                 cli::relaunch_args(args, tried.other(), std::process::id());
-            shutdown::fallback_relaunch(held, relaunch)
+            shutdown::fallback_relaunch(held, exe, relaunch)
         }
         Err(error) => {
             tracing::error!(%error, ?phase, "the window failed");
