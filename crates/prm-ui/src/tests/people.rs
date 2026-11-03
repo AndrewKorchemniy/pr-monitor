@@ -13,7 +13,9 @@ use prm_domain::{
 };
 use prm_service::{AppEvent, Command, SearchPhase};
 
-use super::dialogs::{self, ROOMY, assert_title_still, dialog_harness, frames};
+use super::dialogs::{
+    self, ROOMY, SMALLEST, assert_still, assert_title_still, dialog_harness, frames,
+};
 use crate::{
     actions::UiAction,
     copy,
@@ -329,6 +331,32 @@ fn the_title_holds_still_while_typing() {
             }
             assert_title_still(&seen, &format!("{editor:?} at {size:?} x{scale}"));
         }
+    }
+}
+
+/// The matches changing under the field (the hint, "Searching...", rows, "No people match")
+/// must not resize the dialog.
+#[test]
+fn the_dialog_keeps_its_size_as_results_arrive_and_change() {
+    for size in [ROOMY, SMALLEST] {
+        let title = people_title(Editor::Reviewers);
+        let mut h = dialog_harness(dialogs::settings_fixture(Editor::Reviewers), size, 1.25);
+        let mut seen = frames(&mut h, 2, title);
+        add_field(&h).click();
+        let request = type_query(&mut h, "pri");
+        seen.extend(frames(&mut h, 3, title));
+        let batches: [Vec<PersonCandidate>; 3] = [
+            vec![priya(), priyanka()],
+            (20..28).map(candidate).collect(),
+            Vec::new(),
+        ];
+        for found in &batches {
+            deliver(&mut h, request, found);
+            seen.extend(frames(&mut h, 3, title));
+        }
+        h.key_press(egui::Key::Escape);
+        seen.extend(frames(&mut h, 3, title));
+        assert_still(&seen, &format!("{size:?}"));
     }
 }
 

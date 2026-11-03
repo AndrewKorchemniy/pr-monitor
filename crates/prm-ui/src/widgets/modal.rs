@@ -173,7 +173,7 @@ fn body_area(id: egui::Id, fixed: Option<f32>, room: f32) -> egui::ScrollArea {
 }
 
 /// A one-line action bar's height: its buttons, the inset around them and the divider above.
-pub(crate) fn action_bar_height(theme: &UiTheme) -> f32 {
+fn action_bar_height(theme: &UiTheme) -> f32 {
     theme.control_height() + 2.0 * dialog::INSET + 1.0
 }
 
