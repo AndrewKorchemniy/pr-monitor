@@ -13,7 +13,7 @@ use std::{
 use eframe::egui::{self, Color32, FontId};
 use prm_config::UiPrefs;
 use prm_theme::{
-    Appearance, Corners, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection,
+    Appearance, Look, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection,
     Tokens, TypeRole, registry::resolve,
 };
 
@@ -141,6 +141,15 @@ pub(crate) fn selection_from(prefs: &UiPrefs) -> ThemeSelection {
         dark: prefs.theme_dark.clone(),
         light: prefs.theme_light.clone(),
         corners: prefs.corners,
+        stripes: prefs.striped_rows,
+    }
+}
+
+/// The appearance choices of `prefs`, for Settings' live preview of its draft.
+pub(crate) const fn look_from(prefs: &UiPrefs) -> Look {
+    Look {
+        corners: prefs.corners,
+        stripes: prefs.striped_rows,
     }
 }
 
@@ -152,8 +161,8 @@ pub(crate) struct ThemeRuntime {
     themes_dir: std::path::PathBuf,
     selection: ThemeSelection,
     preview: Option<String>,
-    /// Settings' unsaved corner choice; wins over the saved one while set.
-    corners_preview: Option<Corners>,
+    /// Settings' unsaved corner and stripe choices; win over the saved ones while set.
+    look_preview: Option<Look>,
     policy: RenderPolicy,
     dark: Arc<UiTheme>,
     light: Arc<UiTheme>,
@@ -183,7 +192,7 @@ impl ThemeRuntime {
             registry,
             selection,
             preview: None,
-            corners_preview: None,
+            look_preview: None,
             policy,
             generation: 1,
             applied: 0,
@@ -197,8 +206,9 @@ impl ThemeRuntime {
         if let Some(preview) = &self.preview {
             selection.theme.clone_from(preview);
         }
-        if let Some(corners) = self.corners_preview {
-            selection.corners = corners;
+        if let Some(look) = self.look_preview {
+            selection.corners = look.corners;
+            selection.stripes = look.stripes;
         }
         let set = resolve(&self.registry, &selection);
         self.issues = self.dir_issues.iter().cloned().chain(set.issues).collect();
@@ -234,12 +244,12 @@ impl ThemeRuntime {
         }
     }
 
-    /// Settings' live corner preview; `None` reverts to the saved corners.
-    pub(crate) fn set_corners_preview(&mut self, corners: Option<Corners>) {
-        // why: a preview equal to the saved corners changes nothing, so opening settings is free.
-        let corners = corners.filter(|&c| c != self.selection.corners);
-        if corners != self.corners_preview {
-            self.corners_preview = corners;
+    /// Settings' live corner and stripe preview; `None` reverts to the saved choices.
+    pub(crate) fn set_look_preview(&mut self, look: Option<Look>) {
+        // why: a preview equal to the saved look changes nothing, so opening settings is free.
+        let look = look.filter(|&l| l != self.selection.look());
+        if look != self.look_preview {
+            self.look_preview = look;
             self.rebuild();
         }
     }

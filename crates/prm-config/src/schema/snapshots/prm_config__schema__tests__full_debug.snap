@@ -35,6 +35,7 @@ Config {
         theme_dark: "graphite",
         theme_light: "vellum",
         corners: Rounded,
+        striped_rows: true,
         font_scale: 1.0,
         animations: Auto,
         renderer: Auto,

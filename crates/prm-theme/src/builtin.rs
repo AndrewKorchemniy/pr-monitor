@@ -3,7 +3,7 @@
 use crate::{
     file::parse_theme,
     issue::IssueLevel,
-    metrics::Corners,
+    metrics::Look,
     tokens::{ThemeSource, Tokens},
 };
 
@@ -19,7 +19,7 @@ pub fn builtin_sources() -> &'static [(&'static str, &'static str)] {
 pub fn self_check() -> Result<usize, String> {
     for (stem, src) in BUILTIN {
         let (file, mut issues) = parse_theme(src, stem).map_err(|e| e.to_string())?;
-        let (_, built) = Tokens::build(&file, src, ThemeSource::Builtin, Corners::default());
+        let (_, built) = Tokens::build(&file, src, ThemeSource::Builtin, Look::default());
         issues.extend(built);
         if let Some(issue) = issues.iter().find(|i| i.level >= IssueLevel::Warning) {
             return Err(format!("{stem}: {}", issue.message));

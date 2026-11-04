@@ -101,6 +101,8 @@ pub struct UiPrefs {
     pub theme_light: String,
     /// The corner shape of every theme and of the window frame.
     pub corners: Corners,
+    /// Alternating row tint in the table and cards, in every theme.
+    pub striped_rows: bool,
     pub font_scale: f32,
     pub animations: Tristate,
     pub renderer: RendererPref,
@@ -120,6 +122,7 @@ impl Default for UiPrefs {
             theme_dark: registry::DEFAULT_DARK.into(),
             theme_light: registry::DEFAULT_LIGHT.into(),
             corners: Corners::default(),
+            striped_rows: true,
             font_scale: limits::DEFAULT_FONT_SCALE,
             animations: Tristate::default(),
             renderer: RendererPref::default(),

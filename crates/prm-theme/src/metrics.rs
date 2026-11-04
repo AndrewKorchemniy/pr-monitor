@@ -1,9 +1,7 @@
-//! Sizes, type, motion and strokes. Row heights are fixed; a theme only toggles stripes, and
-//! the user's `Corners` choice sets every radius.
+//! Sizes, type, motion and strokes. Row heights are fixed; the user's `Corners` choice sets every
+//! radius, and the striped-rows choice rides along.
 
 use serde::{Deserialize, Serialize};
-
-use crate::file::MetricTweaks;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FontFace {
@@ -119,6 +117,23 @@ pub enum Corners {
 impl Corners {
     pub const fn is_rounded(self) -> bool {
         matches!(self, Self::Rounded)
+    }
+}
+
+/// The appearance choices the user makes in Settings; they apply to every theme.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Look {
+    pub corners: Corners,
+    /// Alternating row tint in the table and cards.
+    pub stripes: bool,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Self {
+            corners: Corners::default(),
+            stripes: true,
+        }
     }
 }
 
@@ -241,7 +256,8 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new(tweaks: &MetricTweaks, corners: Corners) -> Self {
+    pub fn new(look: Look) -> Self {
+        let Look { corners, stripes } = look;
         Self {
             corners,
             space: SPACE,
@@ -250,7 +266,7 @@ impl Metrics {
             motion: MOTION,
             stroke: STROKES,
             elevation: ELEVATION,
-            stripes: tweaks.stripes,
+            stripes,
         }
     }
 }

@@ -3,7 +3,7 @@
 
 use eframe::egui;
 use prm_config::{
-    Config, limits,
+    Config, UiPrefs, limits,
     schema::{RendererPref, Tristate},
 };
 use prm_theme::{Corners, IssueLevel, registry::SYSTEM};
@@ -15,7 +15,7 @@ use crate::{
     screens::settings::SettingsEnv,
     widgets::{
         card::section,
-        controls::{self, setting_row},
+        controls::{self, setting_row, toggle_row},
         slider::{SLIDER_WIDTH, SliderSpec, slider_field},
     },
 };
@@ -42,6 +42,24 @@ fn theme_name<'a>(env: &'a SettingsEnv<'_>, id: &'a str) -> &'a str {
         .map_or(id, |(_, name)| name.as_str())
 }
 
+/// Corners and striped rows. The next frame's `logic` previews the draft's choices, so there is
+/// nothing to send.
+fn look_rows(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, prefs: &mut UiPrefs) {
+    controls::row_divider(ui, theme);
+    setting_row(ui, theme, (copy::CORNERS, Some(copy::CORNERS_HELP)), |ui| {
+        if controls::segmented(ui, theme, &mut prefs.corners, &CORNER_SHAPES) {
+            ui.ctx().request_repaint();
+        }
+    });
+    controls::row_divider(ui, theme);
+    toggle_row(
+        ui,
+        theme,
+        &mut prefs.striped_rows,
+        (copy::STRIPED_ROWS, Some(copy::STRIPED_ROWS_HELP)),
+    );
+}
+
 pub(crate) fn page(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -63,18 +81,7 @@ pub(crate) fn page(
         if prefs.theme != before {
             cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
         }
-        controls::row_divider(ui, &theme);
-        setting_row(
-            ui,
-            &theme,
-            (copy::CORNERS, Some(copy::CORNERS_HELP)),
-            |ui| {
-                // why: the next frame's `logic` previews the draft's corners; nothing else to send.
-                if controls::segmented(ui, &theme, &mut prefs.corners, &CORNER_SHAPES) {
-                    ui.ctx().request_repaint();
-                }
-            },
-        );
+        look_rows(ui, &theme, prefs);
         issues(ui, &theme, &env.theme_issues);
     });
     section(ui, &theme, copy::SECTION_LAYOUT, None, |ui| {

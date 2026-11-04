@@ -41,7 +41,7 @@ use crate::{
     },
     route::{ModalKind, Overlay, Screen},
     screens::{dashboard::DashboardUi, first_run::FirstRun, settings::SettingsState},
-    theme::{ThemeRuntime, UiTheme, fonts, selection_from},
+    theme::{ThemeRuntime, UiTheme, fonts, look_from, selection_from},
     tray::{TrayController, TrayMsg},
     ui_state::{Layout, PeekLayout, UiStateSync},
     view::{DashboardView, changes::ChangeLog, display::Pitch},
@@ -267,7 +267,7 @@ impl eframe::App for PrMonitorApp {
         }
         // why: stateless, so Discard, Save and closing settings all settle with no extra code.
         self.theme
-            .set_corners_preview(self.settings.as_ref().map(|s| s.draft.ui.corners));
+            .set_look_preview(self.settings.as_ref().map(|s| look_from(&s.draft.ui)));
         self.theme.apply(ctx);
         self.sync_tray(ctx);
         self.publish_hover_bands();
