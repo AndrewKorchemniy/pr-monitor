@@ -149,6 +149,9 @@ jobs:
       - name: Verify (PE, size budget, static CRT, self-test)
         shell: pwsh
         run: ./.github/scripts/verify-exe.ps1 -Exe target/release/pr-monitor.exe -Arch x64 -SizeJson size-x64.json
+      - name: Pack (Velopack dry run, no upload)
+        shell: pwsh
+        run: ./.github/scripts/pack-velopack.ps1 -Rid win-x64 -Exe target/release/pr-monitor.exe -OutDir pack-out -NoDownload
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-monitor-windows-x64
@@ -172,6 +175,7 @@ jobs:
         with:
           cache-key: release
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/arm64-clang    # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
       - name: Build
         env:
           PRM_BUILD_SHA: ${{ github.sha }}
@@ -179,6 +183,9 @@ jobs:
       - name: Verify (PE, size budget, static CRT, self-test)
         shell: pwsh
         run: ./.github/scripts/verify-exe.ps1 -Exe target/release/pr-monitor.exe -Arch arm64
+      - name: Pack (Velopack dry run, no upload)
+        shell: pwsh
+        run: ./.github/scripts/pack-velopack.ps1 -Rid win-arm64 -Exe target/release/pr-monitor.exe -OutDir pack-out -NoDownload
 
   size-report:                     # informational; not part of ci-ok
     name: size report

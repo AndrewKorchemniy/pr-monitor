@@ -1,25 +1,23 @@
 #Requires -Version 7.4
 <#
 .SYNOPSIS
-  Release-exe gate: PE machine + GUI subsystem, size budget, static CRT, ProductVersion, headless --self-test.
+  App-exe gate: PE machine + GUI subsystem, size budget, static CRT, ProductVersion, headless --self-test.
+  Runs on the exe that goes into the Velopack package (pack-velopack.ps1 packs it unchanged).
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string] $Exe,
     [Parameter(Mandatory)][ValidateSet('x64', 'arm64')][string] $Arch,
     [string] $ExpectedVersion = '',
-    # Budget (spec §5.2). After v0.1.0: round_up(measured * 1.10, 0.5 MiB).
-    [long] $MaxBytes = 20MB,
+    # Budget for the app exe: round_up(measured * 1.10, 0.5 MiB). v0.3.0 measured 22,781,440 bytes (21.73 MiB, with Velopack).
+    [long] $MaxBytes = 24MB,
     [string] $SizeJson = '',
     [int] $SelfTestTimeoutSec = 60
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Write-Summary([string] $Line) {
-    Write-Host $Line
-    if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $Line }
-}
+. "$PSScriptRoot/common.ps1"
 
 $file = Get-Item -LiteralPath $Exe
 

@@ -19,29 +19,42 @@ tells you whose move it is.
   pushes, grouped per PR and capped per refresh.
 - **Lives in the tray.** It refreshes every few minutes (5 by default) and uses no CPU while
   idle. Press `Ctrl+K` for the command palette and `?` for every shortcut.
-- **One portable exe** of about 19 MB, with no installer and no runtime to install.
+- **Easy to install, keeps itself up to date.** A per-user installer or a portable zip, with no
+  admin rights and no runtime to install.
 
 ## Download
 
-Get `pr-monitor-windows-x64.exe` (or `-arm64`) from the
-[latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest) and run it.
-The zip version also includes the licenses. Direct links to the latest build:
+Get one of these for your architecture (x64 or arm64) from the
+[latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest):
 
-- [pr-monitor-windows-x64.exe](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/pr-monitor-windows-x64.exe)
-- [pr-monitor-windows-arm64.exe](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/pr-monitor-windows-arm64.exe)
+- **Installer:** `AndrewKorchemniy.PRMonitor-win-x64-Setup.exe` (or `-win-arm64`). It installs
+  for your user only, into `%LOCALAPPDATA%\AndrewKorchemniy.PRMonitor`, so it needs no admin
+  rights. It adds a Start menu entry and an Add/Remove Programs entry.
+- **Portable zip:** `AndrewKorchemniy.PRMonitor-win-x64-Portable.zip` (or `-win-arm64`). Unzip it
+  anywhere and run `PR Monitor.exe`. Keep the folder together: it updates itself in place.
 
-Builds are not code-signed yet, so Windows SmartScreen may warn on first launch
-(**More info › Run anyway**). Every release is built by GitHub Actions from a tagged
-commit, and you can verify that yourself:
+Both update themselves from the GitHub releases. Direct links to the latest build:
+
+- [Setup, x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/AndrewKorchemniy.PRMonitor-win-x64-Setup.exe)
+  · [Setup, arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/AndrewKorchemniy.PRMonitor-win-arm64-Setup.exe)
+- [Portable zip, x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/AndrewKorchemniy.PRMonitor-win-x64-Portable.zip)
+  · [Portable zip, arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/AndrewKorchemniy.PRMonitor-win-arm64-Portable.zip)
+
+**Coming from v0.2.x?** Those versions were a single exe that could not update itself. Switch
+once: run the Setup, or unzip the Portable zip, then delete the old `pr-monitor-windows-*.exe`.
+Your settings, sign-in and logs stay where they are (`%LOCALAPPDATA%\PRMonitor`), and autostart
+and the `prmonitor://` registration point themselves at the new exe the first time it starts.
+
+Every release is built by GitHub Actions from a tagged commit, and you can verify that yourself:
 
 ```powershell
-gh attestation verify pr-monitor-windows-x64.exe -R AndrewKorchemniy/pr-monitor
-gh attestation verify pr-monitor-windows-x64.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
-Get-FileHash -Algorithm SHA256 pr-monitor-windows-x64.exe   # compare with SHA256SUMS.txt
+gh attestation verify AndrewKorchemniy.PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
+gh attestation verify AndrewKorchemniy.PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
+Get-FileHash -Algorithm SHA256 AndrewKorchemniy.PRMonitor-win-x64-Setup.exe   # compare with SHA256SUMS.txt
 ```
 
-The first command checks the build provenance, the second the attached CycloneDX SBOM.
-
+The first command checks the build provenance, the second the attached CycloneDX SBOM. The same
+works for the Portable zip.
 Supported: Windows 10 1809 or later (x64) and Windows 11 (arm64).
 
 ## Signing in

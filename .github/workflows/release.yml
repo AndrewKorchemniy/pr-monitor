@@ -105,7 +105,6 @@ jobs:
           SHA: ${{ github.sha }}
           GIT_REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
-          SIGNING: ${{ vars.SIGNING_PROVIDER }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -115,7 +114,7 @@ jobs:
             gh api --paginate "repos/$REPO/releases?per_page=100" | jq -cs --arg t "$1" '[.[][] | select(.tag_name == $t)][0] // empty'
           }
           tag_exists() { gh api "repos/$REPO/git/ref/tags/$1" --silent 2>/dev/null || git rev-parse -q --verify "refs/tags/$1" >/dev/null; }
-          dry_run=false
+          dry_run=false; notes=""
           if [ "$EVENT" = push ]; then
             tag=$(jq -r '[.[] | select(.package_name == "pr-monitor") | .tag][0] // empty' <<<"${RELEASES:-[]}")
             version="${tag#v}"; ref="$SHA"
@@ -134,13 +133,9 @@ jobs:
                   echo "::error::release or tag $tag already exists; bump the version in crates/pr-monitor/Cargo.toml (or use mode recover for an unpublished draft)"
                   exit 1
                 fi
-                notes="Verify: \`gh attestation verify pr-monitor-windows-x64.exe -R $REPO\` · checksums in \`SHA256SUMS.txt\` · PDBs attached for crash symbolization."
-                if [ "$SIGNING" != signpath ] && [ "$SIGNING" != azure ]; then
-                  notes="Binaries are not code-signed yet; Windows SmartScreen may warn (More info > Run anyway)."$'\n\n'"$notes"
-                fi
                 # why: one heading per merged pull request with its description and squashed
                 # commits, rather than GitHub's generated list of titles alone.
-                notes="$notes"$'\n\n'"$(bash .github/scripts/release-notes.sh "$REPO" "$SHA" "$tag")"
+                notes="$(bash .github/scripts/release-notes.sh "$REPO" "$SHA" "$tag")"$'\n\n'"$(bash .github/scripts/release-footer.sh "$REPO")"
                 gh release create "$tag" -R "$REPO" --draft --target "$SHA" \
                   --title "PR Monitor $tag" --notes "$notes"
                 ;;
@@ -163,6 +158,27 @@ jobs:
           fi
           { echo "tag=$tag"; echo "version=$version"; echo "ref=$ref"; echo "dry_run=$dry_run"; } >> "$GITHUB_OUTPUT"
           echo "mode: ${MODE:-$EVENT} · release tag: '${tag:-<none>}' · version: '${version:-<none>}' · ref: '$ref'" >> "$GITHUB_STEP_SUMMARY"
+          # The release's own notes (without the footer) go into the Velopack packages.
+          if [ "$dry_run" = true ]; then
+            notes=$(bash .github/scripts/release-notes.sh "$REPO" "$SHA" "v$version")
+          elif [ -n "$tag" ]; then
+            [ -n "$notes" ] || notes=$(release_json "$tag" | jq -r '.body // ""' | tr -d '\r')
+            # why: release-plz writes only the changelog; add the footer release-current already has.
+            if ! grep -q '^<!-- release-footer -->$' <<<"$notes"; then
+              notes="$notes"$'\n\n'"$(bash .github/scripts/release-footer.sh "$REPO")"
+              gh release edit "$tag" -R "$REPO" --notes "$notes"
+            fi
+          fi
+          if [ -n "$notes" ]; then
+            mkdir -p notes
+            awk '/^<!-- release-footer -->$/ { exit } { print }' <<<"$notes" > notes/release-notes.md
+          fi
+      - if: steps.meta.outputs.tag != '' || steps.meta.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: notes/
+          if-no-files-found: error
 
   notices:
     name: notices + SBOM
@@ -231,6 +247,7 @@ jobs:
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-auditable@0.7.7  # exact pin, not bumped by Dependabot; prebuilt exists for aarch64_windows (verified)
+      - uses: ./.github/actions/arm64-clang    # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: notices
@@ -247,9 +264,13 @@ jobs:
         run: ./.github/scripts/verify-exe.ps1 -Exe "target/$env:TARGET/release/pr-monitor.exe" -Arch $env:ARCH -ExpectedVersion $env:VERSION
       - name: Stage
         run: |
-          mkdir -p out/exe out/pdb
+          mkdir -p out/exe out/pdb out/ico
           cp "target/$TARGET/release/pr-monitor.exe" "out/exe/pr-monitor-windows-$ARCH.exe"
           cp "target/$TARGET/release/pr_monitor.pdb" "out/pdb/pr-monitor-$VERSION-windows-$ARCH.pdb"
+          # build.rs generates the icon; the package job has no cargo, so ship it as an artifact.
+          icons=(target/"$TARGET"/release/build/pr-monitor-*/out/app.ico)
+          [ "${#icons[@]}" -eq 1 ] || { echo "::error::expected one app.ico, found ${#icons[@]}"; exit 1; }
+          cp "${icons[0]}" out/ico/app.ico
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: exe-${{ matrix.arch }}
@@ -260,83 +281,68 @@ jobs:
           name: pdb-${{ matrix.arch }}
           path: out/pdb/
           if-no-files-found: error
-
-  sign:                                       # phase hook; skipped while SIGNING_PROVIDER is none/unset
-    name: sign
-    needs: [release, build]
-    if: >-
-      needs.release.outputs.dry_run != 'true' &&
-      (vars.SIGNING_PROVIDER == 'signpath' || vars.SIGNING_PROVIDER == 'azure')
-    runs-on: windows-latest                   # Azure signing action requires Windows x64
-    timeout-minutes: 60
-    environment: release                      # signing secrets/vars live here
-    permissions:
-      contents: read
-      actions: read                           # SignPath reads the to-sign artifact
-      id-token: write                         # azure/login OIDC
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: exe-*
-          merge-multiple: true
-          path: unsigned
-      # --- SignPath Foundation ---
-      - id: to-sign
-        if: vars.SIGNING_PROVIDER == 'signpath'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: to-sign
-          path: unsigned/
-      - if: vars.SIGNING_PROVIDER == 'signpath'
-        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: pr-monitor
-          signing-policy-slug: release-signing
-          artifact-configuration-slug: windows-exes
-          github-artifact-id: ${{ steps.to-sign.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: signed
-      # --- Azure Artifact Signing ---
-      - if: vars.SIGNING_PROVIDER == 'azure'
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - if: vars.SIGNING_PROVIDER == 'azure'
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
-          files-folder: ${{ github.workspace }}\unsigned
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-      - if: vars.SIGNING_PROVIDER == 'azure'
-        shell: pwsh
-        run: Move-Item unsigned signed
-      - name: Verify Authenticode
-        shell: pwsh
-        run: |
-          Get-ChildItem signed/*.exe | ForEach-Object {
-            $s = Get-AuthenticodeSignature $_.FullName
-            if ($s.Status -ne 'Valid') { throw "$($_.Name): $($s.Status)" } }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: signed-exes
-          path: signed/
+          name: ico-${{ matrix.arch }}
+          path: out/ico/
+          if-no-files-found: error
+
+  package:                                    # Velopack Setup.exe, Portable.zip and update packages
+    name: package (${{ matrix.rid }})
+    needs: [release, build]
+    if: >-
+      !cancelled() && needs.build.result == 'success'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: win-x64, arch: x64 }
+          - { rid: win-arm64, arch: arm64 }
+    runs-on: windows-latest                   # vpk cross-packs both rids; the exes were already self-tested natively in build
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      RID: ${{ matrix.rid }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: exe-${{ matrix.arch }}
+          path: exe
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ico-${{ matrix.arch }}
+          path: ico
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notices
+          path: notices
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+      - name: Pack (vpk) and verify the package
+        shell: pwsh
+        run: >-
+          ./.github/scripts/pack-velopack.ps1 -Rid $env:RID -Version $env:VERSION
+          -Exe "exe/pr-monitor-windows-$($env:RID -replace '^win-').exe"
+          -Icon ico/app.ico -NoticesDir notices -NotesFile notes/release-notes.md -OutDir velopack-out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: velopack-${{ matrix.rid }}
+          path: velopack-out/
           if-no-files-found: error
 
   publish:
     name: publish
-    needs: [release, notices, build, sign]
+    needs: [release, notices, build, package]
     if: >-
-      !cancelled() && needs.build.result == 'success' &&
-      (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+      !cancelled() && needs.build.result == 'success' && needs.package.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:                   # job-level only: workflow-level could cancel a pending release-plz run
@@ -349,17 +355,12 @@ jobs:
       artifact-metadata: write     # actions/attest v4 storage records
     env:
       TAG: ${{ needs.release.outputs.tag }}
-      VERSION: ${{ needs.release.outputs.version }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.release.outputs.ref }}
-          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: "${{ needs.sign.result == 'success' && 'signed-exes' || 'exe-*' }}"
+          pattern: velopack-*
           merge-multiple: true
           path: dist
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -371,25 +372,13 @@ jobs:
         with:
           name: notices
           path: dist
-      - name: Zips + checksums (sign -> zip -> checksum -> attest)
+      - name: Checksums
         run: |
           set -euo pipefail
           cd dist
-          for a in x64 arm64; do
-            d="pr-monitor-$VERSION-windows-$a"
-            mkdir -p "$d/licenses"
-            cp "pr-monitor-windows-$a.exe" "$d/pr-monitor.exe"
-            cp ../LICENSE-MIT ../LICENSE-APACHE ../README.md THIRD-PARTY-LICENSES.html "$d/"
-            shopt -s nullglob; for f in ../crates/prm-ui/assets/fonts/*.txt; do cp "$f" "$d/licenses/"; done; shopt -u nullglob
-            (cd "$d" && zip -9 -r -X "../$d.zip" .)
-            rm -rf "$d"
-          done
           rm -f THIRD-PARTY-LICENSES.txt          # embedded in the exe
-          sha256sum -- *.exe *.zip *.pdb *.cdx.json THIRD-PARTY-LICENSES.html > SHA256SUMS.txt
+          sha256sum -- *.exe *.zip *.nupkg releases.*.json *.pdb *.cdx.json THIRD-PARTY-LICENSES.html > SHA256SUMS.txt
           ls -la
-      - name: Warn when unsigned
-        if: needs.sign.result == 'skipped'
-        run: echo "::warning::Release ${TAG:-dry-run} is not Authenticode-signed"
       - name: Upload dist (dry-run)
         if: needs.release.outputs.dry_run == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -405,30 +394,44 @@ jobs:
           subject-path: |
             dist/*.exe
             dist/*.zip
+            dist/*.nupkg
+            dist/releases.*.json
             dist/*.pdb
+      # why: users download either the installer or the zip, so the SBOM is attached to both.
       - name: Attest SBOM (x64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/pr-monitor-windows-x64.exe
+          subject-path: |
+            dist/AndrewKorchemniy.PRMonitor-win-x64-Setup.exe
+            dist/AndrewKorchemniy.PRMonitor-win-x64-Portable.zip
           sbom-path: dist/pr-monitor-windows-x64.cdx.json
       - name: Attest SBOM (arm64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/pr-monitor-windows-arm64.exe
+          subject-path: |
+            dist/AndrewKorchemniy.PRMonitor-win-arm64-Setup.exe
+            dist/AndrewKorchemniy.PRMonitor-win-arm64-Portable.zip
           sbom-path: dist/pr-monitor-windows-arm64.cdx.json
+      # why: the draft stays invisible to the app's update check until go-live publishes it; `vpk upload`
+      # is not used because it refuses a draft that already holds the feed, which would break `recover`.
       - name: Upload to draft
         if: needs.release.outputs.dry_run != 'true'
         run: |
           set -euo pipefail
+          # why: a re-run (recover) must not leave assets from an earlier attempt that this run did not make
+          for name in $(gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[].name'); do
+            [ -e "dist/$name" ] || gh release delete-asset "$TAG" "$name" -R "$REPO" --yes
+          done
           gh release upload "$TAG" -R "$REPO" --clobber \
-            dist/*.exe dist/*.zip dist/*.pdb dist/*.cdx.json dist/THIRD-PARTY-LICENSES.html dist/SHA256SUMS.txt
+            dist/*.exe dist/*.zip dist/*.nupkg dist/releases.*.json dist/*.pdb dist/*.cdx.json \
+            dist/THIRD-PARTY-LICENSES.html dist/SHA256SUMS.txt
 
   go-live:                         # human gate: the `release` environment requires a reviewer
     name: go-live
     needs: [release, publish]
-    # why: explicit result checks; the implicit success() also fails on the always-skipped sign job upstream
+    # why: explicit result checks; the implicit success() also fails when any upstream job was skipped
     if: >-
       !cancelled() && needs.publish.result == 'success' &&
       needs.release.outputs.dry_run != 'true'
@@ -468,6 +471,6 @@ jobs:
         with:
           identifier: AndrewKorchemniy.PRMonitor
           release-tag: ${{ needs.release.outputs.tag }}
-          installers-regex: '^pr-monitor-windows-(x64|arm64)\.exe$'
+          installers-regex: '^AndrewKorchemniy\.PRMonitor-win-(x64|arm64)-Setup\.exe$'
           max-versions-to-keep: 5
           token: ${{ secrets.WINGET_TOKEN }}   # classic PAT: public_repo + workflow
