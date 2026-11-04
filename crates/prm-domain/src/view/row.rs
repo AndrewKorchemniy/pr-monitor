@@ -9,7 +9,7 @@ use crate::{
     avatar::AvatarKey,
     classify::{PrStatus, ReviewState, ReviewerSet, VoteTally, is_human_thread, is_unresolved},
     ids::{OrgId, PrKey, Vsid},
-    model::{MergeStatus, PrRecord, Reviewer, ThreadDigest, VoteKind},
+    model::{MergeStatus, PrRecord, PullRequest, Reviewer, ThreadDigest, VoteKind},
     person::Person,
     snapshot::{ClassifiedPr, Fingerprint, OrgSnapshot, SeenMap},
     time::Timestamp,
@@ -32,6 +32,28 @@ pub struct ReviewerChip {
     /// On the org's reviewer list (their vote counts).
     pub listed: bool,
     pub group: bool,
+}
+
+/// A required reviewer group and where its review stands, for the Required column.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupChip {
+    pub name: Arc<str>,
+    pub initials: Arc<str>,
+    pub avatar: AvatarKey,
+    /// The group's own vote, which ADO rolls its members' votes into; no vote once it declined.
+    pub vote: VoteKind,
+    pub declined: bool,
+    /// Members who voted on the group's behalf, by name. Empty when the vote is not a review or
+    /// the reviewer list does not name them.
+    pub via: Arc<[GroupVoter]>,
+}
+
+/// A member whose vote counts for a group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupVoter {
+    pub name: Arc<str>,
+    /// The PR's author, whose vote ADO still rolls into the group.
+    pub is_author: bool,
 }
 
 /// An open human thread, for the peek drawer.
@@ -74,6 +96,8 @@ pub struct PrRow {
     pub age: AgeLabel,
     /// Listed voters first, then required reviewers, then by name.
     pub reviewers: Arc<[ReviewerChip]>,
+    /// Required reviewer groups, by name.
+    pub required_groups: Arc<[GroupChip]>,
     pub threads_preview: Arc<[ThreadPreview]>,
     pub web_url: Arc<str>,
     /// Lowercase "!4711 title repo project author unique source target org" for filtering.
@@ -158,6 +182,7 @@ fn build_row(
         last_activity: last_activity(record),
         age: age_label(now, pr.created_at),
         reviewers: reviewer_chips(&pr.reviewers, org.org, org.reviewers).into(),
+        required_groups: required_group_chips(pr, org.org).into(),
         threads_preview: thread_previews(&record.threads, org.ignored).into(),
         web_url: header.web_url.clone(),
         haystack: haystack(classified, record, org.org_label).into(),
@@ -207,6 +232,55 @@ fn reviewer_chips(reviewers: &[Reviewer], org: &OrgId, listed: &ReviewerSet) -> 
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     chips
+}
+
+/// The required groups among the reviewers, by name, each with the members who voted for it.
+fn required_group_chips(pr: &PullRequest, org: &OrgId) -> Vec<GroupChip> {
+    let mut chips: Vec<GroupChip> = pr
+        .reviewers
+        .iter()
+        .filter(|r| r.who.group && r.required)
+        .map(|group| {
+            let name = group.who.display_name();
+            // why: a group that declined has not reviewed, whatever vote it still carries.
+            let vote = if group.declined {
+                VoteKind::NoVote
+            } else {
+                group.vote.kind()
+            };
+            GroupChip {
+                initials: initials(&name).into(),
+                avatar: AvatarKey::new(org.clone(), group.who.id),
+                name,
+                vote,
+                declined: group.declined,
+                via: group_voters(pr, group, vote),
+            }
+        })
+        .collect();
+    chips.sort_by_cached_key(|chip| chip.name.to_lowercase());
+    chips
+}
+
+/// The members who cast the vote ADO rolled into `group`: not declined, voting for the group,
+/// and voting the way the group's vote reads (a member's differing vote did not decide it).
+fn group_voters(pr: &PullRequest, group: &Reviewer, vote: VoteKind) -> Arc<[GroupVoter]> {
+    if !vote.is_review() {
+        return Arc::from([]);
+    }
+    let mut voters: Vec<GroupVoter> = pr
+        .reviewers
+        .iter()
+        .filter(|m| {
+            !m.who.group && !m.declined && m.vote.kind() == vote && m.votes_for(group.who.id)
+        })
+        .map(|m| GroupVoter {
+            name: m.who.display_name(),
+            is_author: m.who.id == pr.author.id,
+        })
+        .collect();
+    voters.sort_by_cached_key(|v| v.name.to_lowercase());
+    voters.into()
 }
 
 /// The newest open human threads, newest first.

@@ -147,7 +147,7 @@ fn group_vote_only_from_author(pr: &PullRequest, group: Vsid) -> bool {
     let voters: Vec<&Reviewer> = pr
         .reviewers
         .iter()
-        .filter(|r| !r.who.group && is_review_vote(r.vote) && r.voted_for.contains(&group))
+        .filter(|r| !r.who.group && is_review_vote(r.vote) && r.votes_for(group))
         .collect();
     !voters.is_empty() && voters.iter().all(|r| r.who.id == pr.author.id)
 }
