@@ -176,8 +176,11 @@ pub(crate) fn dashboard(
         show_org: cx.state.show_org_column,
         stopped,
     };
+    // why: the tone step to the list sheet separates the toolbar; egui's separator line would run
+    // straight across above the sheet's rounded corners and hide them.
     egui::Panel::top("toolbar")
         .exact_size(theme.toolbar_height())
+        .show_separator_line(false)
         .frame(adapter::frame_chrome(&theme))
         .show(ui, |ui| {
             d.filter_focused = toolbar(ui, cx, &mut d.filter, inputs, &mut d.refresh_line);
@@ -195,14 +198,23 @@ pub(crate) fn dashboard(
     }
     if place == PeekPlace::Over {
         d.geometry = None;
-        egui::CentralPanel::no_frame()
+        let panel = egui::CentralPanel::no_frame()
             .frame(adapter::frame_raised(&theme))
             .show(ui, |ui| peek(ui, cx, d.view.selected_row()));
+        let rect = panel.response.rect;
+        adapter::paint_notches(ui.painter(), &theme, rect, adapter::TopCorners::BOTH);
         return;
     }
-    egui::CentralPanel::no_frame()
-        .frame(adapter::frame_canvas(&theme))
+    let panel = egui::CentralPanel::no_frame()
+        .frame(adapter::frame_sheet(&theme))
         .show(ui, |ui| body(ui, cx, d, (mode, window_focused)));
+    // why: a docked peek takes the right corner.
+    let corners = if matches!(place, PeekPlace::Docked { .. }) {
+        adapter::TopCorners::LEFT
+    } else {
+        adapter::TopCorners::BOTH
+    };
+    adapter::paint_notches(ui.painter(), &theme, panel.response.rect, corners);
 }
 
 /// The banners nobody dismissed, the stopped service first, scrolling when they would take more
@@ -218,7 +230,9 @@ fn banner_panel(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, d: &mut DashboardUi) {
         return;
     }
     let most = ui.available_height() * BANNERS_SHARE;
+    // why: with banners showing they sit directly above the sheet, so no separator line here either.
     egui::Panel::top("banners")
+        .show_separator_line(false)
         .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 6)))
         .show(ui, |ui| {
             scrolled_banners(ui, cx, (&visible, &mut d.banners_expanded), most);
@@ -285,6 +299,9 @@ fn docked_peek(
         .resizable(true)
         .frame(adapter::frame_raised(&theme))
         .show(ui, |ui| peek(ui, cx, d.view.selected_row()));
+    // why: the sheet at its left rounds its own top-left corner; this one is the peek's.
+    let rect = panel.response.rect;
+    adapter::paint_notches(ui.painter(), &theme, rect, adapter::TopCorners::RIGHT);
     let shown = panel.response.rect.width();
     if (shown - width).abs() > 1.0 {
         d.peek.width = Some(shown.round());

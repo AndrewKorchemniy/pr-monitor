@@ -512,7 +512,7 @@ fn settings_scenes() -> Vec<Scene> {
         .collect()
 }
 
-fn out_dir() -> PathBuf {
+pub(super) fn out_dir() -> PathBuf {
     std::env::var_os("PRM_GALLERY_DIR").map_or_else(
         || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/gallery"),
         PathBuf::from,
