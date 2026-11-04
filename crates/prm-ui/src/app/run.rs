@@ -23,10 +23,10 @@ use crate::{
     widgets::{slider::value_edit_active, toolbar::filter_id},
 };
 
-/// Whether something open closes itself on Esc, so the app must leave the key alone: an egui
-/// popup, a settings dialog (a picker, `dialog_open`) or a slider value being typed.
-pub(crate) fn esc_is_owned(ctx: &egui::Context, dialog_open: bool) -> bool {
-    egui::Popup::is_any_open(ctx) || dialog_open || value_edit_active(ctx)
+/// Whether an egui popup or a slider value being typed closes itself on Esc, so the app must
+/// leave the key alone. A settings dialog (a picker) is the caller's to add.
+pub(crate) fn esc_is_owned(ctx: &egui::Context) -> bool {
+    egui::Popup::is_any_open(ctx) || value_edit_active(ctx)
 }
 
 impl PrMonitorApp {
@@ -94,10 +94,8 @@ impl PrMonitorApp {
     fn escape(&mut self, ctx: &egui::Context, text_input: bool) {
         let filter_focused = ctx.memory(|m| m.has_focus(filter_id()));
         let input = EscapeInputs {
-            popup_open: esc_is_owned(
-                ctx,
-                self.settings.as_ref().is_some_and(|s| s.editing.is_some()),
-            ),
+            popup_open: esc_is_owned(ctx)
+                || self.settings.as_ref().is_some_and(|s| s.editing.is_some()),
             overlay: self.overlay.clone(),
             filter_focused: filter_focused || (text_input && self.dash.filter_focused),
             filter_empty: self.dash.filter.is_empty(),

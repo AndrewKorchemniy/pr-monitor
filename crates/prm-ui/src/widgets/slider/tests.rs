@@ -70,7 +70,7 @@ impl Fx {
     /// What `App::escape` does with Esc on the Settings screen.
     fn escape(&mut self, ctx: &egui::Context) {
         let input = EscapeInputs {
-            popup_open: crate::app::esc_is_owned(ctx, false),
+            popup_open: crate::app::esc_is_owned(ctx),
             screen: Screen::Settings,
             ..EscapeInputs::default()
         };
