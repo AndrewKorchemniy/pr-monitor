@@ -25,6 +25,7 @@ use zeroize::Zeroize as _;
 
 use crate::{
     actions::Actions,
+    avatars::AvatarStore,
     commands::{
         keymap::{Keymap, KeymapIssue},
         palette::PaletteState,
@@ -53,6 +54,7 @@ macro_rules! frame_cx {
         crate::frame::FrameCx {
             theme: $app.theme.current($ctx).clone(),
             state: &$app.state,
+            avatars: &$app.avatars,
             now: $app.clock.now(),
             offset: $app.offset,
             keymap: &$app.keymap,
@@ -66,6 +68,7 @@ use frame_cx;
 pub(crate) struct PrMonitorApp {
     link: ServiceLink,
     state: Arc<AppState>,
+    avatars: AvatarStore,
     host: Box<dyn UiHost>,
     clock: Arc<dyn Clock>,
     offset: UtcOffset,
@@ -144,6 +147,7 @@ pub fn create_app(cc: &eframe::CreationContext<'_>, init: UiInit) -> Box<dyn efr
         pat_error: None,
         pat_org: None,
         changes: ChangeLog::default(),
+        avatars: AvatarStore::default(),
         actions: Actions::default(),
         ui_sync: UiStateSync::new((*state.ui_state).clone()),
         quit_requested: init.quit_requested,

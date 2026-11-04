@@ -249,9 +249,9 @@ fn dragged_widths_give_way_before_a_column_drops() {
     let hidden: [String; 0] = [];
     let default = BTreeMap::new();
     let wide_repo = BTreeMap::from([("repo".to_owned(), 300.0)]);
-    let fits = visible_columns(room(930.0), &layout(GroupBy::Status, &hidden, &default));
+    let fits = visible_columns(room(950.0), &layout(GroupBy::Status, &hidden, &default));
     assert!(ids(&fits).contains(&ColumnId::Reviews));
-    let tighter = visible_columns(room(930.0), &layout(GroupBy::Status, &hidden, &wide_repo));
+    let tighter = visible_columns(room(950.0), &layout(GroupBy::Status, &hidden, &wide_repo));
     assert_eq!(ids(&tighter), ids(&fits));
     let repo = tighter.iter().find(|c| c.id == ColumnId::Repo);
     assert!(

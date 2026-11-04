@@ -12,11 +12,20 @@ use crate::{
     frame::FrameCx,
     theme::UiTheme,
     widgets::{
-        self, controls,
+        self,
+        avatar::{AvatarFace, avatar},
+        controls,
         status_pill::status_pill,
         vote_tally::{vote_color, vote_icon},
     },
 };
+
+/// A reviewer's vote glyph, and the lane that stands in for it when they have not voted
+/// (points).
+const VOTE_GLYPH: f32 = 10.0;
+const VOTE_LANE: f32 = 14.0;
+/// A reviewer's avatar in the drawer (points).
+const REVIEWER_AVATAR: f32 = 18.0;
 
 pub(crate) fn peek(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, pr: Option<&PrRow>) {
     let theme = cx.theme.clone();
@@ -34,7 +43,7 @@ pub(crate) fn peek(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, pr: Option<&PrRow>) 
         .show(ui, |ui| {
             header(ui, cx, &theme, pr);
             ui.add_space(theme.tokens.metrics.space.xl);
-            reviewers(ui, &theme, pr);
+            reviewers(ui, cx, &theme, pr);
             ui.add_space(theme.tokens.metrics.space.xl);
             threads(ui, cx, &theme, pr);
         });
@@ -96,7 +105,7 @@ fn close(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme) {
     }
 }
 
-fn reviewers(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
+fn reviewers(ui: &mut egui::Ui, cx: &FrameCx<'_>, theme: &UiTheme, pr: &PrRow) {
     widgets::field_label(ui, theme, copy::REVIEWS);
     if pr.reviewers.is_empty() {
         widgets::muted(ui, theme, copy::NO_REVIEWS);
@@ -106,12 +115,19 @@ fn reviewers(ui: &mut egui::Ui, theme: &UiTheme, pr: &PrRow) {
             let color = vote_color(theme, reviewer.vote);
             match vote_icon(reviewer.vote) {
                 Some(icon) => {
-                    crate::theme::icons::show(ui, icon, 10.0, color);
+                    crate::theme::icons::show(ui, icon, VOTE_GLYPH, color);
                 }
                 None => {
-                    ui.add_space(14.0);
+                    ui.add_space(VOTE_LANE);
                 }
             }
+            avatar(
+                ui,
+                theme,
+                cx.avatars,
+                &AvatarFace::of(reviewer),
+                REVIEWER_AVATAR,
+            );
             let name_color = if reviewer.listed {
                 theme.colors.text_primary
             } else {

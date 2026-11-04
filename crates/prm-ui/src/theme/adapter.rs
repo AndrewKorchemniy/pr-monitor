@@ -4,7 +4,12 @@
 use eframe::egui::{
     self, Color32, CornerRadius, Margin, Shadow, Stroke, Style, Visuals, style::WidgetVisuals,
 };
-use prm_theme::{Appearance, Rgba8};
+use prm_domain::Vsid;
+use prm_theme::{
+    Appearance, Palette, Rgba8,
+    contrast::ensure_contrast,
+    oklab::{Oklab, from_oklab},
+};
 
 use crate::{
     render::policy::RenderPolicy,
@@ -289,6 +294,46 @@ pub(crate) fn frame_dialog(theme: &UiTheme, policy: RenderPolicy) -> egui::Frame
         frame.shadow.offset = [0, m.elevation.popup_offset[1].saturating_mul(2)];
     }
     frame
+}
+
+/// How many hues the initials circles are spread over.
+pub(crate) const AVATAR_HUES: usize = 24;
+/// Initials must read as well as body text.
+const AVATAR_MIN_CONTRAST: f64 = 4.5;
+
+/// An initials circle's fill and text.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AvatarTint {
+    pub bg: Color32,
+    pub text: Color32,
+}
+
+/// Which of the `AVATAR_HUES` a person's initials circle uses. Stable across runs and machines
+/// (it is derived from the id alone), so the same person keeps the same colour.
+pub(crate) fn avatar_hue(id: Vsid) -> usize {
+    let bucket = prm_domain::hash::fnv64(id.as_bytes()) % AVATAR_HUES as u64;
+    usize::try_from(bucket).unwrap_or(0)
+}
+
+/// The circle colours for every hue: a muted fill (dark in dark themes, pale in light ones)
+/// with the theme's primary text colour moved just far enough to hold `AVATAR_MIN_CONTRAST`.
+pub(crate) fn avatar_tints(palette: &Palette, dark: bool) -> [AvatarTint; AVATAR_HUES] {
+    let lightness = if dark { 0.42 } else { 0.88 };
+    std::array::from_fn(|bucket| {
+        let hue = (bucket as f64 * 360.0 / AVATAR_HUES as f64).to_radians();
+        let chroma = 0.08;
+        let lab = Oklab {
+            l: lightness,
+            a: chroma * hue.cos(),
+            b: chroma * hue.sin(),
+        };
+        let bg = from_oklab(lab, u8::MAX);
+        let text = ensure_contrast(palette.text_primary, bg, AVATAR_MIN_CONTRAST);
+        AvatarTint {
+            bg: color(bg),
+            text: color(text),
+        }
+    })
 }
 
 /// Ensures nothing outside this module builds colors from literals.

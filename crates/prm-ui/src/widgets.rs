@@ -1,5 +1,6 @@
 //! Reusable widgets. Each reads colors from the theme and reports intent through `UiAction`s.
 
+pub(crate) mod avatar;
 pub(crate) mod banner;
 pub(crate) mod card;
 pub(crate) mod controls;
