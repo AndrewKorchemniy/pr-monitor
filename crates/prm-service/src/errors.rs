@@ -123,6 +123,7 @@ impl From<&AdoError> for UiError {
             }
             AdoError::Cancelled => Self::new(text::CANCELLED).transient(None),
             AdoError::ForeignUrl => Self::internal("untrusted address"),
+            AdoError::NotAnImage { .. } => Self::internal("not a picture"),
         }
     }
 }

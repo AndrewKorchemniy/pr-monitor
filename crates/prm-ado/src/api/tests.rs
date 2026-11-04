@@ -188,6 +188,13 @@ async fn avatar_failures_are_classified() {
             },
         ),
         (
+            "json error body",
+            Scripted::with_type(200, "{}", "application/json"),
+            AdoError::NotAnImage {
+                content_type: Some("application/json".into()),
+            },
+        ),
+        (
             "html page",
             Scripted::with_type(200, "<html>", "text/html"),
             AdoError::Auth(prm_domain::auth::AuthError::SignInPageReturned),

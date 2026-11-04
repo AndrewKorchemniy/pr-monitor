@@ -408,3 +408,39 @@ async fn transient_statuses_are_retried_and_permanent_ones_remembered() {
         h.stop().await;
     }
 }
+
+/// An HTML sign-in page switches avatars off for the org; any other non-picture response only
+/// leaves that picture absent, and the next day's refresh asks again.
+#[tokio::test(start_paused = true)]
+async fn only_an_html_page_switches_avatars_off() {
+    let json = AdoError::NotAnImage {
+        content_type: Some("application/json".into()),
+    };
+    let html = AdoError::Auth(prm_domain::auth::AuthError::SignInPageReturned);
+    for (name, error, disabled) in [("json", json, false), ("html", html, true)] {
+        let mut h = ServiceHarness::start(served_setup(&[ann(), bob()]));
+        h.api(&org(CONTOSO)).fail(ApiCall::Avatar, error);
+        refreshed(&mut h, CONTOSO, 1).await;
+        h.until("the attempt", |h| {
+            h.api(&org(CONTOSO)).calls(ApiCall::Avatar) >= 1
+        })
+        .await;
+        h.settle().await;
+        let first = h.api(&org(CONTOSO)).calls(ApiCall::Avatar);
+        assert!(h.avatar_cache.is_empty(), "{name}: nothing cached");
+
+        h.api(&org(CONTOSO)).clear_failures();
+        h.advance(Duration::from_secs(DAY.unsigned_abs() + 60))
+            .await;
+        h.send(Command::RefreshNow);
+        refreshed(&mut h, CONTOSO, 2).await;
+        if !disabled {
+            h.until("both faces", |h| loaded(h).len() == 2).await;
+        }
+        h.settle().await;
+        let more = h.api(&org(CONTOSO)).calls(ApiCall::Avatar) - first;
+        assert_eq!(more > 0, !disabled, "{name}: asked again after a day");
+        assert_eq!(loaded(&h).len(), if disabled { 0 } else { 2 }, "{name}");
+        h.stop().await;
+    }
+}

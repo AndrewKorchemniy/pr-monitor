@@ -205,7 +205,8 @@ impl FailureKind {
             | AdoError::Timeout
             | AdoError::Decode(_)
             | AdoError::Cancelled
-            | AdoError::ForeignUrl => Self::Other,
+            | AdoError::ForeignUrl
+            | AdoError::NotAnImage { .. } => Self::Other,
         }
     }
 }

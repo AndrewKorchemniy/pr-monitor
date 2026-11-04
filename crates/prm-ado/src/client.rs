@@ -347,21 +347,35 @@ fn classify(
 /// A 2xx response is done, unless it should carry a body of the wrong type.
 fn classify_success(method: &Method, response: HttpResponse, expect: Expect) -> Outcome {
     let expects_body = *method != Method::HEAD && response.status.as_u16() != 204;
-    if expects_body && !has_expected_type(&response.headers, expect) {
+    if !expects_body || has_expected_type(&response.headers, expect) {
+        return Outcome::Done(response);
+    }
+    let content_type = content_type(&response.headers);
+    let html = content_type
+        .as_deref()
+        .is_some_and(|ct| ct.starts_with("text/html"));
+    if expect == Expect::Image && !html {
+        // Not a sign-in page: this one picture is unusable, the token is fine.
+        Outcome::Fail(AdoError::NotAnImage {
+            content_type: content_type.map(Arc::from),
+        })
+    } else {
         // A 203 with an HTML sign-in page, or any success of the wrong type: the token
         // was not accepted.
         Outcome::Fail(AuthError::SignInPageReturned.into())
-    } else {
-        Outcome::Done(response)
     }
 }
 
-fn has_expected_type(headers: &HeaderMap, expect: Expect) -> bool {
-    let content_type = headers
+/// The lower-cased `Content-Type` value, when there is one.
+fn content_type(headers: &HeaderMap) -> Option<String> {
+    headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .map(str::to_ascii_lowercase);
-    content_type.is_some_and(|ct| match expect {
+        .map(str::to_ascii_lowercase)
+}
+
+fn has_expected_type(headers: &HeaderMap, expect: Expect) -> bool {
+    content_type(headers).is_some_and(|ct| match expect {
         Expect::Json => ct.starts_with("application/json") || ct.contains("+json"),
         Expect::Image => ct.starts_with("image/"),
     })

@@ -163,7 +163,12 @@ async fn fetch_one(
         // A timeout or "too early" answer says nothing about the picture: ask again next refresh.
         Err(AdoError::Http { status, .. }) if is_passing(status) => Fetched::Retry,
         // Nothing usable at that address, and asking again soon will not change it.
-        Err(AdoError::ForeignUrl | AdoError::Http { .. } | AdoError::Decode(_)) => absent(key, now),
+        Err(
+            AdoError::ForeignUrl
+            | AdoError::Http { .. }
+            | AdoError::Decode(_)
+            | AdoError::NotAnImage { .. },
+        ) => absent(key, now),
         Err(AdoError::Auth(error)) if error.severity() == AuthSeverity::Transient => Fetched::Retry,
         Err(AdoError::Auth(_) | AdoError::Forbidden { .. }) => Fetched::Refused,
         Err(
