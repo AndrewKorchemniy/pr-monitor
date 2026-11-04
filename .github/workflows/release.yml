@@ -282,7 +282,7 @@ jobs:
             icon=app.ico
           else
             cp "target/$TARGET/release/pr-monitor" "out/exe/pr-monitor-linux-$ARCH"
-            icon=icon-256.png
+            icon="icon-256.png"
           fi
           # build.rs generates the icon; the package job has no cargo, so ship it as an artifact.
           icons=(target/"$TARGET"/release/build/pr-monitor-*/out/"$icon")

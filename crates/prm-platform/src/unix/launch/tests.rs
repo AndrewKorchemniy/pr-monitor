@@ -6,8 +6,8 @@ const MOUNT: &str = "/tmp/.mount_PRMonixyz";
 const MOUNTED: &str = "/tmp/.mount_PRMonixyz/usr/bin/pr-monitor";
 const IMAGE: &str = "/home/me/Apps/PR Monitor.AppImage";
 
-fn env(value: &str) -> Option<OsString> {
-    Some(OsString::from(value))
+fn os(value: &str) -> OsString {
+    OsString::from(value)
 }
 
 #[test]
@@ -18,7 +18,7 @@ fn pick_keeps_the_exe_outside_an_appimage() {
 #[test]
 fn pick_prefers_the_appimage_file_when_running_from_its_mount() {
     assert_eq!(
-        pick(Path::new(MOUNTED), env(IMAGE), env(MOUNT)),
+        pick(Path::new(MOUNTED), Some(os(IMAGE)), Some(os(MOUNT))),
         Path::new(IMAGE)
     );
 }
@@ -26,15 +26,15 @@ fn pick_prefers_the_appimage_file_when_running_from_its_mount() {
 #[test]
 fn pick_ignores_variables_inherited_from_another_appimage() {
     let exe = Path::new("/usr/local/bin/pr-monitor");
-    assert_eq!(pick(exe, env(IMAGE), env(MOUNT)), exe);
-    assert_eq!(pick(exe, env(IMAGE), None), exe);
+    assert_eq!(pick(exe, Some(os(IMAGE)), Some(os(MOUNT))), exe);
+    assert_eq!(pick(exe, Some(os(IMAGE)), None), exe);
 }
 
 #[test]
 fn pick_ignores_empty_variables() {
     let exe = Path::new(MOUNTED);
-    assert_eq!(pick(exe, env(""), env(MOUNT)), exe);
-    assert_eq!(pick(exe, env(IMAGE), env("")), exe);
+    assert_eq!(pick(exe, Some(os("")), Some(os(MOUNT))), exe);
+    assert_eq!(pick(exe, Some(os(IMAGE)), Some(os(""))), exe);
 }
 
 #[test]
