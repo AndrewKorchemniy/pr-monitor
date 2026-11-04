@@ -4,14 +4,21 @@ use eframe::egui::{self, Color32, Sense, vec2};
 use prm_domain::{model::VoteKind, view::ReviewerChip};
 
 use crate::{
+    avatars::AvatarStore,
     copy,
     theme::{UiTheme, icons::Icon},
+    widgets::avatar::{AvatarFace, paint_avatar},
 };
 
-const MARK: f32 = 10.0;
-const GAP: f32 = 4.0;
+/// A reviewer's avatar (points).
+const AVATAR: f32 = 16.0;
+/// From one avatar's left edge to the next.
+const STEP: f32 = 20.0;
+/// The vote glyph on an avatar's corner, and the disc behind it.
+const BADGE: f32 = 7.0;
+const BADGE_DISC: f32 = 9.0;
 /// At most this many marks; the rest become "+N".
-const MAX_MARKS: usize = 5;
+const MAX_MARKS: usize = 4;
 
 pub(crate) const fn vote_icon(vote: VoteKind) -> Option<Icon> {
     match vote {
@@ -40,42 +47,43 @@ fn voters(reviewers: &[ReviewerChip]) -> impl Iterator<Item = &ReviewerChip> {
         .filter(|r| r.listed && vote_icon(r.vote).is_some())
 }
 
+/// The avatar of each reviewer who voted, with their vote on its corner; the rest as "+N".
 pub(crate) fn vote_tally(
     ui: &mut egui::Ui,
     theme: &UiTheme,
+    avatars: &AvatarStore,
     reviewers: &[ReviewerChip],
 ) -> egui::Response {
-    let shown: Vec<&ReviewerChip> = voters(reviewers).take(MAX_MARKS).collect();
-    let extra = voters(reviewers).count().saturating_sub(shown.len());
-    let extra_galley = (extra > 0).then(|| {
+    let total = voters(reviewers).count();
+    let extra_galley = |extra: usize| {
         ui.painter().layout_no_wrap(
             format!("+{extra}"),
             theme.fonts.mono.clone(),
             theme.colors.text_muted,
         )
-    });
-    let marks_w = shown.len() as f32 * (MARK + GAP);
-    let width = marks_w + extra_galley.as_ref().map_or(0.0, |g| g.size().x);
+    };
+    let room = ui.available_width();
+    let mut shown = total.min(MAX_MARKS).min(marks_in(room).max(1));
+    let mut galley = None;
+    if shown < total {
+        let g = extra_galley(total - shown);
+        shown = shown.min(marks_in(room - g.size().x).max(1));
+        galley = Some(extra_galley(total - shown));
+    }
+    let width = shown as f32 * STEP + galley.as_ref().map_or(0.0, |g| g.size().x);
     let (rect, response) =
         ui.allocate_exact_size(vec2(width, ui.available_height()), Sense::hover());
     if ui.is_rect_visible(rect) {
         let mut x = rect.left();
-        for reviewer in &shown {
-            let mark = egui::Rect::from_min_size(
-                egui::pos2(x, rect.center().y - MARK / 2.0),
-                vec2(MARK, MARK),
-            );
-            if let Some(icon) = vote_icon(reviewer.vote) {
-                crate::theme::icons::paint(
-                    ui.painter(),
-                    mark,
-                    icon,
-                    vote_color(theme, reviewer.vote),
-                );
-            }
-            x += MARK + GAP;
+        for reviewer in voters(reviewers).take(shown) {
+            let at = egui::pos2(x, rect.center().y - AVATAR / 2.0);
+            let face = AvatarFace::of(reviewer);
+            let face_rect = egui::Rect::from_min_size(at, vec2(AVATAR, AVATAR));
+            paint_avatar(ui, theme, avatars, &face, face_rect);
+            paint_vote_badge(ui.painter(), theme, face_rect, reviewer.vote);
+            x += STEP;
         }
-        if let Some(galley) = extra_galley {
+        if let Some(galley) = galley {
             let pos = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
             ui.painter().galley(pos, galley, theme.colors.text_muted);
         }
@@ -88,6 +96,33 @@ pub(crate) fn vote_tally(
     };
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &summary));
     response
+}
+
+/// How many marks fit in `room` points.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a small, non-negative count of marks"
+)]
+fn marks_in(room: f32) -> usize {
+    (room.max(0.0) / STEP) as usize
+}
+
+/// The vote's glyph on the bottom-right corner of an avatar's `rect`, on a disc in the canvas
+/// colour so it stays readable over any picture. No glyph for a vote that has none.
+pub(crate) fn paint_vote_badge(
+    painter: &egui::Painter,
+    theme: &UiTheme,
+    rect: egui::Rect,
+    vote: VoteKind,
+) {
+    let Some(icon) = vote_icon(vote) else {
+        return;
+    };
+    let center = rect.right_bottom() - vec2(BADGE_DISC, BADGE_DISC) / 2.0 + vec2(2.0, 2.0);
+    painter.circle_filled(center, BADGE_DISC / 2.0, theme.colors.surface_canvas);
+    let glyph = egui::Rect::from_center_size(center, vec2(BADGE, BADGE));
+    crate::theme::icons::paint(painter, glyph, icon, vote_color(theme, vote));
 }
 
 /// "Ana: Approved · Ben: Waiting for author".

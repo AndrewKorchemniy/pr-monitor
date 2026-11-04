@@ -5,6 +5,7 @@
 
 mod actor;
 mod auth_machine;
+mod avatars;
 mod clock;
 mod command;
 pub mod consts;
@@ -28,6 +29,7 @@ pub use command::{Command, CommandSender};
 pub use errors::UiError;
 pub use event::{AppEvent, ChannelEventSink, EventSink, SearchPhase, channel_sink};
 pub use handle::{InitialData, ServiceDeps, ServiceHandle, build, initial_state, spawn};
+pub use jobs::LoadedAvatar;
 pub use state::{AppState, AuthStateView, OrgHealth, OrgStatus, RefreshPhase};
 
 #[cfg(test)]

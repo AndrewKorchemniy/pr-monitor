@@ -2,6 +2,7 @@
 //! catalog caches, and where they live. Loads never fail; writes are atomic.
 #![forbid(unsafe_code)]
 
+pub mod avatar_cache;
 pub mod diff;
 pub mod error;
 pub mod limits;
@@ -15,6 +16,7 @@ pub mod validate;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 
+pub use avatar_cache::{AvatarCache, CachedAvatar, FileAvatarCache};
 pub use diff::{ConfigChanges, OrgChanges, diff_configs};
 pub use error::{ConfigError, ConfigIssue, Severity};
 pub use paths::{AppPaths, resolve_root};

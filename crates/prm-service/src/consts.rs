@@ -69,3 +69,21 @@ pub const TENANT_TTL: Duration = Duration::from_hours(7 * 24);
 pub const PAT_EXPIRY_WARNING_DAYS: i64 = 7;
 /// Blocking-pool threads on the service runtime (toasts, registry, file writes).
 pub const MAX_BLOCKING_THREADS: usize = 4;
+/// Avatar downloads per org per refresh. A refresh already spends up to `THREAD_READ_BUDGET`
+/// thread reads; 40 small GETs at `AVATAR_CONCURRENCY` are about 4 s and under 30% of its
+/// request count in the worst case. A cold org with 200 people fills in 5 refreshes, and every
+/// later start is served from disk (disk hits cost no budget).
+pub const AVATAR_FETCH_BUDGET: usize = 40;
+/// Concurrent avatar downloads per org (the client's own limit still applies).
+pub const AVATAR_CONCURRENCY: usize = 3;
+/// A cached avatar is refetched after this long.
+pub const AVATAR_TTL: Duration = Duration::from_hours(7 * 24);
+/// "No picture" is asked again after this long: a picture added later shows up tomorrow, and a
+/// one-off glitch is not pinned for a week.
+pub const AVATAR_ABSENT_TTL: Duration = Duration::from_hours(24);
+/// Cached avatars not rewritten for this long are deleted at startup.
+pub const AVATAR_CACHE_KEEP: Duration = Duration::from_hours(30 * 24);
+/// A picture larger than this is not decoded.
+pub const AVATAR_MAX_BYTES: usize = 256 * 1024;
+/// A picture wider or taller than this is not decoded (it would need megabytes to unpack).
+pub const AVATAR_MAX_SOURCE_PX: u32 = 1_024;

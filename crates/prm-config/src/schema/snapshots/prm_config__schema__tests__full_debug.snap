@@ -124,6 +124,7 @@ Config {
                         ),
                         group: false,
                         descriptor: None,
+                        avatar: None,
                     },
                     Person {
                         id: Vsid(81fa6389-0872-6fdd-a451-7ba7880f566a),
@@ -133,6 +134,7 @@ Config {
                         ),
                         group: false,
                         descriptor: None,
+                        avatar: None,
                     },
                 ],
                 reviewers: [
@@ -144,6 +146,7 @@ Config {
                         ),
                         group: false,
                         descriptor: None,
+                        avatar: None,
                     },
                     Person {
                         id: Vsid(98d08d98-4b5c-4c0b-8d2e-1f0c5b6a7e91),
@@ -151,6 +154,7 @@ Config {
                         unique_name: None,
                         group: true,
                         descriptor: None,
+                        avatar: None,
                     },
                 ],
                 ignored_comment_authors: [
@@ -160,6 +164,7 @@ Config {
                         unique_name: None,
                         group: false,
                         descriptor: None,
+                        avatar: None,
                     },
                 ],
             },
@@ -199,6 +204,7 @@ Config {
                         unique_name: None,
                         group: false,
                         descriptor: None,
+                        avatar: None,
                     },
                 ],
                 reviewers: [],

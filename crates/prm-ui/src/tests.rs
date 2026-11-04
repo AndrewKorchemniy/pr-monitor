@@ -22,6 +22,7 @@ use crate::{
 };
 
 mod autofocus;
+mod avatars;
 mod cards;
 mod corners;
 mod dashboard;

@@ -1,6 +1,7 @@
 //! Service scenarios: the real actor over fakes, on a paused-time runtime.
 
 mod auth;
+mod avatars;
 mod commands;
 mod config;
 mod failures;

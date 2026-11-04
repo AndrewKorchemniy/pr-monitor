@@ -12,11 +12,17 @@ use crate::{
         icons::{self, Icon},
     },
     view::columns::{ColumnId, ColumnSpec, FLAG_SLOT},
-    widgets::{status_pill::status_pill, vote_tally::vote_tally},
+    widgets::{
+        avatar::{AvatarFace, avatar},
+        status_pill::status_pill,
+        vote_tally::vote_tally,
+    },
 };
 
 /// Below this Status column width only the glyph shows.
 const COMPACT_STATUS: f32 = 100.0;
+/// The author's avatar (points).
+const AUTHOR_AVATAR: f32 = 20.0;
 /// A flag glyph in the Flags column.
 const FLAG_GLYPH: f32 = 11.0;
 
@@ -45,11 +51,9 @@ pub(super) fn cell(
         ColumnId::Repo => {
             ui.add(egui::Label::new(text(&pr.repo_name)).truncate());
         }
-        ColumnId::Author => {
-            ui.add(egui::Label::new(text(&pr.author.display_name())).truncate());
-        }
+        ColumnId::Author => author_cell(ui, rcx, pr),
         ColumnId::Reviews => {
-            vote_tally(ui, theme, &pr.reviewers);
+            vote_tally(ui, theme, rcx.frame.avatars, &pr.reviewers);
         }
         ColumnId::Comments => comments_cell(ui, theme, pr),
         ColumnId::Age => {
@@ -59,6 +63,23 @@ pub(super) fn cell(
             ui.add(egui::Label::new(text(&pr.org_label)).truncate());
         }
     }
+}
+
+/// The author's avatar and name.
+fn author_cell(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, pr: &PrRow) {
+    let theme = rcx.theme;
+    let name = pr.author.display_name();
+    let who = AvatarFace {
+        key: &pr.author_avatar,
+        initials: &pr.author_initials,
+        name: &name,
+    };
+    avatar(ui, theme, rcx.frame.avatars, &who, AUTHOR_AVATAR);
+    ui.add_space(theme.tokens.metrics.space.xs);
+    let label = RichText::new(name.as_ref())
+        .font(theme.fonts.body.clone())
+        .color(theme.colors.text_primary);
+    ui.add(egui::Label::new(label).truncate());
 }
 
 /// The status glyph (and label unless `compact`), explained on hover.

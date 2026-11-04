@@ -41,6 +41,11 @@ impl PrMonitorApp {
             AppEvent::PatResult { org, result } => self.on_pat_result(&org, result),
             AppEvent::ConfigApplied { saved, .. } => self.on_config_applied(saved),
             AppEvent::Changes(changes) => self.changes.record(&changes),
+            AppEvent::Avatars(loaded) => {
+                for avatar in loaded.iter() {
+                    self.avatars.insert(ctx, avatar);
+                }
+            }
             AppEvent::NotificationTestResult(result) => self.on_test_result(result),
             AppEvent::QuitForUpdate => {
                 tracing::info!("quitting so the update can be applied");

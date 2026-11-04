@@ -42,6 +42,10 @@ pub enum AdoError {
     Decode(Arc<str>),
     #[error("Cancelled.")]
     Cancelled,
+    /// An address the server named that is not one of this organization's own, so no request
+    /// was made (the token goes only to the organization's hosts).
+    #[error("Not an address of this organization.")]
+    ForeignUrl,
 }
 
 impl AdoError {
@@ -69,7 +73,8 @@ impl AdoError {
             | Self::Network(_)
             | Self::Timeout
             | Self::Decode(_)
-            | Self::Cancelled => None,
+            | Self::Cancelled
+            | Self::ForeignUrl => None,
         }
     }
 }

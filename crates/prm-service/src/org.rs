@@ -29,6 +29,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     auth_machine::AuthState,
+    avatars::AvatarBook,
     consts::{PEOPLE_CACHE_CAP, PEOPLE_PERSIST_CAP},
     errors::UiError,
     scheduler::Schedule,
@@ -322,6 +323,7 @@ pub(crate) struct OrgLink {
     pub pre_sign_in: Option<AuthState>,
     pub search: Option<(RequestId, AbortHandle)>,
     pub catalog_loading: bool,
+    pub avatars: AvatarBook,
     pub last_probe: Option<Instant>,
     pub last_manual: Option<Instant>,
 }
@@ -349,6 +351,7 @@ impl OrgLink {
             pre_sign_in: None,
             search: None,
             catalog_loading: false,
+            avatars: AvatarBook::default(),
             last_probe: None,
             last_manual: None,
         }
@@ -360,6 +363,8 @@ impl OrgLink {
         self.auth = auth;
         self.api = api;
         self.generation += 1;
+        // why: new credentials may be allowed what the old ones were refused.
+        self.avatars.disabled = false;
     }
 
     fn clients(

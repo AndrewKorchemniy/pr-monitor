@@ -86,3 +86,62 @@ fn rgba8_converts_without_premultiplying_opaque_colors() {
     });
     assert_eq!(c.to_array(), [10, 20, 30, 255]);
 }
+
+#[test]
+fn avatar_text_reads_on_every_tint_of_every_builtin_theme() {
+    let registry = prm_theme::ThemeRegistry::builtin();
+    let mut checked = 0;
+    for (id, _) in registry.list() {
+        let set = prm_theme::resolve(
+            &registry,
+            &prm_theme::ThemeSelection {
+                theme: id.as_str().into(),
+                dark: id.as_str().into(),
+                light: id.as_str().into(),
+                corners: prm_theme::metrics::Corners::default(),
+            },
+        );
+        for tokens in [set.dark, set.light] {
+            let dark = tokens.appearance == Appearance::Dark;
+            for (hue, tint) in avatar_tints(&tokens.palette, dark).iter().enumerate() {
+                let (bg, fg) = (tint.bg, tint.text);
+                let ratio = prm_theme::contrast::contrast_ratio(
+                    Rgba8 {
+                        r: fg.r(),
+                        g: fg.g(),
+                        b: fg.b(),
+                        a: 255,
+                    },
+                    Rgba8 {
+                        r: bg.r(),
+                        g: bg.g(),
+                        b: bg.b(),
+                        a: 255,
+                    },
+                );
+                assert!(ratio >= 4.5, "{} hue {hue}: {ratio}", id.as_str());
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked >= 4 * 24, "{checked}");
+}
+
+#[test]
+fn avatar_tints_differ_between_neighbouring_hues() {
+    let tints = avatar_tints(&fallback().tokens.palette, true);
+    for pair in tints.windows(2) {
+        assert_ne!(pair[0].bg, pair[1].bg);
+    }
+}
+
+#[test]
+fn avatar_hue_is_stable_and_in_range() {
+    let id = Vsid::from_u128(0x1234);
+    assert_eq!(avatar_hue(id), GOLDEN_HUE);
+    for n in 0..200 {
+        assert!(avatar_hue(Vsid::from_u128(n)) < AVATAR_HUES);
+    }
+}
+
+const GOLDEN_HUE: usize = 11;

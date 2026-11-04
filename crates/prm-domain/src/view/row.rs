@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::{
+    avatar::AvatarKey,
     classify::{PrStatus, ReviewState, ReviewerSet, VoteTally, is_human_thread, is_unresolved},
     ids::{OrgId, PrKey, Vsid},
     model::{MergeStatus, PrRecord, Reviewer, ThreadDigest, VoteKind},
@@ -25,6 +26,7 @@ pub const MAX_THREAD_PREVIEWS: usize = 3;
 pub struct ReviewerChip {
     pub name: Arc<str>,
     pub initials: Arc<str>,
+    pub avatar: AvatarKey,
     pub vote: VoteKind,
     pub required: bool,
     /// On the org's reviewer list (their vote counts).
@@ -52,6 +54,7 @@ pub struct PrRow {
     pub project_name: Arc<str>,
     pub author: Person,
     pub author_initials: Arc<str>,
+    pub author_avatar: AvatarKey,
     pub status: PrStatus,
     pub review: ReviewState,
     pub tally: VoteTally,
@@ -139,6 +142,7 @@ fn build_row(
         project_name: header.project_name.clone(),
         author: header.author.clone(),
         author_initials: initials(&author_name).into(),
+        author_avatar: AvatarKey::new(org.org.clone(), header.author.id),
         status: class.status,
         review: class.review,
         tally: class.tally,
@@ -153,7 +157,7 @@ fn build_row(
         created_at: pr.created_at,
         last_activity: last_activity(record),
         age: age_label(now, pr.created_at),
-        reviewers: reviewer_chips(&pr.reviewers, org.reviewers).into(),
+        reviewers: reviewer_chips(&pr.reviewers, org.org, org.reviewers).into(),
         threads_preview: thread_previews(&record.threads, org.ignored).into(),
         web_url: header.web_url.clone(),
         haystack: haystack(classified, record, org.org_label).into(),
@@ -179,13 +183,14 @@ fn last_activity(record: &PrRecord) -> Timestamp {
         .fold(record.pr.created_at, Timestamp::max)
 }
 
-fn reviewer_chips(reviewers: &[Reviewer], listed: &ReviewerSet) -> Vec<ReviewerChip> {
+fn reviewer_chips(reviewers: &[Reviewer], org: &OrgId, listed: &ReviewerSet) -> Vec<ReviewerChip> {
     let mut chips: Vec<ReviewerChip> = reviewers
         .iter()
         .map(|r| {
             let name = r.who.display_name();
             ReviewerChip {
                 initials: initials(&name).into(),
+                avatar: AvatarKey::new(org.clone(), r.who.id),
                 name,
                 vote: r.vote.kind(),
                 required: r.required,

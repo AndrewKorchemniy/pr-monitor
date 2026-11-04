@@ -83,3 +83,7 @@ Vellum and Graphite). The choice is stored as `ui.theme = "system"`, with `ui.th
   other symbols are painted icons, and key hints use words ("Down", not "↓").
 - Adding a built-in theme means adding one TOML file to `crates/prm-theme/themes/`.
   `build.rs` embeds every file in that folder.
+- Avatars without a picture show initials on one of 24 muted hues, chosen from the person's id
+  (`avatar_hue`). `avatar_tints` builds the 24 fills per theme and moves the theme's primary text
+  colour just far enough to reach 4.5:1 on each, so a user theme's overrides are still legible;
+  a test checks every built-in theme.
