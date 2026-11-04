@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod auth;
+pub mod avatar;
 pub mod classify;
 pub mod diff;
 pub mod hash;
@@ -26,6 +27,7 @@ pub mod view;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 
+pub use avatar::AvatarKey;
 pub use classify::{ClassifyConfig, PrStatus};
 pub use ids::{OrgId, PrKey, Vsid};
 pub use person::Person;

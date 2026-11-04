@@ -203,6 +203,7 @@ impl Service {
         }
         self.rows.dirty = true;
         self.mark_persist();
+        self.start_avatars(idx, true);
         if !absorbed.events.is_empty() {
             let events: Arc<[_]> = absorbed.events.clone().into();
             self.deps.events.emit(AppEvent::Changes(events));

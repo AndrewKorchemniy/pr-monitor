@@ -16,7 +16,10 @@ use std::{
 
 use prm_ado::testing::{FakeAdoApi, FakeConnector, FakeOrg};
 use prm_auth::testing::FakeAuthFactory;
-use prm_config::{Config, ConfigError, PersistedState, StateRepo, testing::MemoryRepo};
+use prm_config::{
+    Config, ConfigError, PersistedState, StateRepo,
+    testing::{MemoryAvatarCache, MemoryRepo},
+};
 use prm_domain::{
     OrgId, Timestamp,
     model::Catalog,
@@ -335,6 +338,8 @@ pub struct HarnessSetup {
     pub base_wall: Timestamp,
     /// Not installed unless a test says otherwise, so other tests never meet an update check.
     pub updater: Arc<FakeUpdater>,
+    /// Pre-seed it to start with pictures on disk.
+    pub avatar_cache: Arc<MemoryAvatarCache>,
 }
 
 fn not_installed_updater() -> FakeUpdater {
@@ -353,6 +358,7 @@ impl Default for HarnessSetup {
             startup_delay: Duration::ZERO,
             base_wall: prm_domain::testing::ts(prm_domain::testing::BASE_TIME_SECS),
             updater: Arc::new(not_installed_updater()),
+            avatar_cache: Arc::new(MemoryAvatarCache::default()),
         }
     }
 }
@@ -372,6 +378,7 @@ pub struct ServiceHarness {
     pub autostart: Arc<FakeAutostart>,
     pub updater: Arc<FakeUpdater>,
     pub clock: Arc<TokioClock>,
+    pub avatar_cache: Arc<MemoryAvatarCache>,
     task: JoinHandle<()>,
     _release: ReleaseOnDrop,
 }
@@ -420,6 +427,7 @@ impl ServiceHarness {
                 inner: repo.clone(),
                 gate: gate.clone(),
             }),
+            avatar_cache: setup.avatar_cache.clone(),
         };
         let (config, config_issues) = prm_config::normalize(setup.config);
         let init = InitialData {
@@ -445,6 +453,7 @@ impl ServiceHarness {
             autostart,
             updater: setup.updater,
             clock,
+            avatar_cache: setup.avatar_cache,
             task: tokio::spawn(service),
         }
     }
@@ -466,6 +475,18 @@ impl ServiceHarness {
         let waited = tokio::time::timeout(WAIT_LIMIT, wait_until(&mut self.state, &ready)).await;
         let found = waited.unwrap_or_else(|_| panic!("timed out waiting for {what}"));
         found.unwrap_or_else(|| panic!("service stopped while waiting for {what}"))
+    }
+
+    /// Yields until `ready` holds, for work that ends on the blocking pool (whose completion
+    /// paused time cannot see). Panics if it never does.
+    pub async fn until(&self, what: &str, ready: impl Fn(&Self) -> bool) {
+        for _ in 0..200_000 {
+            if ready(self) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("gave up waiting for {what}");
     }
 
     /// Advances paused time and lets the actor and its jobs run.

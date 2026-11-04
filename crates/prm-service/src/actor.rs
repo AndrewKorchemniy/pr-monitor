@@ -2,6 +2,7 @@
 //! publishes `AppState`. Handlers never await I/O; they change state and spawn jobs.
 
 mod auth;
+mod avatars;
 mod commands;
 mod config;
 mod cycle;
@@ -246,6 +247,7 @@ impl Service {
         }
         self.spawn_capability_check();
         self.spawn_autostart(None);
+        self.start_avatar_startup();
         self.start_updates();
         tracing::info!(orgs = self.orgs.len(), "service started");
     }

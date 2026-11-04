@@ -4005,8 +4005,10 @@ dependencies = [
 name = "prm-service"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "fastrand",
  "futures-util",
+ "png",
  "prm-ado",
  "prm-auth",
  "prm-config",

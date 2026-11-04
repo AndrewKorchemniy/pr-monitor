@@ -10,7 +10,7 @@ use std::{
 };
 
 use prm_ado::ClientPolicy;
-use prm_config::{Config, ConfigIssue, PersistedState};
+use prm_config::{AvatarCache, Config, ConfigIssue, PersistedState};
 use prm_domain::{OrgId, Timestamp, model::Catalog, update::UpdateStatus};
 use tokio::sync::{mpsc, watch};
 
@@ -40,6 +40,7 @@ pub struct ServiceDeps {
     pub autostart: Arc<dyn Autostart>,
     pub updater: Arc<dyn Updater>,
     pub repo: Arc<dyn StateRepo>,
+    pub avatar_cache: Arc<dyn AvatarCache>,
 }
 
 impl ServiceDeps {
