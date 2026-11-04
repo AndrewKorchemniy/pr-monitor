@@ -30,11 +30,6 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    /// One folder for everything (`--home`).
-    pub fn from_root(root: PathBuf) -> Self {
-        Self::split(root.clone(), root)
-    }
-
     /// Settings under `config_root`, local files under `root`.
     pub fn split(config_root: PathBuf, root: PathBuf) -> Self {
         Self {

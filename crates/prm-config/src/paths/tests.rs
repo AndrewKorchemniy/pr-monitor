@@ -68,7 +68,7 @@ fn paths_no_data_dir_is_error() {
 
 #[test]
 fn app_paths_layout() {
-    let paths = AppPaths::from_root(abs("root"));
+    let paths = AppPaths::split(abs("root"), abs("root"));
     assert_eq!(paths.config, abs("root").join("config.toml"));
     let org = OrgId::parse("contoso").unwrap();
     assert_eq!(
@@ -87,5 +87,5 @@ fn app_paths_split_settings_from_local_files() {
     assert_eq!(paths.logs, abs("local").join("logs"));
     assert_eq!(paths.avatars, abs("local").join("avatars"));
     assert_eq!(paths.icon_png, abs("local").join("icon-256.png"));
-    assert_eq!(AppPaths::from_root(abs("r")).config_root, abs("r"));
+    assert_eq!(AppPaths::split(abs("r"), abs("r")).config_root, abs("r"));
 }
