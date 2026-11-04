@@ -1,7 +1,8 @@
 #Requires -Version 7.4
 <#
 .SYNOPSIS
-  Packs the app exe with Velopack: Setup.exe, Portable.zip and the update packages for one runtime.
+  Packs the app with Velopack for one runtime: Windows gives Setup.exe, Portable.zip and the update
+  packages; Linux gives a self-updating .AppImage and the update packages.
   Runs in CI (release.yml, ci.yml) and locally; needs the .NET SDK to install vpk.
 
 .DESCRIPTION
@@ -13,18 +14,20 @@
   6. Runs verify-package.ps1 on the result.
 
   Output files in -OutDir (names are vpk's; <id> = AndrewKorchemniy.PRMonitor):
-    <id>-win-<arch>-Setup.exe, <id>-win-<arch>-Portable.zip,
+    <id>-win-<arch>-Setup.exe, <id>-win-<arch>-Portable.zip   (Windows)
+    <id>-linux-<arch>.AppImage                                (Linux)
     <id>-<version>-win-<arch>-full.nupkg, <id>-<version>-win-<arch>-delta.nupkg (when there is a previous release),
     releases.win-<arch>.json
   Never publishes anything: uploading to the draft release is release.yml's job.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('win-x64', 'win-arm64')][string] $Rid,
+    [Parameter(Mandatory)][ValidateSet('win-x64', 'win-arm64', 'linux-x64', 'linux-arm64')][string] $Rid,
     [Parameter(Mandatory)][string] $Exe,
-    # Default: the exe's ProductVersion (CARGO_PKG_VERSION, set by winresource).
+    # Default (Windows only): the exe's ProductVersion (CARGO_PKG_VERSION, set by winresource). Required on Linux.
     [string] $Version = '',
-    # Default: the icon build.rs generated next to the exe (target/<triple>/release/build/pr-monitor-*/out/app.ico).
+    # Default: the icon build.rs generated next to the exe (target/<triple>/release/build/pr-monitor-*/out/):
+    # app.ico on Windows, icon-256.png on Linux (vpk needs a PNG there).
     [string] $Icon = '',
     [string] $OutDir = 'velopack-out',
     # Folder holding THIRD-PARTY-LICENSES.html (the notices artifact); optional.
@@ -45,6 +48,8 @@ $ErrorActionPreference = 'Stop'
 $VpkVersion = '1.2.161'
 $root = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $exeFile = Get-Item -LiteralPath $Exe
+$platform = Get-Platform $Rid
+$mainExe = if ($platform -eq 'windows') { 'pr-monitor.exe' } else { 'pr-monitor' }
 
 # The crate and the CLI must agree, or vpk may write package metadata the app cannot read.
 $lock = Join-Path $root 'Cargo.lock'
@@ -60,12 +65,13 @@ if ($crate -and $crate.Success) {
     throw 'the velopack crate is not in Cargo.lock; refusing to pack a release the app cannot update from'
 }
 
-if (-not $Version) { $Version = $exeFile.VersionInfo.ProductVersion }
-if (-not $Version) { throw "no -Version given and $($exeFile.Name) has no ProductVersion" }
+if (-not $Version -and $platform -eq 'windows') { $Version = $exeFile.VersionInfo.ProductVersion }
+if (-not $Version) { throw "no -Version given and $($exeFile.Name) has no ProductVersion to read" }
 
 if (-not $Icon) {
-    $found = Get-ChildItem -Path (Join-Path $exeFile.DirectoryName 'build/pr-monitor-*/out/app.ico') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
-    if (-not $found) { throw "no app.ico under $($exeFile.DirectoryName)/build; pass -Icon" }
+    $iconName = if ($platform -eq 'windows') { 'app.ico' } else { 'icon-256.png' }
+    $found = Get-ChildItem -Path (Join-Path $exeFile.DirectoryName "build/pr-monitor-*/out/$iconName") -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+    if (-not $found) { throw "no $iconName under $($exeFile.DirectoryName)/build; pass -Icon" }
     $Icon = $found[0].FullName
 }
 
@@ -75,12 +81,16 @@ if (-not (Test-Path $vpk)) {
     Invoke-Native dotnet @('tool', 'install', 'vpk', '--version', $VpkVersion, '--tool-path', $ToolPath)
 }
 
-# 2. Stage the pack dir. The app exe is always called pr-monitor.exe inside the package.
+# 2. Stage the pack dir. The app exe is always called pr-monitor(.exe) inside the package.
 $work = Join-Path ([IO.Path]::GetTempPath()) "prm-pack-$Rid-$([guid]::NewGuid())"
 $stage = Join-Path $work 'stage'
 $out = Join-Path $work 'out'
 New-Item -ItemType Directory -Path (Join-Path $stage 'licenses'), $out | Out-Null
-Copy-Item -LiteralPath $exeFile.FullName -Destination (Join-Path $stage 'pr-monitor.exe')
+Copy-Item -LiteralPath $exeFile.FullName -Destination (Join-Path $stage $mainExe)
+if ($platform -eq 'linux') {
+    if ($IsWindows) { Write-Warning 'packing a Linux runtime on Windows: the binary will not be executable; use this only to check the packaging, not to ship' }
+    else { Invoke-Native chmod @('+x', (Join-Path $stage $mainExe)) }
+}
 foreach ($f in 'LICENSE-MIT', 'LICENSE-APACHE', 'README.md') { Copy-Item (Join-Path $root $f) $stage }
 Copy-Item (Join-Path $root 'crates/prm-ui/assets/fonts/*.txt') (Join-Path $stage 'licenses')
 if ($NoticesDir) { Copy-Item (Join-Path $NoticesDir 'THIRD-PARTY-LICENSES.html') $stage }
@@ -107,12 +117,16 @@ if (-not $NoDownload) {
 # 4. Pack.
 $pack = @(
     'pack', '--packId', $PackId, '--packVersion', $Version, '--packDir', $stage,
-    '--mainExe', 'pr-monitor.exe', '--packTitle', 'PR Monitor', '--packAuthors', 'Andrew Korchemniy',
-    '--icon', $Icon, '--channel', $Rid, '--runtime', $Rid, '--outputDir', $out,
-    # why: vpk's default AUMID differs, which would break toast activation from the shortcut.
-    '--aumid', $PackId,
-    '--shortcuts', 'StartMenuRoot'
+    '--mainExe', $mainExe, '--packTitle', 'PR Monitor', '--packAuthors', 'Andrew Korchemniy',
+    '--icon', $Icon, '--channel', $Rid, '--runtime', $Rid, '--outputDir', $out
 )
+if ($platform -eq 'windows') {
+    # why: vpk's default AUMID differs, which would break toast activation from the shortcut.
+    $pack += '--aumid', $PackId, '--shortcuts', 'StartMenuRoot'
+} else {
+    # `[linux]` selects vpk's Linux pack command; --aumid and --shortcuts do not exist there.
+    $pack = @('[linux]') + $pack + @('--categories', 'Development;')
+}
 if ($NotesFile) { $pack += '--releaseNotes', (Resolve-Path $NotesFile).Path }
 Invoke-Native $vpk $pack
 

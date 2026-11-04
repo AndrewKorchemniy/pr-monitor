@@ -187,6 +187,33 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/pack-velopack.ps1 -Rid win-arm64 -Exe target/release/pr-monitor.exe -OutDir pack-out -NoDownload
 
+  build-linux:
+    name: build (linux-x64, release)
+    runs-on: ubuntu-22.04          # the oldest image, as in release.yml: the glibc floor of the AppImage
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/linux-deps   # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-key: release
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build
+        env:
+          PRM_BUILD_SHA: ${{ github.sha }}
+        run: cargo build --release --locked -p pr-monitor
+      - name: Verify (ELF, size budget, self-test)
+        run: ./.github/scripts/verify-elf.sh target/release/pr-monitor x64
+      - name: Pack (Velopack dry run, no upload)
+        shell: pwsh
+        run: |
+          $version = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).packages | Where-Object name -eq 'pr-monitor' | ForEach-Object version
+          ./.github/scripts/pack-velopack.ps1 -Rid linux-x64 -Version $version -Exe target/release/pr-monitor -OutDir pack-out -NoDownload
+      - name: Smoke test the AppImage (--self-test)
+        run: ./.github/scripts/smoke-appimage.sh pack-out/AndrewKorchemniy.PRMonitor-linux-x64.AppImage
+
   size-report:                     # informational; not part of ci-ok
     name: size report
     if: github.event_name == 'pull_request'
@@ -230,7 +257,7 @@ jobs:
   ci-ok:                           # the ONLY required check from this workflow
     name: ci-ok
     if: always()
-    needs: [fmt, check, msrv, hygiene, build-windows, build-windows-arm64]
+    needs: [fmt, check, msrv, hygiene, build-windows, build-windows-arm64, build-linux]
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:

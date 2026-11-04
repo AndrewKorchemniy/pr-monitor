@@ -7,7 +7,7 @@ use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use prm_domain::ports::PortError;
 use prm_service::ports::{Autostart, AutostartState};
 
-use crate::common::failed;
+use crate::{common::failed, unix::launch::login_program};
 
 pub(crate) struct UnixAutostart {
     launcher: AutoLaunch,
@@ -21,9 +21,12 @@ impl UnixAutostart {
             args.push("--home".to_owned());
             args.push(home.to_string_lossy().into_owned());
         }
+        // why: from an AppImage the entry must launch the AppImage, not its temporary mount; and
+        // auto-launch writes the path into `Exec=` as is, so a space would split it.
+        let launch = login_program(exe);
         let launcher = AutoLaunchBuilder::new()
             .set_app_name(name)
-            .set_app_path(&exe.to_string_lossy())
+            .set_app_path(&launch)
             .set_args(args.as_slice())
             .build()
             .map_err(failed)?;

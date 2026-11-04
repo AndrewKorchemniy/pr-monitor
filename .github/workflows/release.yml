@@ -205,11 +205,12 @@ jobs:
           mkdir -p notices
           cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.html about.hbs
           cargo about generate --locked --fail -m crates/pr-monitor/Cargo.toml -c about.toml -o notices/THIRD-PARTY-LICENSES.txt about-text.hbs
-          for pair in x64:x86_64-pc-windows-msvc arm64:aarch64-pc-windows-msvc; do
-            arch=${pair%%:*}; triple=${pair#*:}
+          for entry in windows-x64:x86_64-pc-windows-msvc windows-arm64:aarch64-pc-windows-msvc \
+                       linux-x64:x86_64-unknown-linux-gnu linux-arm64:aarch64-unknown-linux-gnu; do
+            name=${entry%%:*}; triple=${entry#*:}
             cargo cyclonedx --manifest-path crates/pr-monitor/Cargo.toml --format json --spec-version 1.5 \
-              --target "$triple" --override-filename "pr-monitor-windows-$arch.cdx"
-            mv "crates/pr-monitor/pr-monitor-windows-$arch.cdx.json" notices/
+              --target "$triple" --override-filename "pr-monitor-$name.cdx"
+            mv "crates/pr-monitor/pr-monitor-$name.cdx.json" notices/
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -218,15 +219,18 @@ jobs:
           if-no-files-found: error
 
   build:
-    name: build (windows-${{ matrix.arch }})
+    name: build (${{ matrix.platform }}-${{ matrix.arch }})
     needs: [release, notices]
     if: needs.release.outputs.tag != '' || needs.release.outputs.dry_run == 'true'
     strategy:
       fail-fast: true
       matrix:
         include:
-          - { arch: x64, target: x86_64-pc-windows-msvc, os: windows-latest }
-          - { arch: arm64, target: aarch64-pc-windows-msvc, os: windows-11-arm }
+          - { platform: windows, arch: x64, target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { platform: windows, arch: arm64, target: aarch64-pc-windows-msvc, os: windows-11-arm }
+          # why: the oldest runner images, so the glibc floor (2.35) is as low as possible on both architectures
+          - { platform: linux, arch: x64, target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { platform: linux, arch: arm64, target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -235,6 +239,7 @@ jobs:
       VERSION: ${{ needs.release.outputs.version }}
       TARGET: ${{ matrix.target }}
       ARCH: ${{ matrix.arch }}
+      PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -248,6 +253,8 @@ jobs:
         with:
           tool: cargo-auditable@0.7.7  # exact pin, not bumped by Dependabot; prebuilt exists for aarch64_windows (verified)
       - uses: ./.github/actions/arm64-clang    # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
+      - if: runner.os == 'Linux'
+        uses: ./.github/actions/linux-deps       # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: notices
@@ -260,34 +267,45 @@ jobs:
           export PRM_BUILD_SHA
           cargo auditable build --release --locked -p pr-monitor --target "$TARGET"
       - name: Verify (PE, size, static CRT, ProductVersion, self-test)
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: ./.github/scripts/verify-exe.ps1 -Exe "target/$env:TARGET/release/pr-monitor.exe" -Arch $env:ARCH -ExpectedVersion $env:VERSION
+      - name: Verify (ELF, size, version, self-test)
+        if: matrix.platform == 'linux'
+        run: ./.github/scripts/verify-elf.sh "target/$TARGET/release/pr-monitor" "$ARCH" "$VERSION"
       - name: Stage
         run: |
-          mkdir -p out/exe out/pdb out/ico
-          cp "target/$TARGET/release/pr-monitor.exe" "out/exe/pr-monitor-windows-$ARCH.exe"
-          cp "target/$TARGET/release/pr_monitor.pdb" "out/pdb/pr-monitor-$VERSION-windows-$ARCH.pdb"
+          mkdir -p out/exe out/pdb out/icon
+          if [ "$PLATFORM" = windows ]; then
+            cp "target/$TARGET/release/pr-monitor.exe" "out/exe/pr-monitor-windows-$ARCH.exe"
+            cp "target/$TARGET/release/pr_monitor.pdb" "out/pdb/pr-monitor-$VERSION-windows-$ARCH.pdb"
+            icon=app.ico
+          else
+            cp "target/$TARGET/release/pr-monitor" "out/exe/pr-monitor-linux-$ARCH"
+            icon="icon-256.png"
+          fi
           # build.rs generates the icon; the package job has no cargo, so ship it as an artifact.
-          icons=(target/"$TARGET"/release/build/pr-monitor-*/out/app.ico)
-          [ "${#icons[@]}" -eq 1 ] || { echo "::error::expected one app.ico, found ${#icons[@]}"; exit 1; }
-          cp "${icons[0]}" out/ico/app.ico
+          icons=(target/"$TARGET"/release/build/pr-monitor-*/out/"$icon")
+          [ "${#icons[@]}" -eq 1 ] || { echo "::error::expected one $icon, found ${#icons[@]}"; exit 1; }
+          cp "${icons[0]}" "out/icon/$icon"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: exe-${{ matrix.arch }}
+          name: exe-${{ matrix.platform }}-${{ matrix.arch }}
           path: out/exe/
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.platform == 'windows'      # Linux has no PDBs
         with:
           name: pdb-${{ matrix.arch }}
           path: out/pdb/
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ico-${{ matrix.arch }}
-          path: out/ico/
+          name: icon-${{ matrix.platform }}-${{ matrix.arch }}
+          path: out/icon/
           if-no-files-found: error
 
-  package:                                    # Velopack Setup.exe, Portable.zip and update packages
+  package:                                    # Velopack Setup.exe + Portable.zip (Windows), AppImage (Linux) and update packages
     name: package (${{ matrix.rid }})
     needs: [release, build]
     if: >-
@@ -296,15 +314,21 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { rid: win-x64, arch: x64 }
-          - { rid: win-arm64, arch: arm64 }
-    runs-on: windows-latest                   # vpk cross-packs both rids; the exes were already self-tested natively in build
+          # Windows: vpk cross-packs both rids on one runner; the exes were already self-tested natively in build.
+          - { rid: win-x64, platform: windows, arch: x64, os: windows-latest }
+          - { rid: win-arm64, platform: windows, arch: arm64, os: windows-latest }
+          # Linux: packed on a runner of the target architecture so the AppImage can be run (smoke test) there.
+          - { rid: linux-x64, platform: linux, arch: x64, os: ubuntu-22.04 }
+          - { rid: linux-arm64, platform: linux, arch: arm64, os: ubuntu-22.04-arm }
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
       contents: read
     env:
       VERSION: ${{ needs.release.outputs.version }}
       RID: ${{ matrix.rid }}
+      PLATFORM: ${{ matrix.platform }}
+      ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -312,12 +336,12 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: exe-${{ matrix.arch }}
+          name: exe-${{ matrix.platform }}-${{ matrix.arch }}
           path: exe
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ico-${{ matrix.arch }}
-          path: ico
+          name: icon-${{ matrix.platform }}-${{ matrix.arch }}
+          path: icon
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: notices
@@ -328,10 +352,15 @@ jobs:
           path: notes
       - name: Pack (vpk) and verify the package
         shell: pwsh
-        run: >-
-          ./.github/scripts/pack-velopack.ps1 -Rid $env:RID -Version $env:VERSION
-          -Exe "exe/pr-monitor-windows-$($env:RID -replace '^win-').exe"
-          -Icon ico/app.ico -NoticesDir notices -NotesFile notes/release-notes.md -OutDir velopack-out
+        run: |
+          $ext = if ($env:PLATFORM -eq 'windows') { '.exe' } else { '' }
+          $icon = if ($env:PLATFORM -eq 'windows') { 'icon/app.ico' } else { 'icon/icon-256.png' }
+          ./.github/scripts/pack-velopack.ps1 -Rid $env:RID -Version $env:VERSION `
+            -Exe "exe/pr-monitor-$env:PLATFORM-$env:ARCH$ext" -Icon $icon `
+            -NoticesDir notices -NotesFile notes/release-notes.md -OutDir velopack-out
+      - name: Smoke test the AppImage (--self-test)
+        if: matrix.platform == 'linux'
+        run: ./.github/scripts/smoke-appimage.sh "velopack-out/AndrewKorchemniy.PRMonitor-$RID.AppImage"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: velopack-${{ matrix.rid }}
@@ -377,7 +406,7 @@ jobs:
           set -euo pipefail
           cd dist
           rm -f THIRD-PARTY-LICENSES.txt          # embedded in the exe
-          sha256sum -- *.exe *.zip *.nupkg releases.*.json *.pdb *.cdx.json THIRD-PARTY-LICENSES.html > SHA256SUMS.txt
+          sha256sum -- *.exe *.zip *.AppImage *.nupkg releases.*.json *.pdb *.cdx.json THIRD-PARTY-LICENSES.html > SHA256SUMS.txt
           ls -la
       - name: Upload dist (dry-run)
         if: needs.release.outputs.dry_run == 'true'
@@ -394,11 +423,12 @@ jobs:
           subject-path: |
             dist/*.exe
             dist/*.zip
+            dist/*.AppImage
             dist/*.nupkg
             dist/releases.*.json
             dist/*.pdb
-      # why: users download either the installer or the zip, so the SBOM is attached to both.
-      - name: Attest SBOM (x64)
+      # why: users download either the installer, the zip or the AppImage, so the SBOM is attached to each.
+      - name: Attest SBOM (Windows x64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -406,7 +436,7 @@ jobs:
             dist/AndrewKorchemniy.PRMonitor-win-x64-Setup.exe
             dist/AndrewKorchemniy.PRMonitor-win-x64-Portable.zip
           sbom-path: dist/pr-monitor-windows-x64.cdx.json
-      - name: Attest SBOM (arm64)
+      - name: Attest SBOM (Windows arm64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -414,6 +444,18 @@ jobs:
             dist/AndrewKorchemniy.PRMonitor-win-arm64-Setup.exe
             dist/AndrewKorchemniy.PRMonitor-win-arm64-Portable.zip
           sbom-path: dist/pr-monitor-windows-arm64.cdx.json
+      - name: Attest SBOM (Linux x64)
+        if: needs.release.outputs.dry_run != 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/AndrewKorchemniy.PRMonitor-linux-x64.AppImage
+          sbom-path: dist/pr-monitor-linux-x64.cdx.json
+      - name: Attest SBOM (Linux arm64)
+        if: needs.release.outputs.dry_run != 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/AndrewKorchemniy.PRMonitor-linux-arm64.AppImage
+          sbom-path: dist/pr-monitor-linux-arm64.cdx.json
       # why: the draft stays invisible to the app's update check until go-live publishes it; `vpk upload`
       # is not used because it refuses a draft that already holds the feed, which would break `recover`.
       - name: Upload to draft
@@ -425,7 +467,7 @@ jobs:
             [ -e "dist/$name" ] || gh release delete-asset "$TAG" "$name" -R "$REPO" --yes
           done
           gh release upload "$TAG" -R "$REPO" --clobber \
-            dist/*.exe dist/*.zip dist/*.nupkg dist/releases.*.json dist/*.pdb dist/*.cdx.json \
+            dist/*.exe dist/*.zip dist/*.AppImage dist/*.nupkg dist/releases.*.json dist/*.pdb dist/*.cdx.json \
             dist/THIRD-PARTY-LICENSES.html dist/SHA256SUMS.txt
 
   go-live:                         # human gate: the `release` environment requires a reviewer

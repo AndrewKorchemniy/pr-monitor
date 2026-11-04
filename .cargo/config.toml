@@ -6,6 +6,14 @@ rustflags = ["-C", "target-feature=+crt-static"]
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
 
+# Windows keeps the release line tables in the PDB; Linux would embed them in the ELF (141 MiB),
+# so strip the debug info from the Linux binaries (the AppImage ships without symbols).
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "strip=debuginfo"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "strip=debuginfo"]
+
 [alias]   # single source of truth for flags, used locally and in CI
 lint = ["clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"]
 t    = ["nextest", "run", "--workspace", "--all-features", "--locked"]

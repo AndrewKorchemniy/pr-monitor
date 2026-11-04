@@ -3,6 +3,11 @@
 # The Velopack package id; also prm_domain::app::AUMID (shortcuts and toasts depend on that).
 $PackId = 'AndrewKorchemniy.PRMonitor'
 
+# 'windows' or 'linux' for a Velopack runtime id such as win-x64 or linux-arm64.
+function Get-Platform([string] $Rid) {
+    if ($Rid -like 'win-*') { 'windows' } else { 'linux' }
+}
+
 function Write-Summary([string] $Line) {
     Write-Host $Line
     if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $Line }
