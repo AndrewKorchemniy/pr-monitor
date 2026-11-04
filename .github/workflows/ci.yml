@@ -212,7 +212,7 @@ jobs:
           $version = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).packages | Where-Object name -eq 'pr-monitor' | ForEach-Object version
           ./.github/scripts/pack-velopack.ps1 -Rid linux-x64 -Version $version -Exe target/release/pr-monitor -OutDir pack-out -NoDownload
       - name: Smoke test the AppImage (--self-test)
-        run: ./.github/scripts/smoke-appimage.sh pack-out/AndrewKorchemniy.PRMonitor-linux-x64.AppImage
+        run: ./.github/scripts/smoke-appimage.sh pack-out/PRMonitor-linux-x64.AppImage
 
   size-report:                     # informational; not part of ci-ok
     name: size report

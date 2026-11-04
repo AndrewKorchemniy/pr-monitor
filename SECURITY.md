@@ -26,8 +26,8 @@ Out of scope: vulnerabilities in Azure DevOps itself, the Azure CLI, or Windows.
 
 ## Verifying downloads
 ```powershell
-gh attestation verify AndrewKorchemniy.PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
-gh attestation verify AndrewKorchemniy.PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
+gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
+gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
 ```
 The first command checks build provenance, the second the CycloneDX SBOM attestation. Compare
 `Get-FileHash -Algorithm SHA256` against `SHA256SUMS.txt` from the same release.

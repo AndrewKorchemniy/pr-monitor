@@ -118,10 +118,10 @@ fn a_local_feed_offers_a_newer_release_and_downloads_it() {
         std::fs::create_dir_all(folder).expect("folder");
     }
     std::fs::write(root.join("Update.exe"), b"").expect("update exe");
-    let manifest = "<package><metadata><id>AndrewKorchemniy.PRMonitor</id><version>0.2.4</version>        <mainExe>pr-monitor.exe</mainExe><channel>win-x64</channel></metadata></package>";
+    let manifest = "<package><metadata><id>PRMonitor</id><version>0.2.4</version>        <mainExe>pr-monitor.exe</mainExe><channel>win-x64</channel></metadata></package>";
     std::fs::write(current.join("sq.version"), manifest).expect("manifest");
     let package = b"not really a package";
-    let name = "AndrewKorchemniy.PRMonitor-0.3.0-win-x64-full.nupkg";
+    let name = "PRMonitor-0.3.0-win-x64-full.nupkg";
     std::fs::write(feed.join(name), package).expect("package");
     let sha256 = Sha256::digest(package)
         .iter()
@@ -130,7 +130,7 @@ fn a_local_feed_offers_a_newer_release_and_downloads_it() {
             hex
         });
     let releases = format!(
-        r#"{{"Assets":[{{"PackageId":"AndrewKorchemniy.PRMonitor","Version":"0.3.0","Type":"Full","FileName":"{name}","SHA1":"","SHA256":"{sha256}","Size":{},"NotesMarkdown":"","NotesHtml":""}}]}}"#,
+        r#"{{"Assets":[{{"PackageId":"PRMonitor","Version":"0.3.0","Type":"Full","FileName":"{name}","SHA1":"","SHA256":"{sha256}","Size":{},"NotesMarkdown":"","NotesHtml":""}}]}}"#,
         package.len()
     );
     std::fs::write(feed.join("releases.win-x64.json"), releases).expect("feed");

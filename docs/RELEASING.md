@@ -57,21 +57,24 @@ latest release, or as a pre-release when the version has a suffix such as `-alph
 
 Each release is built with [Velopack](https://velopack.io) (`vpk`). Per architecture (`x64`,
 `arm64`; the Velopack channel and runtime are `win-x64`, `win-arm64`, `linux-x64` and
-`linux-arm64`), with the package id `AndrewKorchemniy.PRMonitor`:
+`linux-arm64`), with the package id `PRMonitor`:
 
 | Asset | What it is |
 |---|---|
-| `AndrewKorchemniy.PRMonitor-win-<arch>-Setup.exe` | One-click per-user installer (`%LOCALAPPDATA%\AndrewKorchemniy.PRMonitor`, no admin rights). Silent install: `--silent`. |
-| `AndrewKorchemniy.PRMonitor-win-<arch>-Portable.zip` | `PR Monitor.exe` (launcher), `Update.exe` and `current\pr-monitor.exe` with the licence files. Unzip anywhere. |
-| `AndrewKorchemniy.PRMonitor-linux-<arch>.AppImage` | Linux (preview): a self-updating AppImage. There is no installer, no uninstall hook and no zip. |
-| `AndrewKorchemniy.PRMonitor-<version>-<rid>-full.nupkg` | The update package the app downloads when it is not on the previous version (`<rid>` is `win-<arch>` or `linux-<arch>`). For Linux it holds the AppImage itself. |
-| `AndrewKorchemniy.PRMonitor-<version>-<rid>-delta.nupkg` | Patch from the previous published release (absent for the first release on that channel). |
+| `PRMonitor-win-<arch>-Setup.exe` | One-click per-user installer (`%LOCALAPPDATA%\PRMonitor`, no admin rights). Silent install: `--silent`. |
+| `PRMonitor-win-<arch>-Portable.zip` | `PR Monitor.exe` (launcher), `Update.exe` and `current\pr-monitor.exe` with the licence files. Unzip anywhere. |
+| `PRMonitor-linux-<arch>.AppImage` | Linux (preview): a self-updating AppImage. There is no installer, no uninstall hook and no zip. |
+| `PRMonitor-<version>-<rid>-full.nupkg` | The update package the app downloads when it is not on the previous version (`<rid>` is `win-<arch>` or `linux-<arch>`). For Linux it holds the AppImage itself. |
+| `PRMonitor-<version>-<rid>-delta.nupkg` | Patch from the previous published release (absent for the first release on that channel). |
 | `releases.<rid>.json` | The update feed for that channel: lists this version's nupkgs only. |
 | `pr-monitor-<version>-windows-<arch>.pdb` | Symbols for crash reports (Windows only). |
 | `pr-monitor-<os>-<arch>.cdx.json` | CycloneDX SBOM, `<os>` is `windows` or `linux` (attested to the Setup and Portable zip, or to the AppImage). |
 | `THIRD-PARTY-LICENSES.html`, `SHA256SUMS.txt` | Licences and checksums of every other asset. |
 
-There is no bare exe any more: the app cannot update itself from outside an install. Linux is a
+The install folder `%LOCALAPPDATA%\PRMonitor` is also the app's data folder. Velopack's
+uninstaller deletes the whole folder, so uninstalling removes settings and logs; sign-ins stay in
+Windows Credential Manager. `--unregister --purge` leaves Velopack's own entries (`current`,
+`packages`, `*.exe`, `sq.version`, `.portable`) alone. There is no bare exe any more: the app cannot update itself from outside an install. Linux is a
 preview: it is built and smoke-tested like the Windows builds but used less. macOS is not built
 (an unsigned, un-notarised app is blocked by Gatekeeper).
 
@@ -149,7 +152,7 @@ CI runs this as the `build (linux-x64, release)` dry run.
   AppImage), because `current_exe()` inside an AppImage points into a temporary mount. The path is
   quoted for the `Exec=` line, so spaces are fine.
 - The `prmonitor://` link handler is Windows-only for now; nothing registers it on Linux.
-- Velopack's own log is `/tmp/velopack_AndrewKorchemniy.PRMonitor.log`; the app's logs stay in
+- Velopack's own log is `/tmp/velopack_PRMonitor.log`; the app's logs stay in
   its data folder.
 - The tray icon needs a StatusNotifier host (GNOME needs an AppIndicator extension).
 
@@ -159,7 +162,7 @@ The first submission of `AndrewKorchemniy.PRMonitor` to winget-pkgs is manual (t
 job only updates an existing package): run `wingetcreate new` with the `Setup.exe` URLs and set
 `InstallerType: exe`, `Scope: user` and `InstallerSwitches` `Silent` and `SilentWithProgress`
 to `--silent`. Install it once from a local manifest before turning `WINGET_ENABLED` on. The
-job then picks `AndrewKorchemniy.PRMonitor-win-<arch>-Setup.exe` from each release.
+job then picks `PRMonitor-win-<arch>-Setup.exe` from each release.
 ## Manual release (no App)
 
 1. In a PR, bump `version` in `crates/pr-monitor/Cargo.toml` (line 3) and run
@@ -216,7 +219,7 @@ about to release.
 - **`release-current` says the release exists:** bump the version; a version is released at
   most once.
 - **An install or update misbehaves on a user's machine:** `Update.exe` logs to
-  `%LocalAppData%\velopack\velopack_AndrewKorchemniy.PRMonitor.log`; the app's own logs stay in
+  `%LocalAppData%\velopack\velopack_PRMonitor.log`; the app's own logs stay in
   `%LOCALAPPDATA%\PRMonitor\logs`.
 - **Two copies of the app:** a Portable copy and an installed copy share the data folder
   `%LOCALAPPDATA%\PRMonitor` and the single-instance key, so only one of them runs at a time.
@@ -225,9 +228,9 @@ about to release.
 
 ```powershell
 gh release download v0.1.0 -R AndrewKorchemniy/pr-monitor
-gh attestation verify AndrewKorchemniy.PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
-gh attestation verify AndrewKorchemniy.PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
-Get-FileHash -Algorithm SHA256 AndrewKorchemniy.PRMonitor-win-*   # compare with SHA256SUMS.txt
+gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
+gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
+Get-FileHash -Algorithm SHA256 PRMonitor-win-*   # compare with SHA256SUMS.txt
 ```
 
 Each build job also runs `.github/scripts/verify-exe.ps1` on the release exe: PE machine and

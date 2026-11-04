@@ -1,7 +1,10 @@
 # Helpers shared by the release scripts. Dot-source it: `. "$PSScriptRoot/common.ps1"`.
 
-# The Velopack package id; also prm_domain::app::AUMID (shortcuts and toasts depend on that).
-$PackId = 'AndrewKorchemniy.PRMonitor'
+# The Velopack package id; it names the release files and the install folder.
+$PackId = 'PRMonitor'
+
+# The Windows app identity for shortcuts and toasts. Must equal prm_domain::app::AUMID.
+$Aumid = 'AndrewKorchemniy.PRMonitor'
 
 # 'windows' or 'linux' for a Velopack runtime id such as win-x64 or linux-arm64.
 function Get-Platform([string] $Rid) {

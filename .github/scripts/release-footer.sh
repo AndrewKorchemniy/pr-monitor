@@ -7,7 +7,7 @@
 set -euo pipefail
 
 repo=$1
-id=AndrewKorchemniy.PRMonitor
+id=PRMonitor
 
 echo '<!-- release-footer -->'
 echo '---'
