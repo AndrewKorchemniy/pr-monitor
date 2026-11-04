@@ -57,3 +57,9 @@ fn app_paths_layout() {
         abs("root").join("cache").join("contoso.catalog.json")
     );
 }
+
+#[test]
+fn paths_keep_avatars_in_their_own_folder() {
+    let paths = AppPaths::from_root(abs("data"));
+    assert_eq!(paths.avatars, abs("data").join("avatars"));
+}

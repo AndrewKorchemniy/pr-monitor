@@ -75,6 +75,8 @@ impl FontIds {
 pub(crate) struct UiTheme {
     pub tokens: Arc<Tokens>,
     pub colors: adapter::UiColors,
+    /// Initials-circle colours, one per hue.
+    pub avatar_tints: [adapter::AvatarTint; adapter::AVATAR_HUES],
     pub fonts: FontIds,
     pub policy: RenderPolicy,
 }
@@ -83,6 +85,10 @@ impl UiTheme {
     pub(crate) fn new(tokens: Arc<Tokens>, policy: RenderPolicy) -> Self {
         Self {
             colors: adapter::UiColors::from(&tokens.palette),
+            avatar_tints: adapter::avatar_tints(
+                &tokens.palette,
+                tokens.appearance == Appearance::Dark,
+            ),
             fonts: FontIds::new(),
             tokens,
             policy,

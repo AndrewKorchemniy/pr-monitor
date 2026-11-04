@@ -47,6 +47,12 @@ impl Service {
                 candidate,
                 result,
             } => self.on_resolve(&org, request, &candidate, result),
+            JobOutput::Avatars {
+                org,
+                generation,
+                output,
+            } => self.on_avatars(&org, generation, output),
+            JobOutput::AvatarsPruned => {}
             JobOutput::Saved { what, result } => self.on_saved(what, result),
             JobOutput::Flushed {
                 saved,
@@ -65,13 +71,15 @@ impl Service {
                 self.on_update_downloaded(version, result);
             }
             JobOutput::UpdateApplied(result) => self.on_update_applied(result),
-            JobOutput::TestNotification(result) => {
-                let result = result.map_err(|e| UiError::port(text::NOTIFICATION_FAILED, &e));
-                self.deps
-                    .events
-                    .emit(AppEvent::NotificationTestResult(result));
-            }
+            JobOutput::TestNotification(result) => self.on_test_notification(result),
         }
+    }
+
+    fn on_test_notification(&self, result: Result<(), prm_domain::ports::PortError>) {
+        let result = result.map_err(|e| UiError::port(text::NOTIFICATION_FAILED, &e));
+        self.deps
+            .events
+            .emit(AppEvent::NotificationTestResult(result));
     }
 
     fn on_flushed(&mut self, saved: Result<(), UiError>, notify_failures: usize) {
@@ -172,6 +180,7 @@ impl Service {
             }
             (JobKind::Save | JobKind::Flush, _) => self.on_save_panicked(job),
             (JobKind::Update, _) => self.on_update_panicked(),
+            (JobKind::Avatars, Some(idx)) => self.orgs[idx].link.avatars.busy = false,
             (
                 JobKind::Refresh
                 | JobKind::Probe
@@ -181,6 +190,7 @@ impl Service {
                 | JobKind::SetPat
                 | JobKind::Search
                 | JobKind::Resolve
+                | JobKind::Avatars
                 | JobKind::Port,
                 _,
             ) => {}

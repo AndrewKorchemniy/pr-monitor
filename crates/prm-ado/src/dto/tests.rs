@@ -68,3 +68,26 @@ fn dto_subjectquery_wrapped_and_bare() {
     assert_eq!(wrapped.into_vec().len(), 2);
     assert_eq!(bare.into_vec().len(), 1);
 }
+
+#[test]
+fn dto_avatar_prefers_the_link_over_image_url() {
+    let prs = prs();
+    let author = prs[0].created_by.avatar().unwrap();
+    assert!(author.ends_with("aad.xyz?size=1"), "{author}");
+    let group = &prs[0].reviewers[1].who;
+    assert!(group.avatar().unwrap().ends_with("vssgp.pay"));
+    assert_eq!(
+        prs[0].reviewers[0].who.descriptor.as_deref(),
+        Some("aad.ann")
+    );
+    assert_eq!(prs[1].created_by.avatar(), None);
+}
+
+#[test]
+fn dto_blank_avatar_is_none() {
+    let who: super::common::IdentityRefDto = serde_json::from_str(
+        r#"{ "id": "00000000-0000-4000-8000-000000000001", "imageUrl": "  ", "_links": { "avatar": { "href": "" } } }"#,
+    )
+    .unwrap();
+    assert_eq!(who.avatar(), None);
+}

@@ -7,10 +7,11 @@ use eframe::egui;
 use egui_kittest::Harness;
 use prm_config::UiState;
 use prm_domain::{Timestamp, auth::SettingsSection};
-use prm_service::AppState;
+use prm_service::{AppState, LoadedAvatar};
 
 use crate::{
     actions::{Actions, UiAction},
+    avatars::AvatarStore,
     commands::{
         keymap::Keymap,
         palette::{PaletteItem, PaletteSources, PaletteState},
@@ -25,6 +26,7 @@ use crate::{
         shortcuts::shortcuts,
         token::token_dialog,
     },
+    testing::demo::demo_avatars,
     theme::{ThemeRuntime, fonts},
     ui_state::PeekLayout,
     view::{DashboardView, changes::ChangeLog, columns::Choices},
@@ -61,6 +63,10 @@ pub(crate) struct Fixture {
     pub token: (String, Option<Arc<str>>),
     pub keymap: Keymap,
     pub changes: ChangeLog,
+    /// Pictures loaded into the fixture; empty shows initials everywhere.
+    pub avatars: AvatarStore,
+    /// Pictures still to upload on the first frame (they need the egui context).
+    pub pictures: Vec<LoadedAvatar>,
     pub actions: Actions,
     pub theme: ThemeRuntime,
     pub now: Timestamp,
@@ -92,6 +98,8 @@ impl Fixture {
             token: (String::new(), None),
             keymap: Keymap::defaults(),
             changes: ChangeLog::default(),
+            avatars: AvatarStore::default(),
+            pictures: demo_avatars(),
             actions: Actions::default(),
             theme,
             now: prm_domain::testing::ts(1_792_411_500),
@@ -104,9 +112,13 @@ impl Fixture {
         let draft = (self.shown == Shown::Settings).then_some(self.settings.draft.ui.corners);
         self.theme.set_corners_preview(draft);
         self.theme.apply(&ctx);
+        for picture in self.pictures.drain(..) {
+            self.avatars.insert(&ctx, &picture);
+        }
         let mut cx = FrameCx {
             theme: self.theme.current(&ctx).clone(),
             state: &self.state,
+            avatars: &self.avatars,
             now: self.now,
             offset: time::UtcOffset::UTC,
             keymap: &self.keymap,

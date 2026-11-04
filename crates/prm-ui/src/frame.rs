@@ -9,6 +9,7 @@ use time::UtcOffset;
 
 use crate::{
     actions::{Actions, UiAction},
+    avatars::AvatarStore,
     commands::{CommandId, keymap::Keymap},
     theme::UiTheme,
     view::changes::ChangeLog,
@@ -17,6 +18,7 @@ use crate::{
 pub(crate) struct FrameCx<'a> {
     pub theme: Arc<UiTheme>,
     pub state: &'a AppState,
+    pub avatars: &'a AvatarStore,
     pub now: Timestamp,
     pub offset: UtcOffset,
     pub keymap: &'a Keymap,

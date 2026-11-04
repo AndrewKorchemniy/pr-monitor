@@ -4,6 +4,7 @@
 
 mod actions;
 mod app;
+mod avatars;
 mod commands;
 mod copy;
 mod deps;

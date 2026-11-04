@@ -1,6 +1,7 @@
 //! Background jobs: what they return to the actor, how they are tagged (so a panic can be
 //! attributed), and the small one-shot jobs. Jobs never touch service state.
 
+pub(crate) mod avatars;
 pub(crate) mod people;
 pub(crate) mod refresh;
 
@@ -24,6 +25,8 @@ use crate::{
     ports::{AutostartState, Notifier, NotifierCapability},
 };
 
+pub(crate) use avatars::AvatarOutput;
+pub use avatars::LoadedAvatar;
 pub(crate) use refresh::{RefreshFailure, RefreshOutput};
 
 /// A finished job, as the actor receives it.
@@ -69,6 +72,13 @@ pub(crate) enum JobOutput {
         candidate: PersonCandidate,
         result: Result<Vsid, AdoError>,
     },
+    Avatars {
+        org: OrgId,
+        generation: u64,
+        output: AvatarOutput,
+    },
+    /// Old cache entries deleted at startup.
+    AvatarsPruned,
     Saved {
         what: Saved,
         result: Result<(), UiError>,
@@ -122,6 +132,7 @@ pub(crate) enum JobKind {
     Catalog,
     Search,
     Resolve,
+    Avatars,
     Save,
     Flush,
     Port,

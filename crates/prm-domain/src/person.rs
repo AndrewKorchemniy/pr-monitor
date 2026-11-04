@@ -19,6 +19,10 @@ pub struct Person {
     pub group: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptor: Option<Arc<str>>,
+    /// The avatar address the server gave (`_links.avatar.href`, else `imageUrl`), exactly as
+    /// received. Untrusted until `OrgEndpoint::avatar_url` accepts it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<Arc<str>>,
 }
 
 impl Person {
@@ -29,6 +33,7 @@ impl Person {
             unique_name: None,
             group: false,
             descriptor: None,
+            avatar: None,
         }
     }
 
@@ -53,6 +58,9 @@ impl Person {
         }
         if newer.descriptor.is_some() {
             self.descriptor = newer.descriptor;
+        }
+        if newer.avatar.is_some() {
+            self.avatar = newer.avatar;
         }
         self.group |= newer.group;
     }
@@ -100,6 +108,7 @@ impl PersonCandidate {
             unique_name: self.unique_name.clone(),
             group: self.group,
             descriptor: self.descriptor.clone(),
+            avatar: None,
         })
     }
 

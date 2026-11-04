@@ -33,12 +33,14 @@ fn opt_text(s: Option<String>) -> Option<Arc<str>> {
 }
 
 pub(crate) fn person(d: IdentityRefDto) -> Person {
+    let avatar = d.avatar().map(Arc::from);
     Person {
         id: Vsid(d.id),
         name: text(d.display_name),
         unique_name: opt_text(d.unique_name),
         group: d.is_container,
         descriptor: opt_text(d.descriptor),
+        avatar,
     }
 }
 
@@ -98,13 +100,7 @@ const fn merge_status(status: MergeStatusDto) -> MergeStatus {
 
 fn reviewer(d: ReviewerDto) -> Reviewer {
     Reviewer {
-        who: Person {
-            id: Vsid(d.id),
-            name: text(d.display_name),
-            unique_name: opt_text(d.unique_name),
-            group: d.is_container,
-            descriptor: None,
-        },
+        who: person(d.who),
         vote: Vote(d.vote),
         required: d.is_required,
         declined: d.has_declined,
@@ -204,6 +200,7 @@ pub(crate) fn ims_person(d: ImsIdentityDto) -> Person {
         unique_name: opt_text(unique_name),
         group: d.is_container,
         descriptor: opt_text(d.subject_descriptor),
+        avatar: None,
     }
 }
 

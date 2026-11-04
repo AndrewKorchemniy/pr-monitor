@@ -312,3 +312,16 @@ fn age_cache_updates_once_per_minute() {
     ));
     assert!(cache.get(0).is_some());
 }
+
+#[test]
+fn build_rows_name_each_face_by_org_and_person() {
+    let rows = sample();
+    let row = rows.iter().find(|r| r.key.number.0 == 1).unwrap();
+    assert_eq!(row.author_avatar.id, row.author.id);
+    assert_eq!(row.author_avatar.org, row.key.org);
+    assert_eq!(&*row.author_initials, "CD");
+    let chip = &row.reviewers[0];
+    assert_eq!(chip.avatar.id, crate::Vsid::from_u128(REVIEWER));
+    assert_eq!(chip.avatar.org, row.key.org);
+    assert_eq!(&*chip.initials, "R");
+}

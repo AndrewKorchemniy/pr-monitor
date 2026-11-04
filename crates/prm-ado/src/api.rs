@@ -3,6 +3,8 @@
 
 use std::collections::HashSet;
 
+use bytes::Bytes;
+
 use prm_domain::{
     Person, Vsid,
     ids::{PrNumber, ProjectId, RepoId},
@@ -71,6 +73,10 @@ pub trait AdoApi: Send + Sync + 'static {
     /// Auth, transient and cancel errors are returned as errors (not a verdict) so the caller
     /// can probe again later instead of caching "unsupported".
     async fn probe_org_wide(&self, project_count: usize) -> Result<OrgWideProbe, AdoError>;
+    /// The picture at `href`, an address the server named. Refused with
+    /// `AdoError::ForeignUrl` (and no request) unless it is one of this org's own hosts, since
+    /// the token goes wherever the request does.
+    async fn avatar(&self, href: &str) -> Result<Bytes, AdoError>;
     fn rate(&self) -> RateSnapshot;
     fn request_count(&self) -> u64;
 }
@@ -220,6 +226,14 @@ impl AdoApi for AdoClient {
         } else {
             OrgWideProbe::Unsupported
         })
+    }
+
+    async fn avatar(&self, href: &str) -> Result<Bytes, AdoError> {
+        let url = self
+            .endpoint()
+            .avatar_url(href)
+            .ok_or(AdoError::ForeignUrl)?;
+        self.get_image(&url).await
     }
 
     fn rate(&self) -> RateSnapshot {

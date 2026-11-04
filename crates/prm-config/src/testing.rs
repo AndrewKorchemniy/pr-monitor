@@ -1,10 +1,19 @@
 //! Hand-written fakes for this crate's ports, for tests here and in dependent crates.
 
-use std::sync::{Mutex, PoisonError};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, PoisonError},
+};
 
-use prm_domain::{OrgId, model::Catalog};
+use prm_domain::{OrgId, Timestamp, avatar::AvatarKey, model::Catalog};
 
-use crate::{error::ConfigError, schema::Config, state::PersistedState, store::StateRepo};
+use crate::{
+    avatar_cache::{AvatarCache, CachedAvatar},
+    error::ConfigError,
+    schema::Config,
+    state::PersistedState,
+    store::StateRepo,
+};
 
 /// An in-memory [`StateRepo`] for tests: records saves and can fail the next one.
 #[derive(Debug, Default)]
@@ -79,5 +88,58 @@ impl StateRepo for MemoryRepo {
 
     fn delete_org_data(&self, org: &OrgId) -> Result<(), ConfigError> {
         self.record(Saved::Deleted(org.clone()))
+    }
+}
+
+/// An in-memory [`AvatarCache`] for tests.
+#[derive(Debug, Default)]
+pub struct MemoryAvatarCache {
+    entries: Mutex<HashMap<AvatarKey, CachedAvatar>>,
+}
+
+impl MemoryAvatarCache {
+    /// Stores an entry as if it had been written earlier.
+    pub fn seed(&self, key: AvatarKey, avatar: CachedAvatar) {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key, avatar);
+    }
+
+    pub fn get(&self, key: &AvatarKey) -> Option<CachedAvatar> {
+        self.read(key)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl AvatarCache for MemoryAvatarCache {
+    fn read(&self, key: &AvatarKey) -> Option<CachedAvatar> {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
+    }
+
+    fn write(&self, key: &AvatarKey, avatar: &CachedAvatar) -> Result<(), ConfigError> {
+        self.seed(key.clone(), avatar.clone());
+        Ok(())
+    }
+
+    fn prune(&self, before: Timestamp) {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|_, a| a.stored_at >= before);
     }
 }

@@ -28,6 +28,7 @@ fastrand = { workspace = true }
 time = { workspace = true, features = ["local-offset"] }
 url = { workspace = true }
 uuid = { workspace = true }
+png = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
@@ -36,6 +37,7 @@ prm-config = { workspace = true, features = ["test-support"] }
 prm-ado = { workspace = true, features = ["test-support"] }
 prm-auth = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util", "rt"] }
+bytes = { workspace = true }
 
 [lints]
 workspace = true

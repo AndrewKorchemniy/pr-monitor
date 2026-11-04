@@ -8,7 +8,8 @@ use std::{
 
 use prm_auth::ChunkedSecretStore;
 use prm_config::{
-    AppPaths, ConfigLoad, FileRepo, StateLoad, load_catalogs, load_config, load_state,
+    AppPaths, ConfigLoad, FileAvatarCache, FileRepo, StateLoad, load_catalogs, load_config,
+    load_state,
 };
 use prm_domain::{app::ENV_SECRET_STORE, ports::Updater};
 use prm_platform::{
@@ -149,6 +150,7 @@ pub(super) fn start_service(
         },
         ports,
         FileRepo::from_load(base.paths.clone(), &config),
+        FileAvatarCache::new(base.paths.avatars.clone()),
     );
     let handle = prm_service::spawn(deps, wiring::initial_data(config, state, catalogs, args))
         .map_err(|e| fatal(&e))?;

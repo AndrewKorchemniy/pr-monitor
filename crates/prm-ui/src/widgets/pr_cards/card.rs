@@ -105,7 +105,7 @@ fn detail(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, (pr, index): (&PrRow, usize), 
             .layout(Layout::right_to_left(Align::Center)),
     );
     cells::comments_cell(&mut right, theme, pr);
-    vote_tally(&mut right, theme, &pr.reviewers);
+    vote_tally(&mut right, theme, rcx.frame.avatars, &pr.reviewers);
     let end = right.min_rect().left() - theme.tokens.metrics.space.md;
     let facts = Rect::from_min_max(line.min, pos2(end.max(line.left()), line.bottom()));
     let mut chain = ui.new_child(

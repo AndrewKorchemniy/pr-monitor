@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use prm_config::{Config, OrgProfile};
 use prm_domain::{
+    Vsid,
+    avatar::{AVATAR_PX, AvatarImage, AvatarKey},
     ids::ProjectId,
     model::{Catalog, Project, Repository},
     person::Person,
@@ -14,11 +16,32 @@ use prm_domain::{
     view::summary::summarize,
 };
 use prm_service::{
-    AppState, AuthStateView, RefreshPhase,
+    AppState, AuthStateView, LoadedAvatar, RefreshPhase,
     state::{RefreshProgress, RefreshStatus},
 };
 
 use crate::testing::org_status;
+
+/// Pictures for two of the demo people (the rest show their initials): a soft vertical
+/// gradient in a round frame, standing in for a profile photo.
+pub(crate) fn demo_avatars() -> Vec<LoadedAvatar> {
+    let side = usize::from(AVATAR_PX);
+    let picture = |n: u128, (r, g, b): (u8, u8, u8)| {
+        let rgba: Vec<u8> = (0..side * side)
+            .flat_map(|i| {
+                let fade = 255 - u8::try_from(i / side * 90 / side).unwrap_or(0);
+                let (dx, dy) = ((i % side) as f32 - 31.5, (i / side) as f32 - 31.5);
+                let alpha = if dx.hypot(dy) < 32.0 { 255 } else { 0 };
+                [r.min(fade), g.min(fade), b.min(fade), alpha]
+            })
+            .collect();
+        LoadedAvatar {
+            key: AvatarKey::new(org("contoso"), Vsid::from_u128(n)),
+            image: AvatarImage::new(AVATAR_PX, rgba).expect("a square of the stated size"),
+        }
+    };
+    vec![picture(1, (230, 150, 70)), picture(2, (70, 150, 230))]
+}
 
 /// "Now" for every demo screen: an hour after the newest PR was created.
 pub(crate) fn now() -> prm_domain::Timestamp {

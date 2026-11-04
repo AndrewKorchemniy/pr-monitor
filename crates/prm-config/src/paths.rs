@@ -18,6 +18,7 @@ pub struct AppPaths {
     pub cache: PathBuf,
     pub logs: PathBuf,
     pub themes: PathBuf,
+    pub avatars: PathBuf,
     pub keymap: PathBuf,
     pub icon_png: PathBuf,
 }
@@ -30,6 +31,7 @@ impl AppPaths {
             cache: root.join("cache"),
             logs: root.join("logs"),
             themes: root.join("themes"),
+            avatars: root.join("avatars"),
             keymap: root.join("keymap.toml"),
             icon_png: root.join("icon-256.png"),
             root,
@@ -37,7 +39,13 @@ impl AppPaths {
     }
 
     pub fn ensure_dirs(&self) -> Result<(), ConfigError> {
-        for dir in [&self.root, &self.cache, &self.logs, &self.themes] {
+        for dir in [
+            &self.root,
+            &self.cache,
+            &self.logs,
+            &self.themes,
+            &self.avatars,
+        ] {
             std::fs::create_dir_all(dir).map_err(|e| ConfigError::io(dir, &e))?;
         }
         Ok(())

@@ -70,6 +70,15 @@ pub struct AdoClient {
     rng: Mutex<fastrand::Rng>,
 }
 
+/// What a 2xx body should be.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Expect {
+    Json,
+    /// A picture. A redirect is then a plain failure, not a sign-in page: avatar addresses
+    /// may redirect, and following one would carry the token off the organization's hosts.
+    Image,
+}
+
 /// What to do with one HTTP attempt's result.
 #[derive(Debug)]
 enum Outcome {
@@ -129,8 +138,15 @@ impl AdoClient {
         &self,
         url: Url,
     ) -> Result<Json<T>, AdoError> {
-        let response = self.execute(Method::GET, &url, None).await?;
+        let response = self.execute(Method::GET, &url, None, Expect::Json).await?;
         decode(response, &url)
+    }
+
+    /// The bytes of a picture at `url`. The caller has checked the address: the token goes to
+    /// whatever `url` names.
+    pub(crate) async fn get_image(&self, url: &Url) -> Result<Bytes, AdoError> {
+        let response = self.execute(Method::GET, url, None, Expect::Image).await?;
+        Ok(response.body)
     }
 
     pub(crate) async fn post_json<B, T>(&self, url: Url, body: &B) -> Result<Json<T>, AdoError>
@@ -140,7 +156,7 @@ impl AdoClient {
     {
         let bytes = serde_json::to_vec(body).map_err(|e| AdoError::Decode(e.to_string().into()))?;
         let response = self
-            .execute(Method::POST, &url, Some(Bytes::from(bytes)))
+            .execute(Method::POST, &url, Some(Bytes::from(bytes)), Expect::Json)
             .await?;
         decode(response, &url)
     }
@@ -150,6 +166,7 @@ impl AdoClient {
         method: Method,
         url: &Url,
         body: Option<Bytes>,
+        expect: Expect,
     ) -> Result<HttpResponse, AdoError> {
         let _permit = self
             .semaphore
@@ -166,7 +183,7 @@ impl AdoClient {
             let request = HttpRequest {
                 method: method.clone(),
                 url: url.clone(),
-                headers: self.headers(&token, body.is_some())?,
+                headers: self.headers(&token, body.is_some(), expect)?,
                 body: body.clone(),
             };
             self.requests.fetch_add(1, Ordering::Relaxed);
@@ -174,7 +191,7 @@ impl AdoClient {
             let outcome = match self.transport.send(request).await {
                 Ok(response) => {
                     self.gate.observe(&response.headers);
-                    classify(&method, response, can_retry, refreshed)
+                    classify(&method, response, (can_retry, refreshed), expect)
                 }
                 Err(e) => transport_outcome(e, can_retry),
             };
@@ -213,9 +230,18 @@ impl AdoClient {
         }
     }
 
-    fn headers(&self, token: &AccessToken, has_body: bool) -> Result<HeaderMap, AdoError> {
+    fn headers(
+        &self,
+        token: &AccessToken,
+        has_body: bool,
+        expect: Expect,
+    ) -> Result<HeaderMap, AdoError> {
+        let accept = match expect {
+            Expect::Json => "application/json",
+            Expect::Image => "image/png, image/*;q=0.8",
+        };
         let mut headers = HeaderMap::new();
-        headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
+        headers.insert(header::ACCEPT, HeaderValue::from_static(accept));
         headers.insert(H_FEDAUTH, HeaderValue::from_static(V_FEDAUTH));
         headers.insert(
             H_MSA_PASSTHROUGH,
@@ -262,20 +288,26 @@ fn transport_outcome(error: TransportError, can_retry: bool) -> Outcome {
 }
 
 /// Maps one response to the next step. Pure apart from reading the response.
-fn classify(method: &Method, response: HttpResponse, can_retry: bool, refreshed: bool) -> Outcome {
+fn classify(
+    method: &Method,
+    response: HttpResponse,
+    (can_retry, refreshed): (bool, bool),
+    expect: Expect,
+) -> Outcome {
     let status = response.status.as_u16();
     match status {
         200..=299 => {
             let expects_body = *method != Method::HEAD && status != 204;
-            if expects_body && !is_json(&response.headers) {
-                // A 203 with an HTML sign-in page, or any non-JSON success: the token was not accepted.
+            if expects_body && !has_expected_type(&response.headers, expect) {
+                // A 203 with an HTML sign-in page, or any success of the wrong type: the token
+                // was not accepted.
                 Outcome::Fail(AuthError::SignInPageReturned.into())
             } else {
                 Outcome::Done(response)
             }
         }
-        // Redirects are disabled; one means a sign-in redirect.
-        300..=399 => Outcome::Fail(AuthError::SignInPageReturned.into()),
+        // Redirects are disabled; for JSON one means a sign-in redirect.
+        300..=399 if expect == Expect::Json => Outcome::Fail(AuthError::SignInPageReturned.into()),
         401 if !refreshed => Outcome::RefreshAuth {
             code: vss_error(&response).1,
         },
@@ -320,12 +352,15 @@ fn classify(method: &Method, response: HttpResponse, can_retry: bool, refreshed:
     }
 }
 
-fn is_json(headers: &HeaderMap) -> bool {
-    headers
+fn has_expected_type(headers: &HeaderMap, expect: Expect) -> bool {
+    let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .map(str::to_ascii_lowercase)
-        .is_some_and(|ct| ct.starts_with("application/json") || ct.contains("+json"))
+        .map(str::to_ascii_lowercase);
+    content_type.is_some_and(|ct| match expect {
+        Expect::Json => ct.starts_with("application/json") || ct.contains("+json"),
+        Expect::Image => ct.starts_with("image/"),
+    })
 }
 
 fn vss_message(response: &HttpResponse) -> Option<Arc<str>> {

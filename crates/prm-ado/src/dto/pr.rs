@@ -68,13 +68,8 @@ pub(crate) enum MergeStatusDto {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReviewerDto {
-    pub(crate) id: Uuid,
-    #[serde(default)]
-    pub(crate) display_name: String,
-    #[serde(default)]
-    pub(crate) unique_name: Option<String>,
-    #[serde(default)]
-    pub(crate) is_container: bool,
+    #[serde(flatten)]
+    pub(crate) who: IdentityRefDto,
     #[serde(default)]
     pub(crate) vote: i16,
     #[serde(default)]

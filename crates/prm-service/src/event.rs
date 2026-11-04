@@ -9,7 +9,7 @@ use prm_domain::{
     uri::AppUri,
 };
 
-use crate::errors::UiError;
+use crate::{errors::UiError, jobs::LoadedAvatar};
 
 /// One event from the service to the UI, delivered in order and never coalesced.
 #[derive(Clone, Debug, PartialEq)]
@@ -43,6 +43,8 @@ pub enum AppEvent {
     },
     /// Every diff result, including changes whose toasts were suppressed.
     Changes(Arc<[ChangeEvent]>),
+    /// Pictures that just became available (one event per batch).
+    Avatars(Arc<[LoadedAvatar]>),
     NotificationTestResult(Result<(), UiError>),
     /// The updater will replace the app files once this process exits: quit gracefully now.
     QuitForUpdate,

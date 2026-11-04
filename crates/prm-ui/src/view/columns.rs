@@ -197,7 +197,7 @@ pub(crate) const COLUMNS: [ColumnSpec; 11] = [
         ColumnId::Reviews,
         "reviews",
         copy::REVIEWS,
-        Width::Initial(84.0),
+        Width::Initial(104.0),
         56.0,
         None,
     ),
