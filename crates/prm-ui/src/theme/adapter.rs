@@ -251,6 +251,87 @@ pub(crate) fn frame_canvas(theme: &UiTheme) -> egui::Frame {
     egui::Frame::NONE.fill(theme.colors.surface_canvas)
 }
 
+/// The list area: a sheet on the table's own tone, flush to the window. Its top corners are
+/// rounded by [`paint_notches`] once the content is drawn, since egui cannot clip to a rounded
+/// shape.
+pub(crate) fn frame_sheet(theme: &UiTheme) -> egui::Frame {
+    egui::Frame::NONE.fill(theme.colors.surface_sunken)
+}
+
+/// Which top corners of a surface are rounded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TopCorners {
+    pub left: bool,
+    pub right: bool,
+}
+
+impl TopCorners {
+    pub(crate) const BOTH: Self = Self {
+        left: true,
+        right: true,
+    };
+    pub(crate) const LEFT: Self = Self {
+        left: true,
+        right: false,
+    };
+    pub(crate) const RIGHT: Self = Self {
+        left: false,
+        right: true,
+    };
+}
+
+/// Arc segments in one notch.
+const NOTCH_SEGMENTS: u8 = 10;
+/// How far, in points, a notch's soft edge reaches into the surface (the overlap that hides a
+/// hairline of the surface's fill at the arc).
+const NOTCH_FEATHER: f32 = 1.0;
+
+/// Rounds the top corners of the surface in `rect` by painting, over its content, the canvas
+/// colour in the wedge between each corner and a quarter circle of `radius.lg`. The toolbar's
+/// colour then shows in the notches, as if the header curved down into the surface. Paints
+/// nothing when the radius is 0 (Square corners), so no caller checks the setting.
+pub(crate) fn paint_notches(
+    painter: &egui::Painter,
+    theme: &UiTheme,
+    rect: egui::Rect,
+    corners: TopCorners,
+) {
+    let r = f32::from(theme.tokens.metrics.radius.lg);
+    if r <= 0.0 {
+        return;
+    }
+    let canvas = theme.colors.surface_canvas;
+    if corners.left {
+        painter.add(notch(rect.left_top(), 1.0, r, canvas));
+    }
+    if corners.right {
+        painter.add(notch(rect.right_top(), -1.0, r, canvas));
+    }
+}
+
+/// The wedge at the top `corner`, where `sx` (1 or -1) points into the surface. A fan from the
+/// corner to the arc, plus a strip fading to nothing just inside the arc.
+fn notch(corner: egui::Pos2, sx: f32, r: f32, color: Color32) -> egui::Shape {
+    let center = corner + egui::vec2(sx * r, r);
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(corner, color);
+    let steps = f32::from(NOTCH_SEGMENTS);
+    let inner = (r - NOTCH_FEATHER).max(0.0);
+    for i in 0..=NOTCH_SEGMENTS {
+        let t = f32::from(i) / steps * std::f32::consts::FRAC_PI_2;
+        let dir = egui::vec2(-sx * t.cos(), -t.sin());
+        mesh.colored_vertex(center + dir * r, color);
+        mesh.colored_vertex(center + dir * inner, Color32::TRANSPARENT);
+    }
+    for i in 0..u32::from(NOTCH_SEGMENTS) {
+        let (outer, fade) = (1 + 2 * i, 2 + 2 * i);
+        mesh.add_triangle(0, outer, outer + 2);
+        mesh.add_triangle(outer, fade, outer + 2);
+        mesh.add_triangle(fade, fade + 2, outer + 2);
+    }
+    egui::Shape::mesh(mesh)
+}
+
 /// A standalone card with a hairline border, like a dialog (first run).
 pub(crate) fn frame_card(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;

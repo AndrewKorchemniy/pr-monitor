@@ -29,6 +29,7 @@ mod dashboard;
 mod dialogs;
 mod gallery;
 mod people;
+mod sheet;
 mod small_windows;
 mod status_bar;
 mod table;
