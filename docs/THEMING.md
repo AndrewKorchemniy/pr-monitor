@@ -63,10 +63,8 @@ stripes = true
 
 Rounded or square corners are a setting, not part of a theme: Settings › Appearance ›
 **Corners** applies to every theme and to the window frame, and the choice is stored as
-`ui.corners` (`"rounded"` or `"square"`) in `config.toml`. A config written before the setting
-existed gets Square when its theme was Cyanotype, so its look does not change, and Rounded
-otherwise. The old `[metrics] radius_scale` key is ignored; a theme that still sets it gets an
-info note pointing to the setting.
+`ui.corners` (`"rounded"` or `"square"`) in `config.toml`. A theme's `[metrics] radius_scale`
+key is ignored.
 
 ## Following Windows
 

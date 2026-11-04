@@ -1,7 +1,5 @@
 # Contributing
 
-Thanks for helping. This page covers what you need to build, test and send a change.
-
 ## Prerequisites
 
 - **Rust via rustup.** The toolchain is pinned in `rust-toolchain.toml`; rustup installs it

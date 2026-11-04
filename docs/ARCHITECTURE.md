@@ -1,8 +1,8 @@
 # Architecture
 
-PR Monitor is one executable built from nine crates. Pure logic sits at the bottom, I/O in
-the middle and the window at the top. Every boundary is a trait ("port"), so the logic can be
-tested without a network, a credential store or a screen.
+PR Monitor is one executable built from nine crates: pure logic at the bottom, I/O in the
+middle, the window at the top. Every boundary is a trait ("port"), so logic is testable without
+a network, credential store or screen.
 
 ## Crates
 

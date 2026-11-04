@@ -2,50 +2,44 @@
 
 [![CI](https://github.com/AndrewKorchemniy/pr-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewKorchemniy/pr-monitor/actions/workflows/ci.yml)
 
-A small, fast Windows tray app that watches your team's Azure DevOps pull requests and
-tells you whose move it is.
+A Windows tray app that watches your team's Azure DevOps pull requests and shows whose move
+each one is.
 
 > [!NOTE]
-> PR Monitor is an early preview. Expect rough edges. If something breaks,
+> Early preview. If something breaks,
 > [open an issue](https://github.com/AndrewKorchemniy/pr-monitor/issues/new/choose) and attach
-> the relevant lines from the logs folder (`%LOCALAPPDATA%\PRMonitor\logs`).
+> the relevant lines from `%LOCALAPPDATA%\PRMonitor\logs`.
 
 - **One status per PR:** *Needs review*, *Active comments* or *Reviewed*, based on the
   reviewers whose votes count for your team.
-- **Many orgs and repos at once.** Choose projects or single repositories, the people whose
-  PRs you track (leave the list empty to track everyone in those repositories) and the
-  reviewers whose votes count.
-- **Notifications that are worth reading:** new PRs, new comments, votes, re-reviews and
-  pushes, grouped per PR and capped per refresh.
-- **Lives in the tray.** It refreshes every few minutes (5 by default) and uses no CPU while
-  idle. Press `Ctrl+K` for the command palette and `?` for every shortcut.
-- **Easy to install, keeps itself up to date.** A per-user installer or a portable zip, with no
-  admin rights and no runtime to install.
+- **Many orgs and repos.** Choose projects or single repositories, the people whose PRs you
+  track (empty tracks everyone in those repositories) and the reviewers whose votes count.
+- **Notifications:** new PRs, comments, votes, re-reviews and pushes, grouped per PR and capped
+  per refresh.
+- **Lives in the tray.** It refreshes every 5 minutes by default. `Ctrl+K` opens the command
+  palette, `?` lists every shortcut.
+- **Updates itself.** A per-user installer or a portable zip; no admin rights.
 
 ## Download
 
-Get one of these for your architecture (x64 or arm64) from the
+Get one for your architecture (x64 or arm64) from the
 [latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest):
 
-- **Installer:** `PRMonitor-win-x64-Setup.exe` (or `-win-arm64`). It installs
-  for your user only, into `%LOCALAPPDATA%\PRMonitor`, so it needs no admin
-  rights. It adds a Start menu entry and an Add/Remove Programs entry.
-- **Portable zip:** `PRMonitor-win-x64-Portable.zip` (or `-win-arm64`). Unzip it
-  anywhere and run `PR Monitor.exe`. Keep the folder together: it updates itself in place.
+- **Installer:** `PRMonitor-win-x64-Setup.exe` (or `-win-arm64`). Installs for your user into
+  `%LOCALAPPDATA%\PRMonitor`, with a Start menu entry and an Add/Remove Programs entry.
+- **Portable zip:** `PRMonitor-win-x64-Portable.zip` (or `-win-arm64`). Unzip anywhere, run
+  `PR Monitor.exe` and keep the folder together: it updates itself in place.
 
-Both update themselves from the GitHub releases. Direct links to the latest build:
+Direct links:
+[Setup x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-x64-Setup.exe),
+[Setup arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-arm64-Setup.exe),
+[Portable x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-x64-Portable.zip),
+[Portable arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-arm64-Portable.zip).
 
-- [Setup, x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-x64-Setup.exe)
-  · [Setup, arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-arm64-Setup.exe)
-- [Portable zip, x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-x64-Portable.zip)
-  · [Portable zip, arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-arm64-Portable.zip)
+Supported: Windows 10 1809 or later (x64) and Windows 11 (arm64).
 
-**Coming from v0.2.x?** Those versions were a single exe that could not update itself. Switch
-once: run the Setup, or unzip the Portable zip, then delete the old `pr-monitor-windows-*.exe`.
-Your settings, sign-in and logs stay where they are (`%LOCALAPPDATA%\PRMonitor`), and autostart
-and the `prmonitor://` registration point themselves at the new exe the first time it starts.
-
-Every release is built by GitHub Actions from a tagged commit, and you can verify that yourself:
+Releases are built by GitHub Actions and are not signed. Verify a download (the same works for
+the Portable zip):
 
 ```powershell
 gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
@@ -53,14 +47,12 @@ gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
 Get-FileHash -Algorithm SHA256 PRMonitor-win-x64-Setup.exe   # compare with SHA256SUMS.txt
 ```
 
-The first command checks the build provenance, the second the attached CycloneDX SBOM. The same
-works for the Portable zip.
-Supported: Windows 10 1809 or later (x64) and Windows 11 (arm64).
+The first command checks build provenance, the second the CycloneDX SBOM.
 
 ### Linux (preview)
 
-Linux builds are tested in CI but used far less than the Windows ones, so treat them as a
-preview. Download `PRMonitor-linux-x64.AppImage` (or `-linux-arm64`) from the
+Linux builds are tested in CI but used less than the Windows ones. Download
+`PRMonitor-linux-x64.AppImage` (or `-linux-arm64`) from the
 [latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest), then:
 
 ```sh
@@ -68,18 +60,15 @@ chmod +x PRMonitor-linux-x64.AppImage
 ./PRMonitor-linux-x64.AppImage
 ```
 
-- **It updates itself**, like the Windows builds. Keep the AppImage in a folder you can write to
-  (for example `~/Applications`); in a system folder every update asks for a password. The first
-  update after an install always downloads the full package.
-- **Libraries.** The desktop needs libxkbcommon, X11 or Wayland, and GL (Mesa or a vendor driver).
-  If the AppImage will not start because FUSE is missing, run it with `--appimage-extract-and-run`.
-- **Tray icon.** It needs a StatusNotifier host. KDE, XFCE and most others have one; GNOME needs
-  the AppIndicator extension.
-- **Launch at login** points at the AppImage file, so do not move it afterwards without turning
-  the setting off and on again.
-- Builds target glibc 2.35 or newer (Ubuntu 22.04 and later).
-- The `prmonitor://` link handler is Windows-only for now.
-- Builds are not signed. Verify one with `gh attestation verify <file> -R AndrewKorchemniy/pr-monitor`.
+- **It updates itself.** Keep the AppImage in a folder you can write to (for example
+  `~/Applications`); in a system folder every update asks for a password.
+- **Libraries.** libxkbcommon, X11 or Wayland, and GL (Mesa or a vendor driver). If FUSE is
+  missing, run it with `--appimage-extract-and-run`.
+- **Tray icon.** Needs a StatusNotifier host (GNOME needs the AppIndicator extension).
+- **Launch at login** points at the AppImage file; if you move it, turn the setting off and on.
+- Needs glibc 2.35 or newer (Ubuntu 22.04 and later).
+- The `prmonitor://` link handler is Windows-only.
+- Not signed. Verify with `gh attestation verify <file> -R AndrewKorchemniy/pr-monitor`.
 
 ## Signing in
 
@@ -94,15 +83,14 @@ PR Monitor tries these in order and remembers what worked for each organization:
 
 ## Your data
 
-Settings, cached results and logs live in `%LOCALAPPDATA%\PRMonitor` (logs in its `logs`
-subfolder). To keep them somewhere else, pass `--home <dir>` or set the `PRMONITOR_HOME`
-environment variable; `--home` wins if both are set. Logs are redacted: tokens never reach
-them. PR Monitor talks only to Azure DevOps, Microsoft sign-in and GitHub (to look for
-updates; turn that off in Settings > General).
-`pr-monitor --unregister --purge` removes everything it added to Windows, including the data
-folder.
-The installer uses the same folder, so uninstalling removes the whole folder, including
-settings and logs; sign-ins stay in Windows Credential Manager.
+Settings, cached results and logs live in `%LOCALAPPDATA%\PRMonitor` (logs in `logs`). Use
+`--home <dir>` or the `PRMONITOR_HOME` environment variable to move them; `--home` wins. Logs
+never contain tokens. PR Monitor talks only to Azure DevOps, Microsoft sign-in and GitHub (for
+update checks; turn that off in Settings > General).
+
+`pr-monitor --unregister --purge` removes what PR Monitor added to Windows and its data (not
+the installed program). The installer uses the same folder, so uninstalling removes the whole
+folder, including settings and logs; sign-ins stay in Windows Credential Manager.
 
 ## Command line
 
@@ -129,8 +117,7 @@ pr-monitor [--minimized] [--activate <prmonitor://...>] [--renderer auto|glow|wg
 
 ## Building from source
 
-You need Rust (the toolchain is pinned in `rust-toolchain.toml`) and, on Windows, the MSVC
-build tools.
+Needs Rust (pinned in `rust-toolchain.toml`) and, on Windows, the MSVC build tools.
 
 ```powershell
 cargo build --release -p pr-monitor        # target/release/pr-monitor.exe
@@ -138,10 +125,8 @@ cargo lint                                 # clippy, warnings are errors
 cargo t                                    # tests (cargo-nextest)
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together,
-[docs/THEMING.md](docs/THEMING.md) for writing themes, [CONTRIBUTING.md](CONTRIBUTING.md)
-before opening a pull request and [docs/RELEASING.md](docs/RELEASING.md) for how releases
-are made.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/THEMING.md](docs/THEMING.md),
+[CONTRIBUTING.md](CONTRIBUTING.md) and [docs/RELEASING.md](docs/RELEASING.md).
 
 ## License
 

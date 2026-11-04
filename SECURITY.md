@@ -29,5 +29,5 @@ Out of scope: vulnerabilities in Azure DevOps itself, the Azure CLI, or Windows.
 gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
 gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
 ```
-The first command checks build provenance, the second the CycloneDX SBOM attestation. Compare
-`Get-FileHash -Algorithm SHA256` against `SHA256SUMS.txt` from the same release.
+The first command checks build provenance, the second the CycloneDX SBOM. Compare
+`Get-FileHash -Algorithm SHA256` with `SHA256SUMS.txt` from the same release.
