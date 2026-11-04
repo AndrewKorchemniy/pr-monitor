@@ -113,7 +113,7 @@ excessive_nesting = "warn"
 wildcard_enum_match_arm = "warn"
 
 [profile.dev]
-debug = "line-tables-only"         # backtraces keep file:line; builds and target/ stay small (dev-ui and tests inherit)
+debug = "line-tables-only"         # backtraces keep file:line on Windows (the Linux rustflags in .cargo/config.toml strip it); builds and target/ stay small (dev-ui and tests inherit)
 
 [profile.release]
 opt-level = 3
