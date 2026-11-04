@@ -224,8 +224,11 @@ pub(crate) fn change_bar(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, pr: &PrRow) {
         pos2(cell.left() + 1.0, top),
         pos2(cell.left() + 1.0 + width, bottom),
     );
-    ui.painter()
-        .rect_filled(bar, width / 2.0, theme.colors.signature_revision);
+    ui.painter().rect_filled(
+        bar,
+        egui::CornerRadius::same(theme.tokens.metrics.radius.xs),
+        theme.colors.signature_revision,
+    );
     let _ = ui
         .allocate_rect(bar, Sense::hover())
         .on_hover_text(copy::CHANGED_TOOLTIP);

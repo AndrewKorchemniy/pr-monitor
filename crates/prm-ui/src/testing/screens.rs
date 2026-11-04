@@ -101,6 +101,8 @@ impl Fixture {
 
     pub(crate) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        let draft = (self.shown == Shown::Settings).then_some(self.settings.draft.ui.corners);
+        self.theme.set_corners_preview(draft);
         self.theme.apply(&ctx);
         let mut cx = FrameCx {
             theme: self.theme.current(&ctx).clone(),

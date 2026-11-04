@@ -12,8 +12,8 @@ use windows::{
         Foundation::{E_INVALIDARG, HWND, RECT},
         Graphics::Dwm::{
             DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_COLOR_DEFAULT,
-            DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWINDOWATTRIBUTE,
-            DwmSetWindowAttribute,
+            DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+            DWMWINDOWATTRIBUTE, DwmSetWindowAttribute,
         },
         Graphics::Gdi::{MONITOR_DEFAULTTONULL, MonitorFromRect},
         UI::WindowsAndMessaging::{
@@ -28,11 +28,11 @@ use super::port_error;
 use crate::{
     common::failed,
     shared::{
-        colors::{Rgb, TitleBarColors, colorref},
+        colors::{Rgb, WindowChrome, colorref},
         os_desc::{OsFacts, format_os_description},
         session_kind::SessionInfo,
     },
-    shell::{DesktopShell, title_bar_probe},
+    shell::{DesktopShell, corner_preference, title_bar_probe},
 };
 
 pub(crate) struct WinShell {
@@ -69,9 +69,13 @@ fn set_attribute<T>(hwnd: HWND, attribute: DWMWINDOWATTRIBUTE, value: &T) -> Res
     let result =
         unsafe { DwmSetWindowAttribute(hwnd, attribute, (&raw const *value).cast(), size) };
     match result {
-        // Windows 10 does not support caption/text/border colors: not an error for us.
         Ok(()) => Ok(()),
-        Err(error) if error.code() == E_INVALIDARG => Ok(()),
+        // Windows 10 does not support the caption/text/border colors or the corner preference:
+        // not an error for us.
+        Err(error) if error.code() == E_INVALIDARG => {
+            tracing::debug!(attribute = attribute.0, "window attribute not supported");
+            Ok(())
+        }
         Err(error) => Err(port_error(&error)),
     }
 }
@@ -81,20 +85,30 @@ fn color_or_default(color: Option<Rgb>) -> u32 {
 }
 
 impl DesktopShell for WinShell {
-    fn apply_title_bar(
+    fn apply_chrome(
         &self,
         window: &dyn HasWindowHandle,
-        colors: &TitleBarColors,
+        chrome: &WindowChrome,
     ) -> Result<(), PortError> {
         let hwnd = hwnd(window)?;
-        set_attribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
-            &BOOL::from(colors.dark),
-        )?;
-        set_attribute(hwnd, DWMWA_CAPTION_COLOR, &color_or_default(colors.caption))?;
-        set_attribute(hwnd, DWMWA_TEXT_COLOR, &color_or_default(colors.text))?;
-        set_attribute(hwnd, DWMWA_BORDER_COLOR, &color_or_default(colors.border))
+        // why: every attribute is tried, so one failing never leaves the corner shape unset.
+        [
+            set_attribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                &BOOL::from(chrome.dark),
+            ),
+            set_attribute(hwnd, DWMWA_CAPTION_COLOR, &color_or_default(chrome.caption)),
+            set_attribute(hwnd, DWMWA_TEXT_COLOR, &color_or_default(chrome.text)),
+            set_attribute(hwnd, DWMWA_BORDER_COLOR, &color_or_default(chrome.border)),
+            set_attribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &corner_preference(chrome.rounded),
+            ),
+        ]
+        .into_iter()
+        .collect()
     }
 
     fn set_cloaked(&self, window: &dyn HasWindowHandle, cloaked: bool) -> Result<(), PortError> {

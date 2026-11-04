@@ -1,4 +1,4 @@
-//! Title-bar colors for DWM.
+//! Window chrome (title-bar colors and corner shape) for DWM.
 
 /// An sRGB color, 8 bits per channel.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -8,13 +8,15 @@ pub struct Rgb {
     pub b: u8,
 }
 
-/// `None` leaves the system default.
+/// The window frame: title-bar colors (`None` leaves the system default) and the corner shape.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub struct TitleBarColors {
+pub struct WindowChrome {
     pub dark: bool,
     pub caption: Option<Rgb>,
     pub text: Option<Rgb>,
     pub border: Option<Rgb>,
+    /// Rounded window corners; square when false.
+    pub rounded: bool,
 }
 
 /// Win32 `COLORREF`: 0x00BBGGRR.

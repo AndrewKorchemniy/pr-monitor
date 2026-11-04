@@ -1,10 +1,11 @@
 use super::*;
 
-fn chrome(caption: [u8; 3]) -> ChromeColors {
-    ChromeColors {
+fn chrome(caption: [u8; 3]) -> UiChrome {
+    UiChrome {
         caption,
         text: [200, 200, 200],
         border: [60, 60, 60],
+        rounded: true,
     }
 }
 
@@ -17,13 +18,13 @@ fn dark_captions_ask_for_dark_title_bars() {
         ([0xEE, 0xF1, 0xF4], false),
     ];
     for (caption, dark) in cases {
-        assert_eq!(title_bar(chrome(caption)).dark, dark, "{caption:?}");
+        assert_eq!(window_chrome(chrome(caption)).dark, dark, "{caption:?}");
     }
 }
 
 #[test]
-fn every_color_is_passed_through() {
-    let colors = title_bar(chrome([1, 2, 3]));
+fn every_color_and_the_corner_shape_are_passed_through() {
+    let colors = window_chrome(chrome([1, 2, 3]));
     assert_eq!(colors.caption, Some(Rgb { r: 1, g: 2, b: 3 }));
     assert_eq!(
         colors.text,
@@ -41,4 +42,14 @@ fn every_color_is_passed_through() {
             b: 60
         })
     );
+}
+
+#[test]
+fn square_corners_are_passed_through() {
+    let square = UiChrome {
+        rounded: false,
+        ..chrome([1, 2, 3])
+    };
+    assert!(window_chrome(chrome([1, 2, 3])).rounded);
+    assert!(!window_chrome(square).rounded);
 }

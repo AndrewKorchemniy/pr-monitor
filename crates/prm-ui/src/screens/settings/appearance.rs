@@ -4,9 +4,9 @@
 use eframe::egui;
 use prm_config::{
     Config, limits,
-    schema::{RendererPref, Tristate},
+    schema::{Corners, RendererPref, Tristate},
 };
-use prm_theme::registry::SYSTEM;
+use prm_theme::{IssueLevel, registry::SYSTEM};
 
 use crate::{
     actions::UiAction,
@@ -24,6 +24,10 @@ const TRISTATE: [(Tristate, &str); 3] = [
     (Tristate::Auto, "Automatic"),
     (Tristate::On, "On"),
     (Tristate::Off, "Off"),
+];
+const CORNER_SHAPES: [(Corners, &str); 2] = [
+    (Corners::Rounded, copy::ROUNDED),
+    (Corners::Square, copy::SQUARE),
 ];
 const RENDERERS: [(RendererPref, &str); 3] = [
     (RendererPref::Auto, "Automatic"),
@@ -59,6 +63,18 @@ pub(crate) fn page(
         if prefs.theme != before {
             cx.push(UiAction::PreviewTheme(Some(prefs.theme.clone())));
         }
+        controls::row_divider(ui, &theme);
+        setting_row(
+            ui,
+            &theme,
+            (copy::CORNERS, Some(copy::CORNERS_HELP)),
+            |ui| {
+                // why: the next frame's `logic` previews the draft's corners; nothing else to send.
+                if controls::segmented(ui, &theme, &mut prefs.corners, &CORNER_SHAPES) {
+                    ui.ctx().request_repaint();
+                }
+            },
+        );
         issues(ui, &theme, &env.theme_issues);
     });
     section(ui, &theme, copy::SECTION_LAYOUT, None, |ui| {
@@ -94,9 +110,15 @@ pub(crate) fn page(
 }
 
 /// Theme files that failed to load or to pass the contrast checks.
-fn issues(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, issues: &[String]) {
-    let color = theme.colors.tone(crate::theme::Tone::Warning).fg;
-    for issue in issues {
+fn issues(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, issues: &[(IssueLevel, String)]) {
+    for (level, issue) in issues {
+        // why: an Info note (a retired key, say) is not a problem, so it stays quiet.
+        let color = match level {
+            IssueLevel::Info => theme.colors.text_muted,
+            IssueLevel::Warning | IssueLevel::Error => {
+                theme.colors.tone(crate::theme::Tone::Warning).fg
+            }
+        };
         ui.label(egui::RichText::new(issue).color(color));
     }
 }

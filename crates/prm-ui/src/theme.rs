@@ -13,11 +13,11 @@ use std::{
 use eframe::egui::{self, Color32, FontId};
 use prm_config::UiPrefs;
 use prm_theme::{
-    Appearance, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection, Tokens,
-    TypeRole, registry::resolve,
+    Appearance, Corners, MarkColors, ThemeDirScanner, ThemeIssue, ThemeRegistry, ThemeSelection,
+    Tokens, TypeRole, registry::resolve,
 };
 
-use crate::{deps::ChromeColors, render::policy::RenderPolicy};
+use crate::{deps::WindowChrome, render::policy::RenderPolicy};
 
 /// The semantic tones status pills, banners and the status bar use.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -112,11 +112,8 @@ pub(crate) fn fallback() -> Arc<UiTheme> {
     FALLBACK
         .get_or_init(|| {
             let registry = ThemeRegistry::builtin();
-            let selection = ThemeSelection {
-                theme: prm_theme::registry::DEFAULT_DARK.into(),
-                dark: prm_theme::registry::DEFAULT_DARK.into(),
-                light: prm_theme::registry::DEFAULT_LIGHT.into(),
-            };
+            let mut selection = selection_from(&UiPrefs::default());
+            selection.theme = prm_theme::registry::DEFAULT_DARK.into();
             let set = resolve(&registry, &selection);
             let policy = RenderPolicy {
                 low_power: false,
@@ -140,6 +137,7 @@ pub(crate) fn selection_from(prefs: &UiPrefs) -> ThemeSelection {
         theme: prefs.theme.clone(),
         dark: prefs.theme_dark.clone(),
         light: prefs.theme_light.clone(),
+        corners: prefs.corners,
     }
 }
 
@@ -151,6 +149,8 @@ pub(crate) struct ThemeRuntime {
     themes_dir: std::path::PathBuf,
     selection: ThemeSelection,
     preview: Option<String>,
+    /// Settings' unsaved corner choice; wins over the saved one while set.
+    corners_preview: Option<Corners>,
     policy: RenderPolicy,
     dark: Arc<UiTheme>,
     light: Arc<UiTheme>,
@@ -180,6 +180,7 @@ impl ThemeRuntime {
             registry,
             selection,
             preview: None,
+            corners_preview: None,
             policy,
             generation: 1,
             applied: 0,
@@ -192,6 +193,9 @@ impl ThemeRuntime {
         let mut selection = self.selection.clone();
         if let Some(preview) = &self.preview {
             selection.theme.clone_from(preview);
+        }
+        if let Some(corners) = self.corners_preview {
+            selection.corners = corners;
         }
         let set = resolve(&self.registry, &selection);
         self.issues = self.dir_issues.iter().cloned().chain(set.issues).collect();
@@ -223,6 +227,16 @@ impl ThemeRuntime {
     pub(crate) fn set_preview(&mut self, theme: Option<String>) {
         if theme != self.preview {
             self.preview = theme;
+            self.rebuild();
+        }
+    }
+
+    /// Settings' live corner preview; `None` reverts to the saved corners.
+    pub(crate) fn set_corners_preview(&mut self, corners: Option<Corners>) {
+        // why: a preview equal to the saved corners changes nothing, so opening settings is free.
+        let corners = corners.filter(|&c| c != self.selection.corners);
+        if corners != self.corners_preview {
+            self.corners_preview = corners;
             self.rebuild();
         }
     }
@@ -280,13 +294,15 @@ impl ThemeRuntime {
         }
     }
 
-    pub(crate) fn chrome(&self, ctx: &egui::Context) -> ChromeColors {
-        let palette = &self.current(ctx).tokens.palette;
+    pub(crate) fn chrome(&self, ctx: &egui::Context) -> WindowChrome {
+        let theme = self.current(ctx);
+        let palette = &theme.tokens.palette;
         let rgb = |c: prm_theme::Rgba8| [c.r, c.g, c.b];
-        ChromeColors {
+        WindowChrome {
             caption: rgb(palette.chrome_caption),
             text: rgb(palette.chrome_caption_text),
             border: rgb(palette.chrome_border),
+            rounded: theme.tokens.metrics.corners.is_rounded(),
         }
     }
 

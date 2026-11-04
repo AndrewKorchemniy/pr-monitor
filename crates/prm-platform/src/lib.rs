@@ -28,7 +28,7 @@ pub use common::{
 pub use identity::{IdentityStatus, RegistrationSpec, ensure_shell_identity};
 pub use instance::{Acquired, InstanceLock, acquire_instance};
 pub use shared::{
-    colors::{Rgb, TitleBarColors},
+    colors::{Rgb, WindowChrome},
     handoff_codec::HandoffRequest,
     instance_key::{InstanceKey, InstanceScope, is_same_root},
     registration::{BuildKind, RegisterOverride, RegistrationScope, registration_scope},

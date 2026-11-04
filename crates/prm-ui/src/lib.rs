@@ -21,7 +21,7 @@ mod widgets;
 mod window;
 
 pub use app::create_app;
-pub use deps::{BuildInfo, ChromeColors, NoopHost, UiHost, UiInit};
+pub use deps::{BuildInfo, NoopHost, UiHost, UiInit, WindowChrome};
 pub use render::{LaunchSpec, RenderEnv, RendererKind, hover_bands::HoverBands, native_options};
 pub use tray::window_icon;
 

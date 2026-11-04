@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use prm_domain::ports::PortErrorKind;
-use prm_platform::{DesktopShell, Rgb, TitleBarColors};
+use prm_platform::{DesktopShell, Rgb, WindowChrome};
 use prm_theme::{Rgba8, contrast::is_dark};
-use prm_ui::{ChromeColors, UiHost};
+use prm_ui::{UiHost, WindowChrome as UiChrome};
 use raw_window_handle::HasWindowHandle;
 
 pub(crate) struct PlatformUiHost(pub Arc<dyn DesktopShell>);
@@ -16,20 +16,21 @@ const fn rgb([r, g, b]: [u8; 3]) -> Rgb {
 
 /// Dark captions get light system glyphs (the min/max/close buttons), by the theme's own
 /// definition of a dark background.
-pub(crate) fn title_bar(colors: ChromeColors) -> TitleBarColors {
-    let [r, g, b] = colors.caption;
-    TitleBarColors {
+pub(crate) fn window_chrome(chrome: UiChrome) -> WindowChrome {
+    let [r, g, b] = chrome.caption;
+    WindowChrome {
         dark: is_dark(Rgba8::rgb(r, g, b)),
-        caption: Some(rgb(colors.caption)),
-        text: Some(rgb(colors.text)),
-        border: Some(rgb(colors.border)),
+        caption: Some(rgb(chrome.caption)),
+        text: Some(rgb(chrome.text)),
+        border: Some(rgb(chrome.border)),
+        rounded: chrome.rounded,
     }
 }
 
 impl UiHost for PlatformUiHost {
-    fn apply_title_bar(&self, window: &dyn HasWindowHandle, colors: ChromeColors) {
-        if let Err(error) = self.0.apply_title_bar(window, &title_bar(colors)) {
-            tracing::debug!(%error, "title bar colors not applied");
+    fn apply_chrome(&self, window: &dyn HasWindowHandle, chrome: UiChrome) {
+        if let Err(error) = self.0.apply_chrome(window, &window_chrome(chrome)) {
+            tracing::debug!(%error, "window chrome not applied");
         }
     }
 

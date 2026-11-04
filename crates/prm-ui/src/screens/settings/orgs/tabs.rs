@@ -255,7 +255,7 @@ fn org_tab(ui: &mut egui::Ui, theme: &UiTheme, tab: &Tab<'_>, selected: bool) ->
     }
     if selected {
         let bar = Rect::from_min_max(pos2(rect.left(), rect.bottom() - 2.0), rect.max);
-        ui.painter().rect_filled(bar, 1.0, c.accent_base);
+        ui.painter().rect_filled(bar, m.radius.xs, c.accent_base);
     }
     let tone = tab.state.map_or(Tone::Neutral, auth_tone);
     let dot = pos2(rect.left() + m.space.lg + DOT / 2.0, rect.center().y);
