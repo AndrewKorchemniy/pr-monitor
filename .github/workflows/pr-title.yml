@@ -26,5 +26,5 @@ jobs:
             chore
             revert
             style
-          subjectPattern: ^(?![A-Z]).+$
+          subjectPattern: ^(?![A-Z]).+$|^Bump .+$        # Dependabot titles start with "Bump"
           subjectPatternError: "The subject must start lowercase (Conventional Commits)."
