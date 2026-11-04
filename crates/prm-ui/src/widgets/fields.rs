@@ -94,20 +94,37 @@ pub(crate) fn text_field(
     response
 }
 
-fn edit<'t>(theme: &UiTheme, text: &'t mut String, field: &Field<'_>) -> TextEdit<'t> {
-    let edit = TextEdit::singleline(text)
-        .id(field.id)
-        .hint_text(field.hint)
+/// A frameless single-line input in the body font that fills its rect, aligned by `align`.
+/// Callers add a hint or a mask; the text colour comes from the theme's visuals.
+pub(crate) fn bare_edit<'t>(
+    theme: &UiTheme,
+    text: &'t mut String,
+    id: egui::Id,
+    align: egui::Align2,
+) -> TextEdit<'t> {
+    TextEdit::singleline(text)
+        .id(id)
         .frame(egui::Frame::NONE)
         .font(theme.fonts.body.clone())
-        .align(egui::Align2::LEFT_CENTER)
-        .password(field.password)
-        .desired_width(f32::INFINITY);
+        .align(align)
+        .desired_width(f32::INFINITY)
+}
+
+/// Whether Esc stays with `edit` (it cancels or closes something of the widget's own) instead
+/// of egui taking the focus away from it.
+pub(crate) fn keep_escape(edit: TextEdit<'_>, keeps: bool) -> TextEdit<'_> {
     let filter = edit.get_event_filter();
     edit.event_filter(EventFilter {
-        escape: field.keeps_escape,
+        escape: keeps,
         ..filter
     })
+}
+
+fn edit<'t>(theme: &UiTheme, text: &'t mut String, field: &Field<'_>) -> TextEdit<'t> {
+    let edit = bare_edit(theme, text, field.id, egui::Align2::LEFT_CENTER)
+        .hint_text(field.hint)
+        .password(field.password);
+    keep_escape(edit, field.keeps_escape)
 }
 
 /// Where the text sits inside a field: inset from the left border, up to `right`.
@@ -231,13 +248,7 @@ pub(crate) fn search_field(
         pos2(glyph.right() + m.space.md, rect.top()),
         pos2(clear.left() - m.space.xs, rect.bottom()),
     );
-    let edit = TextEdit::singleline(text)
-        .id(id)
-        .hint_text(hint)
-        .frame(egui::Frame::NONE)
-        .font(theme.fonts.body.clone())
-        .align(egui::Align2::LEFT_CENTER)
-        .desired_width(f32::INFINITY);
+    let edit = bare_edit(theme, text, id, egui::Align2::LEFT_CENTER).hint_text(hint);
     let mut response = ui.put(text_rect, edit);
     if area.clicked() {
         response.request_focus();
