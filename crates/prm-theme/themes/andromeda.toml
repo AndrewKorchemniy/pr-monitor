@@ -45,9 +45,6 @@ warning = "#FF9F2E"
 success = "#96E072"
 info = "#7CB7FF"
 
-[metrics]
-stripes = false
-
 [overrides]
 "surface.sunken" = "#262A33"        # the bordered editor tone
 "border.subtle" = "#1B1D23"         # the bordered seams

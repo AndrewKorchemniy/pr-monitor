@@ -20,6 +20,3 @@ reviewed = "#4F7A28"
 danger = "#A82D46"
 warning = "#A0680A"
 success = "#4F7A28"
-
-[metrics]
-stripes = true
