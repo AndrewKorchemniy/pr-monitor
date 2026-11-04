@@ -57,6 +57,30 @@ The first command checks the build provenance, the second the attached CycloneDX
 works for the Portable zip.
 Supported: Windows 10 1809 or later (x64) and Windows 11 (arm64).
 
+### Linux (preview)
+
+Linux builds are tested in CI but used far less than the Windows ones, so treat them as a
+preview. Download `AndrewKorchemniy.PRMonitor-linux-x64.AppImage` (or `-linux-arm64`) from the
+[latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest), then:
+
+```sh
+chmod +x AndrewKorchemniy.PRMonitor-linux-x64.AppImage
+./AndrewKorchemniy.PRMonitor-linux-x64.AppImage
+```
+
+- **It updates itself**, like the Windows builds. Keep the AppImage in a folder you can write to
+  (for example `~/Applications`); in a system folder every update asks for a password. The first
+  update after an install always downloads the full package.
+- **Libraries.** The desktop needs libxkbcommon, X11 or Wayland, and GL (Mesa or a vendor driver).
+  If the AppImage will not start because FUSE is missing, run it with `--appimage-extract-and-run`.
+- **Tray icon.** It needs a StatusNotifier host. KDE, XFCE and most others have one; GNOME needs
+  the AppIndicator extension.
+- **Launch at login** points at the AppImage file, so do not move it afterwards without turning
+  the setting off and on again.
+- Builds target glibc 2.35 or newer (Ubuntu 22.04 and later).
+- The `prmonitor://` link handler is Windows-only for now.
+- Builds are not signed. Verify one with `gh attestation verify <file> -R AndrewKorchemniy/pr-monitor`.
+
 ## Signing in
 
 PR Monitor tries these in order and remembers what worked for each organization:

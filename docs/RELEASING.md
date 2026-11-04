@@ -42,7 +42,7 @@ Run **Actions › Release › Run workflow**, or `gh workflow run release.yml -f
 
 | Mode | What it does |
 |---|---|
-| `dry-run` (default) | Builds and verifies both exes from the selected commit, packs them with Velopack, makes `SHA256SUMS.txt`, and uploads everything as the `release-dry-run` workflow artifact (kept 7 days). Creates no release, no tag and no attestations. |
+| `dry-run` (default) | Builds and verifies the Windows and Linux binaries from the selected commit, packs them with Velopack, makes `SHA256SUMS.txt`, and uploads everything as the `release-dry-run` workflow artifact (kept 7 days). Creates no release, no tag and no attestations. |
 | `release-current` | Must run on `main`. Reads the version from `crates/pr-monitor/Cargo.toml` and fails if a release `v<version>` already exists. Otherwise creates a draft release `v<version>` targeting the current commit, builds, packs, uploads assets and attestations to the draft, then waits for `go-live` approval. |
 | `recover` | Takes `tag` (for example `v0.3.0`). Rebuilds and re-uploads the assets of an existing **draft** release for that tag, then waits for `go-live` approval. |
 
@@ -56,37 +56,51 @@ latest release, or as a pre-release when the version has a suffix such as `-alph
 ## What a release contains
 
 Each release is built with [Velopack](https://velopack.io) (`vpk`). Per architecture (`x64`,
-`arm64`; the Velopack channel and runtime are `win-x64` and `win-arm64`), with the package id
-`AndrewKorchemniy.PRMonitor`:
+`arm64`; the Velopack channel and runtime are `win-x64`, `win-arm64`, `linux-x64` and
+`linux-arm64`), with the package id `AndrewKorchemniy.PRMonitor`:
 
 | Asset | What it is |
 |---|---|
 | `AndrewKorchemniy.PRMonitor-win-<arch>-Setup.exe` | One-click per-user installer (`%LOCALAPPDATA%\AndrewKorchemniy.PRMonitor`, no admin rights). Silent install: `--silent`. |
 | `AndrewKorchemniy.PRMonitor-win-<arch>-Portable.zip` | `PR Monitor.exe` (launcher), `Update.exe` and `current\pr-monitor.exe` with the licence files. Unzip anywhere. |
-| `AndrewKorchemniy.PRMonitor-<version>-win-<arch>-full.nupkg` | The update package the app downloads when it is not on the previous version. |
-| `AndrewKorchemniy.PRMonitor-<version>-win-<arch>-delta.nupkg` | Patch from the previous published release (absent for the first Velopack release). |
-| `releases.win-<arch>.json` | The update feed for that architecture: lists this version's nupkgs only. |
-| `pr-monitor-<version>-windows-<arch>.pdb` | Symbols for crash reports. |
-| `pr-monitor-windows-<arch>.cdx.json` | CycloneDX SBOM (attested to the Setup and the Portable zip). |
+| `AndrewKorchemniy.PRMonitor-linux-<arch>.AppImage` | Linux (preview): a self-updating AppImage. There is no installer, no uninstall hook and no zip. |
+| `AndrewKorchemniy.PRMonitor-<version>-<rid>-full.nupkg` | The update package the app downloads when it is not on the previous version (`<rid>` is `win-<arch>` or `linux-<arch>`). For Linux it holds the AppImage itself. |
+| `AndrewKorchemniy.PRMonitor-<version>-<rid>-delta.nupkg` | Patch from the previous published release (absent for the first release on that channel). |
+| `releases.<rid>.json` | The update feed for that channel: lists this version's nupkgs only. |
+| `pr-monitor-<version>-windows-<arch>.pdb` | Symbols for crash reports (Windows only). |
+| `pr-monitor-<os>-<arch>.cdx.json` | CycloneDX SBOM, `<os>` is `windows` or `linux` (attested to the Setup and Portable zip, or to the AppImage). |
 | `THIRD-PARTY-LICENSES.html`, `SHA256SUMS.txt` | Licences and checksums of every other asset. |
 
-There is no bare exe any more: the app cannot update itself from outside an install.
+There is no bare exe any more: the app cannot update itself from outside an install. Linux is a
+preview: it is built and smoke-tested like the Windows builds but used less. macOS is not built
+(an unsigned, un-notarised app is blocked by Gatekeeper).
 
 ## How the packages are built
 
-`.github/workflows/release.yml` runs `release` → `notices` → `build` ×2 → `package` ×2 →
-`publish` → `go-live` → `winget`.
+`.github/workflows/release.yml` runs `release` → `notices` → `build` ×4 → `package` ×4 →
+`publish` → `go-live` → `winget`. `build` and `package` are matrices over Windows and Linux, so
+the Linux builds share the draft, attestation and go-live gate with the Windows ones.
 
 - `build` compiles each exe on its own architecture and runs `verify-exe.ps1` on it (PE
   machine, GUI subsystem, size budget, static CRT, `ProductVersion`, headless `--self-test`).
   It also stages the icon that `build.rs` generated, because the next job has no cargo.
-- `package` runs `.github/scripts/pack-velopack.ps1` on `windows-latest` for both runtimes (vpk
-  cross-packs; the exes were already tested natively). The script installs the pinned `vpk`
+- `build` for Linux uses `ubuntu-22.04` (x64) and `ubuntu-22.04-arm` (arm64), so the glibc floor
+  is 2.35 on both. `.github/scripts/verify-elf.sh` checks the ELF machine, size (a provisional
+  40 MiB budget until the first build is measured), the highest glibc symbol version (at most 2.35),
+  the version and `--self-test`. There are no PDBs; the icon is the generated PNG. No `RUSTFLAGS` anywhere:
+  `.cargo/config.toml` forces `+crt-static` only for the Windows targets.
+- `package` runs `.github/scripts/pack-velopack.ps1` on `windows-latest` for both Windows
+  runtimes (vpk cross-packs; the exes were already tested natively). The Linux runtimes pack on a
+  runner of their own architecture (PowerShell 7 and .NET come with the Ubuntu images), so that
+  `smoke-appimage.sh` can run the AppImage with `--appimage-extract-and-run --self-test` (the
+  runners have no FUSE). On Linux the script uses `vpk [linux] pack` with a PNG icon and
+  `--categories`; `--aumid` and `--shortcuts` exist only for Windows. The script installs the pinned `vpk`
   with `dotnet tool install`, stages the exe and licence files, downloads the previous
   **published** release for the delta (anonymous on purpose: a token would also list this
   release's own draft; having no previous release is fine), runs `vpk pack` and then
   `verify-package.ps1` (all files present, the feed matches the files, the exe in the Portable
-  zip is the one that was verified).
+  zip is the one that was verified; on Linux, the AppImage is an ELF file and the full package
+  holds the same AppImage).
 - The feed, `releases.win-<arch>.json`, is cut down to this version's packages. vpk's own copy
   also lists the previous full package it downloaded, but Velopack's docs want one full and one
   delta package per release, and `vpk upload` builds the feed from the current build's assets
@@ -107,7 +121,8 @@ without a feed (v0.2.x) are skipped. The first Velopack release has no delta; la
 `vpk` is pinned in `pack-velopack.ps1` (`$VpkVersion`) and must equal the `velopack` crate in
 `Cargo.lock`; the script fails otherwise, and also when the crate is missing (only a `-NoDownload`
 dry run tolerates that). Dependabot bumps the crate, so bump `$VpkVersion` in
-the same PR. The CI jobs `build (windows-x64, release)` and `build (windows-arm64, release)` run
+the same PR. The CI jobs `build (windows-x64, release)`, `build (windows-arm64, release)` and
+`build (linux-x64, release)` run
 the same script as a dry run (`-NoDownload`), so a mismatch or a vpk problem shows up on the PR.
 
 ### Packing locally
@@ -118,6 +133,25 @@ Needs the .NET SDK and a release build:
 cargo build --release -p pr-monitor
 ./.github/scripts/pack-velopack.ps1 -Rid win-x64 -Exe target/release/pr-monitor.exe -OutDir pack-out -NoDownload
 ```
+
+On Linux, pass the Linux rid, the binary and `-Version` (a Linux binary has no ProductVersion):
+`pwsh ./.github/scripts/pack-velopack.ps1 -Rid linux-x64 -Version 0.3.0 -Exe target/release/pr-monitor -OutDir pack-out -NoDownload`.
+CI runs this as the `build (linux-x64, release)` dry run.
+
+### Linux specifics
+
+- Updates stage in `/var/tmp`. If the AppImage sits in a privileged folder, applying an update
+  prompts through `pkexec`. The first update after an install is always a full download (no fast
+  hooks, no delta from the unpacked install).
+- There is no uninstall hook: delete the AppImage. `pr-monitor --unregister` removes the autostart
+  entry first.
+- Autostart entries use `$APPIMAGE` (when `$APPDIR` confirms the running binary is inside that
+  AppImage), because `current_exe()` inside an AppImage points into a temporary mount. The path is
+  quoted for the `Exec=` line, so spaces are fine.
+- The `prmonitor://` link handler is Windows-only for now; nothing registers it on Linux.
+- Velopack's own log is `/tmp/velopack_AndrewKorchemniy.PRMonitor.log`; the app's logs stay in
+  its data folder.
+- The tray icon needs a StatusNotifier host (GNOME needs an AppIndicator extension).
 
 ### winget
 
