@@ -22,5 +22,4 @@ warning = "#B07A0A"
 success = "#2E7D52"
 
 [metrics]
-radius_scale = 1.0
 stripes = true

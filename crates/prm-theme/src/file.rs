@@ -12,8 +12,9 @@ use crate::{
 
 /// The newest theme file schema this build understands.
 pub const THEME_SCHEMA: u32 = 1;
-/// `radius_scale` is clamped to this range.
-pub const RADIUS_SCALE_RANGE: std::ops::RangeInclusive<f32> = 0.0..=2.0;
+/// The Info issue for a theme that still sets the retired `radius_scale`.
+pub const RADIUS_SCALE_RETIRED: &str =
+    "radius_scale is no longer used; use Settings › Appearance › Corners";
 /// `contrast` is clamped to this range.
 pub const CONTRAST_RANGE: std::ops::RangeInclusive<f32> = -1.0..=1.0;
 
@@ -72,18 +73,13 @@ pub struct FeedbackSeeds {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MetricTweaks {
-    /// 0 = square corners, 2 = extra round.
-    pub radius_scale: f32,
     /// Alternating row tint.
     pub stripes: bool,
 }
 
 impl Default for MetricTweaks {
     fn default() -> Self {
-        Self {
-            radius_scale: 1.0,
-            stripes: true,
-        }
+        Self { stripes: true }
     }
 }
 
@@ -101,12 +97,16 @@ pub enum ThemeError {
 }
 
 /// Parses one theme. The file stem wins over a mismatching `id` (Warning); a newer schema is
-/// read best-effort (Warning). Out-of-range numbers are clamped.
+/// read best-effort (Warning). A retired `radius_scale` is an Info. Out-of-range numbers are
+/// clamped.
 pub fn parse_theme(src: &str, file_stem: &str) -> Result<(ThemeFile, Vec<ThemeIssue>), ThemeError> {
-    let mut file: ThemeFile = toml::from_str(src).map_err(|e| ThemeError::Parse {
+    let parse_error = |e: toml::de::Error| ThemeError::Parse {
         file: format!("{file_stem}.toml"),
         message: e.message().to_owned(),
-    })?;
+    };
+    let table: toml::Table = src.parse().map_err(parse_error)?;
+    let retired_radius_scale = has_retired_radius_scale(&table);
+    let mut file: ThemeFile = table.try_into().map_err(parse_error)?;
     let theme = ThemeId::new(file_stem);
     let mut issues = Vec::new();
     if file.id != file_stem {
@@ -127,9 +127,23 @@ pub fn parse_theme(src: &str, file_stem: &str) -> Result<(ThemeFile, Vec<ThemeIs
             format!("written for a newer PR Monitor (schema {})", file.schema),
         ));
     }
-    file.metrics.radius_scale = clamp(file.metrics.radius_scale, &RADIUS_SCALE_RANGE);
+    if retired_radius_scale {
+        issues.push(ThemeIssue::new(
+            &theme,
+            IssueLevel::Info,
+            RADIUS_SCALE_RETIRED,
+        ));
+    }
     file.seeds.contrast = clamp(file.seeds.contrast, &CONTRAST_RANGE);
     Ok((file, issues))
+}
+
+/// serde ignores unknown keys, so the retired key is looked for in the raw table.
+fn has_retired_radius_scale(table: &toml::Table) -> bool {
+    table
+        .get("metrics")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|metrics| metrics.contains_key("radius_scale"))
 }
 
 fn clamp(value: f32, range: &std::ops::RangeInclusive<f32>) -> f32 {

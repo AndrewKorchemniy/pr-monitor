@@ -15,6 +15,8 @@ use prm_domain::{
     plan::{Authors, DraftPolicy, TrackSpec},
     scope::ScopeSpec,
 };
+pub use prm_theme::Corners;
+use prm_theme::registry;
 
 use crate::{limits, migrate::CURRENT_SCHEMA};
 
@@ -98,6 +100,8 @@ pub struct UiPrefs {
     /// Used when `theme = "system"` and the OS is dark.
     pub theme_dark: String,
     pub theme_light: String,
+    /// The corner shape of every theme and of the window frame.
+    pub corners: Corners,
     pub font_scale: f32,
     pub animations: Tristate,
     pub renderer: RendererPref,
@@ -110,16 +114,13 @@ pub struct UiPrefs {
     pub relative_times: bool,
 }
 
-pub const THEME_SYSTEM: &str = "system";
-pub const DEFAULT_DARK_THEME: &str = "graphite";
-pub const DEFAULT_LIGHT_THEME: &str = "vellum";
-
 impl Default for UiPrefs {
     fn default() -> Self {
         Self {
-            theme: THEME_SYSTEM.into(),
-            theme_dark: DEFAULT_DARK_THEME.into(),
-            theme_light: DEFAULT_LIGHT_THEME.into(),
+            theme: registry::SYSTEM.into(),
+            theme_dark: registry::DEFAULT_DARK.into(),
+            theme_light: registry::DEFAULT_LIGHT.into(),
+            corners: Corners::default(),
             font_scale: limits::DEFAULT_FONT_SCALE,
             animations: Tristate::default(),
             renderer: RendererPref::default(),

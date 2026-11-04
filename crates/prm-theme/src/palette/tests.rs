@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use super::*;
+use crate::metrics::Corners;
 
 #[test]
 fn palette_keys_unique_and_dotted() {
@@ -20,7 +21,7 @@ fn palette_keys_unique_and_dotted() {
 #[test]
 fn palette_get_set_by_key() {
     let tokens = crate::ThemeRegistry::builtin()
-        .tokens("graphite")
+        .tokens("graphite", Corners::default())
         .unwrap()
         .0;
     let mut palette = tokens.palette;

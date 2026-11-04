@@ -34,6 +34,7 @@ Config {
         theme: "system",
         theme_dark: "graphite",
         theme_light: "vellum",
+        corners: Rounded,
         font_scale: 1.0,
         animations: Auto,
         renderer: Auto,

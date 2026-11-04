@@ -1,4 +1,5 @@
 use super::*;
+use crate::metrics::Corners;
 
 fn colors() -> MarkColors {
     MarkColors {
@@ -58,7 +59,7 @@ fn mark_layout_regions() {
 #[test]
 fn mark_colors_from_palette() {
     let tokens = crate::ThemeRegistry::builtin()
-        .tokens("graphite")
+        .tokens("graphite", Corners::default())
         .unwrap()
         .0;
     let colors = MarkColors::from_palette(&tokens.palette, tokens.palette.signature_revision);

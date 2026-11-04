@@ -1,9 +1,9 @@
 use super::*;
-use crate::{ThemeRegistry, color::Rgba8};
+use crate::{ThemeRegistry, color::Rgba8, metrics::Corners};
 
 fn graphite() -> Palette {
     ThemeRegistry::builtin()
-        .tokens("graphite")
+        .tokens("graphite", Corners::default())
         .unwrap()
         .0
         .palette
