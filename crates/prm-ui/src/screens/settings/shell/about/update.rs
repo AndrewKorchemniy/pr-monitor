@@ -47,7 +47,8 @@ impl Action {
 /// What About shows for a status.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct View {
-    /// Borrowed unless it carries a number, so a frame allocates only while a download runs.
+    /// Borrowed unless it carries a number or a version, so only a download or a ready update
+    /// allocates, and only while it shows.
     pub text: Cow<'static, str>,
     pub actions: &'static [Action],
 }
@@ -85,18 +86,30 @@ const fn disabled(reason: DisabledReason) -> &'static str {
     }
 }
 
-/// The status, then its actions; the action clicked, if any. In the sidebar's bottom-up layout
-/// the parts go in reverse so they still read top to bottom.
-pub(super) fn show(ui: &mut egui::Ui, cx: &FrameCx<'_>, bottom_up: bool) -> Option<Action> {
+/// Which way the status and its actions stack: the sidebar's foot is laid out bottom-up, the
+/// General section top-down.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum Stack {
+    /// The status, then its actions below it.
+    TopDown,
+    /// The actions are added first, so they sit lowest and the status above them.
+    BottomUp,
+}
+
+/// The status, then its actions; the action clicked, if any.
+pub(super) fn show(ui: &mut egui::Ui, cx: &FrameCx<'_>, stack: Stack) -> Option<Action> {
     let theme = &cx.theme;
     let view = describe(&cx.state.update);
-    if bottom_up {
-        let clicked = actions(ui, theme, &view);
-        widgets::muted(ui, theme, &view.text);
-        clicked
-    } else {
-        widgets::muted(ui, theme, &view.text);
-        actions(ui, theme, &view)
+    match stack {
+        Stack::BottomUp => {
+            let clicked = actions(ui, theme, &view);
+            widgets::muted(ui, theme, &view.text);
+            clicked
+        }
+        Stack::TopDown => {
+            widgets::muted(ui, theme, &view.text);
+            actions(ui, theme, &view)
+        }
     }
 }
 

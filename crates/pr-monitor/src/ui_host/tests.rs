@@ -23,7 +23,7 @@ fn dark_captions_ask_for_dark_title_bars() {
 }
 
 #[test]
-fn every_color_and_the_corner_shape_are_passed_through() {
+fn every_color_is_passed_through() {
     let colors = window_chrome(chrome([1, 2, 3]));
     assert_eq!(colors.caption, Some(Rgb { r: 1, g: 2, b: 3 }));
     assert_eq!(

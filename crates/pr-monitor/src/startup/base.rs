@@ -67,7 +67,7 @@ pub(super) fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
         .legacy
         .as_deref()
         .map(|old| move_legacy_folder(old, &root.config_root, &root.path));
-    let paths = AppPaths::split(root.config_root.clone(), root.path.clone());
+    let paths = root.app_paths();
     if let Err(error) = paths.ensure_dirs() {
         console::fatal_dialog(copy::DATA_FOLDER, &error.to_string());
         return Err(ExitCode::FAILURE);

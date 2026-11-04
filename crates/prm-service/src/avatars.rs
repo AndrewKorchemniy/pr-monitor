@@ -41,13 +41,15 @@ impl Slot {
     }
 }
 
-/// One org's avatars: what was settled this run, and whether fetching is on.
+/// One org's avatars for this session: what has settled, whether fetching is off, and whether a
+/// job is running.
 #[derive(Debug, Default)]
 pub(crate) struct AvatarBook {
     pub slots: HashMap<Vsid, Slot>,
-    /// People whose cache file has been looked at this run, found or not.
+    /// People whose cache file has been looked at this session, found or not.
     pub checked: HashSet<Vsid>,
-    /// The org refused avatar requests (401/403): no more attempts until restart.
+    /// The org refused avatar requests (401/403): no more attempts until its settings change or
+    /// the app restarts.
     pub disabled: bool,
     /// A job for this org is running.
     pub busy: bool,
@@ -89,7 +91,7 @@ pub(crate) fn wanted<'a>(
     order
 }
 
-/// Who still needs the disk looked at: nobody has looked yet this run.
+/// Who still needs the disk looked at: nobody has looked yet this session.
 pub(crate) fn unseen<'a>(
     wanted: &'a [Want],
     checked: &'a HashSet<Vsid>,
@@ -98,7 +100,8 @@ pub(crate) fn unseen<'a>(
 }
 
 /// Who to download next, at most `budget`: people with no picture yet first, then those whose
-/// entry expired, each in `wanted` order. People without an address are never picked.
+/// entry expired, each in `wanted` order. People without an address are never picked; an address
+/// outside the org still takes a slot, and is then refused without a request.
 pub(crate) fn to_fetch(
     wanted: &[Want],
     slots: &HashMap<Vsid, Slot>,

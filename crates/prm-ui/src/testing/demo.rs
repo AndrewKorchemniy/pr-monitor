@@ -33,12 +33,15 @@ const GROUP_PAYMENTS: u128 = 32;
 /// gradient in a round frame, standing in for a profile photo.
 pub(crate) fn demo_avatars() -> Vec<LoadedAvatar> {
     let side = usize::from(AVATAR_PX);
+    let radius = f32::from(AVATAR_PX) / 2.0;
     let picture = |n: u128, (r, g, b): (u8, u8, u8)| {
         let rgba: Vec<u8> = (0..side * side)
             .flat_map(|i| {
                 let fade = 255 - u8::try_from(i / side * 90 / side).unwrap_or(0);
-                let (dx, dy) = ((i % side) as f32 - 31.5, (i / side) as f32 - 31.5);
-                let alpha = if dx.hypot(dy) < 32.0 { 255 } else { 0 };
+                // pixel centres, measured from the middle of the picture
+                let centred = |p: usize| p as f32 + 0.5 - radius;
+                let (dx, dy) = (centred(i % side), centred(i / side));
+                let alpha = if dx.hypot(dy) < radius { 255 } else { 0 };
                 [r.min(fade), g.min(fade), b.min(fade), alpha]
             })
             .collect();

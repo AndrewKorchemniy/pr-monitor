@@ -46,9 +46,14 @@ pub(crate) fn pr_cards(
     let theme = cx.theme.clone();
     // why: no table is shown, so the column checklist reads every chosen column as left out,
     // except Required, which cards draw themselves.
-    view.squeezed = columns::squeezed(&[], view.picks())
-        .filter(|id| *id != ColumnId::Required)
-        .collect();
+    // Built from the fields, not `view.picks()`, so the squeezed buffer is refilled in place.
+    let picks = columns::Picks {
+        hidden: &view.hidden_columns,
+        shown: &view.shown_columns,
+    };
+    view.squeezed.clear();
+    view.squeezed.extend(columns::squeezed(&[], picks));
+    view.squeezed.retain(|id| *id != ColumnId::Required);
     let pitch = card_pitch(ui, &theme);
     let spacing = ui.spacing().item_spacing.y;
     let spacing_x = ui.spacing().item_spacing.x;

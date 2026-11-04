@@ -17,8 +17,8 @@ stroke weights stay as designed. Advance widths, kerning and every other glyph a
 In Next, `zero.tf` (tabular figures) is built from `zero`, so it changes too. In Mono,
 `zero.zero` (the alternate for the `zero` OpenType feature) is left as it is.
 
-The reason is taste: the slashed zero is the only form either font offers in its default
-glyph, and egui cannot turn on OpenType features to pick another.
+Why: egui cannot turn on OpenType features, and the slashed zero is the only default form either
+font offers.
 
 ## Regenerating
 

@@ -19,11 +19,8 @@ use super::dialogs::{
 use crate::{
     actions::UiAction,
     copy,
-    screens::settings::{Editor, Page},
-    testing::{
-        demo::demo_state,
-        screens::{Fixture, Shown, harness},
-    },
+    screens::settings::Editor,
+    testing::screens::{Fixture, harness},
 };
 
 fn priya() -> PersonCandidate {
@@ -47,10 +44,7 @@ fn priyanka() -> PersonCandidate {
 
 /// The reviewers dialog of the demo org (Rita and Sam already count).
 fn reviewers_dialog() -> Harness<'static, Fixture> {
-    let mut fixture = Fixture::new(Shown::Settings, demo_state());
-    fixture.settings.page = Page::Organizations;
-    fixture.settings.editing = Some(Editor::Reviewers);
-    let mut h = harness(fixture);
+    let mut h = harness(dialogs::settings_fixture(Editor::Reviewers));
     h.run();
     h
 }
@@ -381,8 +375,8 @@ fn adding_ten_people_does_not_move_or_resize_the_dialog() {
 #[test]
 fn each_editor_opens_at_its_own_place() {
     let title = people_title(Editor::Tracked);
-    let mut fresh = dialog_harness(dialogs::settings_fixture(Editor::Tracked), ROOMY, 1.0);
-    let fresh = frames(&mut fresh, 3, title);
+    let mut first = dialog_harness(dialogs::settings_fixture(Editor::Tracked), ROOMY, 1.0);
+    let fresh = frames(&mut first, 3, title);
     let mut h = dialog_harness(dialogs::settings_fixture(Editor::Reviewers), ROOMY, 1.0);
     add_field(&h).click();
     for n in 0..10 {

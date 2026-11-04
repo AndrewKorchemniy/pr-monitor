@@ -28,7 +28,7 @@ const MAX_PILL_ROWS: f32 = 3.0;
 /// scrolls for the rest, so adding people never makes a dialog taller. `salt` tells this
 /// picker's box from another's on the same page; `show_last` scrolls to the end (a person was
 /// just added).
-pub(crate) fn scrolling_chips(
+pub(super) fn scrolling_chips(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     people: &mut Vec<Person>,

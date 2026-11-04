@@ -85,12 +85,7 @@ fn app_paths_split_settings_from_local_files() {
     assert_eq!(paths.themes, abs("cfg").join("themes"));
     assert_eq!(paths.state, abs("local").join("state.json"));
     assert_eq!(paths.logs, abs("local").join("logs"));
+    assert_eq!(paths.avatars, abs("local").join("avatars"));
     assert_eq!(paths.icon_png, abs("local").join("icon-256.png"));
     assert_eq!(AppPaths::from_root(abs("r")).config_root, abs("r"));
-}
-
-#[test]
-fn paths_keep_avatars_in_their_own_folder() {
-    let paths = AppPaths::from_root(abs("data"));
-    assert_eq!(paths.avatars, abs("data").join("avatars"));
 }

@@ -18,16 +18,28 @@ pub(crate) fn login_program(exe: &Path) -> String {
         std::env::var_os(APPIMAGE_ENV),
         std::env::var_os(APPDIR_ENV),
     );
+    login_word(&path.to_string_lossy())
+}
+
+/// The arguments of a login entry, each one quoted the way `login_program` quotes the program.
+pub(crate) fn login_args(args: &[String]) -> Vec<String> {
+    args.iter().map(|arg| login_word(arg)).collect()
+}
+
+/// `word` as one word of a login entry: quoted for the `Exec=` line on Linux; a `LaunchAgent`
+/// takes it as is.
+fn login_word(word: &str) -> String {
     if cfg!(target_os = "linux") {
-        exec_field(&path)
+        exec_field(word)
     } else {
-        path.to_string_lossy().into_owned()
+        word.to_owned()
     }
 }
 
-/// `exe`, or the `AppImage` file when `exe` runs from inside one. The variables are inherited by child processes, so `appimage`
-/// counts only when `exe` really lives under `appdir` (the mount of that same `AppImage`); a
-/// plain build started from a shell inside another `AppImage` keeps its own path.
+/// `exe`, or the `AppImage` file when `exe` runs from inside one. The variables are inherited by
+/// child processes, so `appimage` counts only when `exe` really lives under `appdir` (the mount of
+/// that same `AppImage`); a plain build started from a shell inside another `AppImage` keeps its
+/// own path.
 fn pick(exe: &Path, appimage: Option<OsString>, appdir: Option<OsString>) -> PathBuf {
     match (appimage, appdir) {
         (Some(image), Some(dir))
@@ -39,16 +51,15 @@ fn pick(exe: &Path, appimage: Option<OsString>, appdir: Option<OsString>) -> Pat
     }
 }
 
-/// `path` as the program in a Desktop Entry `Exec=` line, which is split on spaces unless the
-/// program is quoted (freedesktop Desktop Entry spec, "The Exec key").
-fn exec_field(path: &Path) -> String {
+/// `word` as one word of a Desktop Entry `Exec=` line, split on spaces unless the word is quoted
+/// (freedesktop Desktop Entry spec, "The Exec key").
+fn exec_field(word: &str) -> String {
     const RESERVED: &str = " \t\n\"'\\<>~|&;$*?#()`%";
-    let text = path.to_string_lossy();
-    if !text.contains(|c: char| RESERVED.contains(c)) {
-        return text.into_owned();
+    if !word.contains(|c: char| RESERVED.contains(c)) {
+        return word.to_owned();
     }
     let mut out = String::from('"');
-    for c in text.chars() {
+    for c in word.chars() {
         match c {
             // why: the spec escapes these with a backslash inside quotes, and the file format
             // then doubles every backslash.

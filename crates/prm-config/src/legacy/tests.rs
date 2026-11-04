@@ -12,7 +12,7 @@ struct Dirs {
 fn dirs() -> Dirs {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path().to_path_buf();
-    let legacy = base.join("local").join("PRMonitor");
+    let legacy = base.join("old").join("PRMonitor");
     fs::create_dir_all(&legacy).unwrap();
     Dirs {
         config: base.join("roaming").join("pr-monitor"),
@@ -131,6 +131,27 @@ fn legacy_drops_the_old_instance_lock() {
     );
     assert!(!d.legacy.exists());
     assert!(outcome.skipped.is_empty() && outcome.failed.is_empty());
+}
+
+/// `ensure_dirs` makes the empty settings folder on every start, after the move. A move that
+/// failed earlier must still retry into it, not be skipped as an existing destination.
+#[test]
+fn legacy_retry_is_not_blocked_by_an_empty_folder() {
+    let d = dirs();
+    put(&d.legacy, "themes/mine.toml", "theme");
+    fs::create_dir_all(d.config.join("themes")).unwrap();
+
+    let outcome = run(&d);
+
+    assert_eq!(
+        fs::read_to_string(d.config.join("themes/mine.toml")).unwrap(),
+        "theme"
+    );
+    assert!(
+        outcome.skipped.is_empty() && outcome.failed.is_empty(),
+        "{outcome:?}"
+    );
+    assert!(outcome.removed);
 }
 
 /// A destination that cannot be created is reported, not fatal, and leaves the source alone.

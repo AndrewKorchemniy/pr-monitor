@@ -40,23 +40,29 @@ fn pick_ignores_empty_variables() {
 #[test]
 fn exec_field_leaves_a_plain_path_alone() {
     assert_eq!(
-        exec_field(Path::new("/opt/pr-monitor/pr-monitor")),
+        exec_field("/opt/pr-monitor/pr-monitor"),
         "/opt/pr-monitor/pr-monitor"
     );
 }
 
 #[test]
 fn exec_field_quotes_a_path_with_spaces() {
-    assert_eq!(
-        exec_field(Path::new(IMAGE)),
-        "\"/home/me/Apps/PR Monitor.AppImage\""
-    );
+    assert_eq!(exec_field(IMAGE), "\"/home/me/Apps/PR Monitor.AppImage\"");
 }
 
 #[test]
 fn exec_field_escapes_quote_dollar_backslash_and_percent() {
-    assert_eq!(
-        exec_field(Path::new("/a b/\"$\\%")),
-        "\"/a b/\\\\\"\\\\$\\\\\\\\%%\""
-    );
+    assert_eq!(exec_field("/a b/\"$\\%"), "\"/a b/\\\\\"\\\\$\\\\\\\\%%\"");
+}
+
+/// `--home` with a space split the Linux login entry: `Exec=` splits its arguments on spaces.
+#[test]
+fn login_args_quote_a_home_with_spaces_only_on_linux() {
+    let args = ["--home".to_owned(), "/a b".to_owned()];
+    let expected = if cfg!(target_os = "linux") {
+        "\"/a b\""
+    } else {
+        "/a b"
+    };
+    assert_eq!(login_args(&args), ["--home", expected]);
 }

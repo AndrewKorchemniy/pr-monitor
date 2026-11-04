@@ -144,7 +144,14 @@ fn purge_local(root: &Path) -> Result<(), String> {
     };
     let mut kept_any = false;
     let mut result = Ok(());
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                result = Err(error.to_string());
+                continue;
+            }
+        };
         if is_velopack_entry(&entry.file_name()) {
             kept_any = true;
             continue;

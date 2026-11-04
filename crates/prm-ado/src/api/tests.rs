@@ -10,14 +10,20 @@ use crate::{
 };
 
 fn client(script: Vec<Scripted>) -> AdoClient {
-    let credential = Arc::new(FakeCredential::new(token("t"), []));
-    AdoClient::new(
+    client_with_transport(script).0
+}
+
+/// The client, and the transport it sends through, for asserting on the requests it made.
+fn client_with_transport(script: Vec<Scripted>) -> (AdoClient, Arc<FakeTransport>) {
+    let transport = Arc::new(FakeTransport::new(script));
+    let client = AdoClient::new(
         OrgEndpoint::new(org("contoso")),
-        Arc::new(FakeTransport::new(script)),
-        credential,
+        transport.clone(),
+        Arc::new(FakeCredential::new(token("t"), [])),
         ClientPolicy::default(),
         uuid::Uuid::nil(),
-    )
+    );
+    (client, transport)
 }
 
 #[tokio::test]
@@ -136,21 +142,9 @@ fn png(status: u16) -> Scripted {
     Scripted::with_type(status, "png-bytes", "image/png")
 }
 
-fn avatar_client(script: Vec<Scripted>) -> (AdoClient, Arc<FakeTransport>) {
-    let transport = Arc::new(FakeTransport::new(script));
-    let client = AdoClient::new(
-        OrgEndpoint::new(org("contoso")),
-        transport.clone(),
-        Arc::new(FakeCredential::new(token("t"), [])),
-        ClientPolicy::default(),
-        uuid::Uuid::nil(),
-    );
-    (client, transport)
-}
-
 #[tokio::test]
 async fn avatar_of_a_trusted_address_sends_the_token_and_accepts_images() {
-    let (client, transport) = avatar_client(vec![png(200)]);
+    let (client, transport) = client_with_transport(vec![png(200)]);
     let bytes = client.avatar(AVATAR).await.unwrap();
     assert_eq!(&bytes[..], b"png-bytes");
     let requests = transport.requests();
@@ -165,7 +159,7 @@ async fn avatar_of_a_trusted_address_sends_the_token_and_accepts_images() {
 
 #[tokio::test]
 async fn avatar_of_a_foreign_address_makes_no_request() {
-    let (client, transport) = avatar_client(vec![png(200)]);
+    let (client, transport) = client_with_transport(vec![png(200)]);
     for href in [
         "https://evil.test/a.png",
         "https://dev.azure.com@evil.test/contoso/a",
@@ -190,7 +184,7 @@ async fn avatar_failures_are_classified() {
         ),
     ];
     for (name, scripted, expected) in cases {
-        let (client, _) = avatar_client(vec![scripted]);
+        let (client, _) = client_with_transport(vec![scripted]);
         assert_eq!(client.avatar(AVATAR).await, Err(expected), "{name}");
     }
 }
@@ -199,7 +193,7 @@ async fn avatar_failures_are_classified() {
 /// cannot switch avatars off for the org.
 #[tokio::test]
 async fn avatar_redirect_is_a_plain_failure() {
-    let (client, transport) = avatar_client(vec![
+    let (client, transport) = client_with_transport(vec![
         Scripted::json(302, "").header("location", "https://evil.test/x.png"),
     ]);
     let error = client.avatar(AVATAR).await.unwrap_err();

@@ -1,4 +1,4 @@
-//! Self-updating: the schedule, the download, the restart and the switch, against a fake updater.
+//! Self-updating: the schedule, the download and the restart, against a fake updater.
 
 use std::{sync::Arc, time::Duration};
 
@@ -173,6 +173,8 @@ async fn a_hung_check_is_not_retried_until_its_thread_returns() {
     assert_eq!(h.updater.checks(), 1, "Check now waits for it too");
 
     h.updater.release();
+    // why: the released thread drops its guard a moment after `release`. A retry that fires
+    // before then waits another hour, so keep advancing until a check starts.
     for _ in 0..5 {
         h.advance(RETRY_AFTER_FAILURE + Duration::from_secs(1))
             .await;

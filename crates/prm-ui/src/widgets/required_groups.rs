@@ -11,7 +11,7 @@ use crate::{
     theme::UiTheme,
     widgets::{
         avatar::{AvatarFace, paint_avatar},
-        vote_tally::{describe, marks, paint_pending_badge, paint_vote_badge, vote_icon},
+        vote_tally::{describe, marks, paint_vote_badge},
     },
 };
 
@@ -43,11 +43,7 @@ pub(crate) fn paint_group(
     rect: egui::Rect,
 ) {
     paint_avatar(ui, theme, avatars, &AvatarFace::of_group(group), rect);
-    if vote_icon(group.vote).is_some() {
-        paint_vote_badge(ui.painter(), theme, rect, group.vote);
-    } else {
-        paint_pending_badge(ui.painter(), theme, rect);
-    }
+    paint_vote_badge(ui.painter(), theme, rect, group.vote);
 }
 
 /// "IPCO Repo Approver: approved via Kevin Haro", one line per group.

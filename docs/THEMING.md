@@ -1,7 +1,9 @@
 # Theming
 
-Every colour, radius, spacing and motion value comes from a theme. A theme is one TOML file.
-The five built-in themes are in `crates/prm-theme/themes/`:
+Every colour comes from a theme. A theme is one TOML file of seed colours and a stripes switch.
+Sizes, spacing and motion are fixed in code (`prm-theme`'s metrics). Corner radii come from the
+Corners setting (see [Corners](#corners)). The five built-in themes are in
+`crates/prm-theme/themes/`:
 
 | Theme | Appearance | Character |
 |---|---|---|
@@ -15,11 +17,11 @@ The five built-in themes are in `crates/prm-theme/themes/`:
 
 1. In Settings › Appearance, choose **Copy theme as TOML** on the theme closest to what you
    want.
-2. Save it as `%APPDATA%\pr-monitor\themes\<id>.toml`. **Copy themes folder path** gives
-   you the folder.
+2. Save it as `%APPDATA%\pr-monitor\themes\<id>.toml`. **Copy themes folder path** gives you the
+   folder.
 3. Set `id` to the file name (without `.toml`) and give it a `name`.
-4. Change the seeds. PR Monitor reloads the folder whenever its window gains focus, and
-   Settings › Appearance › **Reload themes** reloads it on demand.
+4. Change the seeds. PR Monitor reloads the folder when its window gains focus; **Reload themes**
+   does it on demand.
 
 ```toml
 schema = 1
@@ -47,42 +49,40 @@ stripes = true
 
 ## How a theme becomes colours
 
-- **Derived tokens.** About forty semantic tokens are derived from the seeds in OKLCH:
-  surfaces, borders, text levels, row hover and selection, control states, and a fill and
-  foreground for each status. They are derived, not hand-picked, so a theme stays coherent
-  when you change only `base` or `accent`.
-- **Overrides.** `[overrides]` replaces individual tokens after derivation.
-- **Contrast checks.** Derived text and status marks are adjusted until they reach the
-  targets: 4.5:1 for text, 3:1 for muted text. Every theme, overrides included, is then
-  checked against the same rules, and any failure is listed in Settings › Appearance.
-  Built-in themes must pass with no issues (a test enforces it).
-- **Bad files.** A theme that fails to parse is listed in Settings › Appearance with its
-  error and skipped. The app never refuses to start because of a theme.
+- **Derived palette.** The 63 colour keys in `crates/prm-theme/src/palette.rs` (surfaces,
+  borders, text levels, row hover and selection, control states, a fill and foreground for each
+  status, and so on) are all derived from the seeds in OKLab. They are derived, not hand-picked, so
+  a theme stays coherent when you change only `base` or `accent`.
+- **Overrides.** `[overrides]` replaces individual keys after derivation.
+- **Contrast checks.** Derived text is adjusted to 4.5:1, and muted text to 3:1. Every theme,
+  overrides included, is checked against the same rules, and any failure is listed in
+  Settings › Appearance. Built-in themes must pass with no issues (a test enforces it).
+- **Bad files.** A theme that fails to parse is listed in Settings › Appearance with its error and
+  skipped. A theme never stops the app from starting.
 
 ## Corners
 
-Rounded or square corners are a setting, not part of a theme: Settings › Appearance ›
-**Corners** applies to every theme and to the window frame, and the choice is stored as
-`ui.corners` (`"rounded"` or `"square"`) in `config.toml`. A theme's `[metrics] radius_scale`
-key is ignored.
+Rounded or square corners are a setting, not part of a theme. Settings › Appearance › **Corners**
+applies to every theme and to the window frame, and is stored as `ui.corners` (`"rounded"` or
+`"square"`) in `config.toml`. A theme's `[metrics] radius_scale` key is retired and ignored.
 
 ## Following Windows
 
-Choosing **Match Windows** uses one theme for light mode and one for dark mode (by default
-Vellum and Graphite). The choice is stored as `ui.theme = "system"`, with `ui.theme_dark` and
+**Match Windows** uses one theme for light mode and one for dark mode (by default Vellum and
+Graphite). It is stored as `ui.theme = "system"` (the default), with `ui.theme_dark` and
 `ui.theme_light`, in `config.toml`.
 
 ## For contributors
 
-- `prm-ui/src/theme/adapter.rs` is the **only** place that turns tokens into egui colours or
+- `crates/prm-ui/src/theme/adapter.rs` is the only place that turns colours into egui colours or
   styles. A test fails if a colour literal appears anywhere else in the UI.
-- Status is never shown by colour alone. Each status also has its own painted glyph: a
-  ring, a diamond or a check.
-- The UI font (Atkinson Hyperlegible Next and Mono) has no arrow glyphs. Sort arrows and
-  other symbols are painted icons, and key hints use words ("Down", not "↓").
-- Adding a built-in theme means adding one TOML file to `crates/prm-theme/themes/`.
-  `build.rs` embeds every file in that folder.
+- Status is never shown by colour alone. Each status also has its own painted glyph: a ring, a
+  diamond or a check.
+- The UI font (Atkinson Hyperlegible Next and Mono) has no arrow glyphs. Sort arrows and other
+  symbols are painted icons, and key hints use words ("Down", not "↓").
+- Adding a built-in theme means adding one TOML file to `crates/prm-theme/themes/`. `build.rs`
+  embeds every file in that folder.
 - Avatars without a picture show initials on one of 24 muted hues, chosen from the person's id
   (`avatar_hue`). `avatar_tints` builds the 24 fills per theme and moves the theme's primary text
-  colour just far enough to reach 4.5:1 on each, so a user theme's overrides are still legible;
-  a test checks every built-in theme.
+  colour just far enough to reach 4.5:1 on each, so a user theme's overrides stay legible. A test
+  checks every built-in theme.

@@ -97,19 +97,6 @@ pub(crate) struct ColumnSpec {
     /// Whether an optional column shows until the user chooses otherwise. Columns added after
     /// release start hidden: the saved lists only record what the user changed (`Picks`).
     pub default_visible: bool,
-    /// How the column changes when the table is grouped by status.
-    pub compact: Compact,
-}
-
-/// What a column becomes in a table grouped by status, where the group header names the status.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Compact {
-    /// Unchanged.
-    Keep,
-    /// Only the glyph, in a narrow column that no longer sorts.
-    StatusGlyph,
-    /// Left-aligned and under its own key, so its width is kept apart from the ungrouped one.
-    NumberLeft,
 }
 
 impl ColumnSpec {
@@ -145,18 +132,12 @@ const fn spec(
         sort,
         align_right: false,
         default_visible: true,
-        compact: Compact::Keep,
     }
 }
 
 /// An optional column that stays hidden until the user turns it on.
 const fn hidden_by_default(mut column: ColumnSpec) -> ColumnSpec {
     column.default_visible = false;
-    column
-}
-
-const fn compacting(mut column: ColumnSpec, compact: Compact) -> ColumnSpec {
-    column.compact = compact;
     column
 }
 
@@ -178,28 +159,22 @@ pub(crate) const FLAGS_WIDTH: f32 = 3.0 * FLAG_SLOT;
 
 pub(crate) const COLUMNS: [ColumnSpec; 12] = [
     spec(ColumnId::Margin, "", "", Width::Exact, 0.0, None),
-    compacting(
-        spec(
-            ColumnId::Status,
-            "status",
-            copy::COLUMN_STATUS,
-            Width::Initial(140.0),
-            30.0,
-            Some(SortKey::Status),
-        ),
-        Compact::StatusGlyph,
+    spec(
+        ColumnId::Status,
+        "status",
+        copy::COLUMN_STATUS,
+        Width::Initial(140.0),
+        30.0,
+        Some(SortKey::Status),
     ),
-    compacting(
-        right(spec(
-            ColumnId::Number,
-            "number",
-            copy::COLUMN_NUMBER,
-            Width::Initial(64.0),
-            52.0,
-            Some(SortKey::Number),
-        )),
-        Compact::NumberLeft,
-    ),
+    right(spec(
+        ColumnId::Number,
+        "number",
+        copy::COLUMN_NUMBER,
+        Width::Initial(64.0),
+        52.0,
+        Some(SortKey::Number),
+    )),
     blank_header(spec(
         ColumnId::Flags,
         "flags",
@@ -438,7 +413,7 @@ pub(crate) fn listed() -> impl Iterator<Item = ColumnSpec> {
 }
 
 /// Whether the user's choice keeps `column` shown: only optional columns can be hidden, so a
-/// hand-edited `hidden` never drops Status or Title.
+/// hand-edited list never drops Status or Title.
 pub(crate) fn chosen(column: &ColumnSpec, picks: Picks<'_>) -> bool {
     match column.visibility() {
         Visibility::Optional => {
@@ -536,19 +511,28 @@ pub(crate) fn table_minimum(room: Room) -> f32 {
 /// Grouped by status, the group header already names it: the status cell shows only its glyph.
 fn compact_status(columns: &mut [ColumnSpec]) {
     for spec in columns.iter_mut() {
-        match spec.compact {
-            Compact::Keep => {}
-            Compact::StatusGlyph => {
+        match spec.id {
+            ColumnId::Status => {
                 spec.header = "";
                 spec.width = Width::Fixed(STATUS_GLYPH);
                 spec.min = STATUS_GLYPH;
                 spec.sort = None;
             }
-            Compact::NumberLeft => {
+            ColumnId::Number => {
                 spec.key = "number_left";
                 spec.align_right = false;
                 spec.width = Width::Initial(NUMBER_COMPACT);
             }
+            ColumnId::Margin
+            | ColumnId::Flags
+            | ColumnId::Title
+            | ColumnId::Repo
+            | ColumnId::Author
+            | ColumnId::Reviews
+            | ColumnId::Required
+            | ColumnId::Comments
+            | ColumnId::Age
+            | ColumnId::Org => {}
         }
     }
 }

@@ -9,7 +9,7 @@ use prm_service::LoadedAvatar;
 
 /// At most this many textures are kept (about 16 KiB each, 32 MiB in all). Only a session with
 /// more distinct people than this ever drops one, and that person shows initials until restart.
-pub(crate) const MAX_AVATAR_TEXTURES: usize = 2_000;
+const MAX_AVATAR_TEXTURES: usize = 2_000;
 
 #[derive(Default)]
 pub(crate) struct AvatarStore {

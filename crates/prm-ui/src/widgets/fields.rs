@@ -248,6 +248,7 @@ fn action_frame(
 
 /// A seamless filter field: a search glyph and borderless text, underlined only while focused.
 /// It is as wide as its hint (or its text, when longer), between `min_width` and `max_width`.
+/// Of `field` only its id, hint and autofocus are used.
 pub(crate) fn search_field(
     ui: &mut egui::Ui,
     theme: &UiTheme,

@@ -73,7 +73,7 @@ fn cache_entry(png: Vec<u8>, age_secs: i64) -> CachedAvatar {
     }
 }
 
-/// Ann's PR with her picture offered at `href(ann)`, which the fake org serves.
+/// One PR per person, each author pictured at an address the fake org serves.
 fn served_setup(people: &[Person]) -> HarnessSetup {
     let prs = people
         .iter()
@@ -301,7 +301,7 @@ async fn nearly_spent_rate_limit_skips_downloads() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn an_address_outside_the_org_is_never_requested_and_costs_no_budget() {
+async fn an_address_outside_the_org_is_never_requested() {
     let stranger = Person {
         avatar: Some("https://elsewhere.example/a.png".into()),
         ..bob()

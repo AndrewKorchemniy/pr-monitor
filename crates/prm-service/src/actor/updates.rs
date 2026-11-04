@@ -42,7 +42,6 @@ impl Service {
         self.updates.next_check = wanted.then(|| Instant::now() + delay);
     }
 
-    /// The scheduled check is due.
     pub(super) fn start_due_update_check(&mut self, now: Instant) {
         if self.updates.next_check.is_none_or(|at| at > now) {
             return;

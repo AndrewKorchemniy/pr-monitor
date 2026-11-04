@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use prm_theme::contrast::contrast_ratio;
+
 use super::*;
 use crate::theme::fallback;
 
@@ -90,6 +92,10 @@ fn rgba8_converts_without_premultiplying_opaque_colors() {
 #[test]
 fn avatar_text_reads_on_every_tint_of_every_builtin_theme() {
     let registry = prm_theme::ThemeRegistry::builtin();
+    let opaque = |c: Color32| {
+        let [r, g, b, _] = c.to_array();
+        Rgba8 { r, g, b, a: 255 }
+    };
     let mut checked = 0;
     for (id, _) in registry.list() {
         let set = prm_theme::resolve(
@@ -102,23 +108,9 @@ fn avatar_text_reads_on_every_tint_of_every_builtin_theme() {
             },
         );
         for tokens in [set.dark, set.light] {
-            let dark = tokens.appearance == Appearance::Dark;
-            for (hue, tint) in avatar_tints(&tokens.palette, dark).iter().enumerate() {
-                let (bg, fg) = (tint.bg, tint.text);
-                let ratio = prm_theme::contrast::contrast_ratio(
-                    Rgba8 {
-                        r: fg.r(),
-                        g: fg.g(),
-                        b: fg.b(),
-                        a: 255,
-                    },
-                    Rgba8 {
-                        r: bg.r(),
-                        g: bg.g(),
-                        b: bg.b(),
-                        a: 255,
-                    },
-                );
+            let tints = avatar_tints(&tokens.palette, tokens.appearance);
+            for (hue, tint) in tints.iter().enumerate() {
+                let ratio = contrast_ratio(opaque(tint.text), opaque(tint.bg));
                 assert!(ratio >= 4.5, "{} hue {hue}: {ratio}", id.as_str());
                 checked += 1;
             }
@@ -129,7 +121,7 @@ fn avatar_text_reads_on_every_tint_of_every_builtin_theme() {
 
 #[test]
 fn avatar_tints_differ_between_neighbouring_hues() {
-    let tints = avatar_tints(&fallback().tokens.palette, true);
+    let tints = avatar_tints(&fallback().tokens.palette, Appearance::Dark);
     for pair in tints.windows(2) {
         assert_ne!(pair[0].bg, pair[1].bg);
     }

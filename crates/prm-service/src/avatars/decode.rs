@@ -25,11 +25,12 @@ pub(crate) fn from_source(bytes: &[u8]) -> Option<AvatarImage> {
     }
     let (width, height, rgba) = unpack(bytes)?;
     let side = width.min(height);
-    let mut pixels = if width == height {
-        resample(&rgba, side)
+    let square = if width == height {
+        rgba
     } else {
-        resample(&crop_square(&rgba, width, side), side)
+        crop_square(&rgba, width, side)
     };
+    let mut pixels = resample(&square, side);
     mask_circle(&mut pixels);
     AvatarImage::new(AVATAR_PX, pixels)
 }
@@ -170,9 +171,9 @@ fn bilinear(rgba: &[u8], side: usize, (x, y): (usize, usize), scale: f32) -> [f3
     ];
     let mut out = [0.0; 4];
     for (i, slot) in out.iter_mut().enumerate() {
-        let top = p00[i] + (p10[i] - p00[i]) * tx;
-        let bottom = p01[i] + (p11[i] - p01[i]) * tx;
-        *slot = top + (bottom - top) * ty;
+        let upper = p00[i] + (p10[i] - p00[i]) * tx;
+        let lower = p01[i] + (p11[i] - p01[i]) * tx;
+        *slot = upper + (lower - upper) * ty;
     }
     out
 }

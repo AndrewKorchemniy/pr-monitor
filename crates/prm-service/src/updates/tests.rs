@@ -13,7 +13,7 @@ fn updating_is_active_until_disabled_or_ready() {
         (UpdateStatus::Disabled(DisabledReason::NotInstalled), false),
     ];
     for (status, expected) in cases {
-        runtime.status = status.clone();
-        assert_eq!(runtime.is_active(), expected, "{status:?}");
+        runtime.status = status;
+        assert_eq!(runtime.is_active(), expected, "{:?}", runtime.status);
     }
 }

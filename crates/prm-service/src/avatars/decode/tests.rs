@@ -1,5 +1,3 @@
-use png::{BitDepth, ColorType, Encoder};
-
 use super::*;
 
 /// A PNG of the given shape; `data` is already in that colour type and depth.

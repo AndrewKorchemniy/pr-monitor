@@ -219,3 +219,19 @@ pub(crate) fn harness_at(fixture: Fixture, size: egui::Vec2) -> Harness<'static,
         .with_context_setup(fonts::install)
         .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture)
 }
+
+/// A harness for the PNG galleries: rendered on the GPU (or WARP) at `pixels_per_point`.
+/// Accessibility is not checked here; the kittest tests enforce it.
+pub(crate) fn gpu_harness(
+    fixture: Fixture,
+    size: egui::Vec2,
+    pixels_per_point: f32,
+) -> Harness<'static, Fixture> {
+    Harness::builder()
+        .with_size(size)
+        .with_pixels_per_point(pixels_per_point)
+        .with_accessibility_check(false)
+        .with_context_setup(fonts::install)
+        .wgpu()
+        .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture)
+}

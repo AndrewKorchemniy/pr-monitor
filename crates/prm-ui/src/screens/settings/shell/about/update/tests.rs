@@ -1,9 +1,5 @@
 use super::*;
 
-fn view(status: &UpdateStatus) -> View {
-    describe(status)
-}
-
 #[test]
 fn each_status_has_a_sentence_and_the_actions_that_fit() {
     let cases = [
@@ -37,7 +33,7 @@ fn each_status_has_a_sentence_and_the_actions_that_fit() {
         ),
     ];
     for (status, text, actions) in cases {
-        let shown = view(&status);
+        let shown = describe(&status);
         assert_eq!(shown.text, text, "{status:?}");
         assert_eq!(shown.actions, actions, "{status:?}");
     }
@@ -45,21 +41,21 @@ fn each_status_has_a_sentence_and_the_actions_that_fit() {
 
 #[test]
 fn a_download_shows_its_percent_and_a_ready_update_offers_the_restart() {
-    let downloading = view(&UpdateStatus::downloading(42));
+    let downloading = describe(&UpdateStatus::downloading(42));
     assert_eq!(downloading.text, "Downloading update… 42%");
     assert_eq!(downloading.actions, NONE);
 
-    let ready = view(&UpdateStatus::Ready("0.3.0".into()));
+    let ready = describe(&UpdateStatus::Ready("0.3.0".into()));
     assert_eq!(ready.text, "Version 0.3.0 is ready");
     assert_eq!(ready.actions, [Action::Restart]);
 }
 
 #[test]
-fn a_failure_offers_a_retry_and_the_releases_page_and_nothing_pops_up() {
-    let failed = view(&UpdateStatus::Failed(UpdateStage::Check));
+fn a_failure_offers_a_retry_and_the_releases_page_as_a_link() {
+    let failed = describe(&UpdateStatus::Failed(UpdateStage::Check));
 
     assert_eq!(failed.actions, [Action::CheckNow, Action::Releases]);
-    assert_eq!(Action::Releases.command().map(|_| ()), None);
+    assert!(Action::Releases.command().is_none());
     assert!(matches!(Action::Releases.link(), Some(Link::Releases)));
 }
 

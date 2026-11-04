@@ -110,15 +110,11 @@ impl MemoryAvatarCache {
         self.read(key)
     }
 
-    pub fn len(&self) -> usize {
+    pub fn is_empty(&self) -> bool {
         self.entries
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+            .is_empty()
     }
 }
 

@@ -283,18 +283,18 @@ impl ManualClock {
     }
 
     pub fn set(&self, now: Timestamp) {
-        *self.now.lock().unwrap_or_else(PoisonError::into_inner) = now;
+        *lock(&self.now) = now;
     }
 
     pub fn advance(&self, by: std::time::Duration) {
-        let mut now = self.now.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut now = lock(&self.now);
         *now = now.saturating_add(by);
     }
 }
 
 impl Clock for ManualClock {
     fn now(&self) -> Timestamp {
-        *self.now.lock().unwrap_or_else(PoisonError::into_inner)
+        *lock(&self.now)
     }
 }
 
@@ -307,33 +307,21 @@ pub struct RecordingUrlOpener {
 
 impl RecordingUrlOpener {
     pub fn opened(&self) -> Vec<Url> {
-        self.opened
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        lock(&self.opened).clone()
     }
 
     pub fn fail_next(&self) {
-        *self
-            .fail_next
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = true;
+        *lock(&self.fail_next) = true;
     }
 }
 
 impl UrlOpener for RecordingUrlOpener {
     fn open(&self, url: &Url) -> Result<(), PortError> {
-        let mut fail = self
-            .fail_next
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut fail = lock(&self.fail_next);
         if std::mem::take(&mut *fail) {
             return Err(PortError::new(PortErrorKind::Failed, "scripted failure"));
         }
-        self.opened
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(url.clone());
+        lock(&self.opened).push(url.clone());
         Ok(())
     }
 }

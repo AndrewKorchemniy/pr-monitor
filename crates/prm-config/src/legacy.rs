@@ -11,7 +11,7 @@ const CONFIG_ENTRIES: [&str; 3] = ["config.toml", "keymap.toml", "themes"];
 const DISCARDED: [&str; 1] = ["instance.lock"];
 
 /// What one run did, for the log.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct LegacyMove {
     /// The legacy folder existed.
     pub found: bool,
@@ -39,8 +39,13 @@ pub fn move_legacy_folder(legacy: &Path, config_root: &Path, root: &Path) -> Leg
         }
     };
     outcome.found = true;
-    for entry in entries.flatten() {
-        move_entry(&entry.path(), config_root, root, &mut outcome);
+    for entry in entries {
+        match entry {
+            Ok(entry) => move_entry(&entry.path(), config_root, root, &mut outcome),
+            Err(error) => outcome
+                .failed
+                .push(format!("{}: {error}", legacy.display())),
+        }
     }
     // why: `remove_dir` only succeeds on an empty folder, which is exactly when it should go.
     outcome.removed = fs::remove_dir(legacy).is_ok();
@@ -69,6 +74,10 @@ fn move_entry(src: &Path, config_root: &Path, root: &Path, outcome: &mut LegacyM
         root
     };
     let dest = parent.join(name);
+    // why: `ensure_dirs` makes the empty `cache`, `logs`, `themes` and `avatars` folders on every
+    // start, after this move. One left by a failed earlier attempt must not block the retry.
+    // `remove_dir` only succeeds on an empty folder, so no data is removed.
+    let _ = fs::remove_dir(&dest);
     if dest.symlink_metadata().is_ok() {
         outcome.skipped.push(label);
         return;
@@ -90,13 +99,15 @@ fn relocate(src: &Path, dest: &Path) -> io::Result<()> {
     relocate_by_copy(src, dest)
 }
 
-/// Leaves `src` untouched and `dest` absent when anything fails, so a retry starts clean.
+/// Copies `src` to `dest`, then removes `src`. A failed copy leaves `src` as it was and no `dest`,
+/// so a retry starts clean. A failed removal of `src` keeps the complete copy in `dest`, so
+/// nothing is lost.
 fn relocate_by_copy(src: &Path, dest: &Path) -> io::Result<()> {
-    let result = copy_tree(src, dest).and_then(|()| remove_any(src));
-    if result.is_err() {
+    if let Err(error) = copy_tree(src, dest) {
         let _ = remove_any(dest);
+        return Err(error);
     }
-    result
+    remove_any(src)
 }
 
 fn copy_tree(src: &Path, dest: &Path) -> io::Result<()> {
