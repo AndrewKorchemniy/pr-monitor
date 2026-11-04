@@ -178,6 +178,16 @@ async fn avatar_failures_are_classified() {
     let cases = [
         ("404", png(404), AdoError::NotFound { message: None }),
         (
+            "408",
+            png(408),
+            AdoError::Http {
+                status: 408,
+                message: "Unexpected status".into(),
+                code: None,
+                activity: None,
+            },
+        ),
+        (
             "html page",
             Scripted::with_type(200, "<html>", "text/html"),
             AdoError::Auth(prm_domain::auth::AuthError::SignInPageReturned),

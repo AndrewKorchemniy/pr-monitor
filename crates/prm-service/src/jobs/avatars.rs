@@ -160,6 +160,8 @@ async fn fetch_one(
     match api.avatar(&url).await {
         Ok(bytes) => settle_download(cache, key, bytes, now).await,
         Err(AdoError::NotFound { .. }) => marker(&cache, key, now).await,
+        // A timeout or "too early" answer says nothing about the picture: ask again next refresh.
+        Err(AdoError::Http { status, .. }) if is_passing(status) => Fetched::Retry,
         // Nothing usable at that address, and asking again soon will not change it.
         Err(AdoError::ForeignUrl | AdoError::Http { .. } | AdoError::Decode(_)) => absent(key, now),
         Err(AdoError::Auth(error)) if error.severity() == AuthSeverity::Transient => Fetched::Retry,
@@ -173,6 +175,12 @@ async fn fetch_one(
             | AdoError::Cancelled,
         ) => Fetched::Retry,
     }
+}
+
+/// A 4xx status that means "not now" rather than "not here". (429 and 5xx never reach this as
+/// `Http`: the client reports them as `RateLimited` and `Server`, which are retried too.)
+const fn is_passing(status: u16) -> bool {
+    matches!(status, 408 | 425)
 }
 
 /// "No picture" as of `now`, kept in memory only.

@@ -352,3 +352,59 @@ async fn foreign_addresses_use_no_budget_and_cause_no_request() {
     assert_eq!(h.api(&org(CONTOSO)).calls(ApiCall::Avatar), 1);
     h.stop().await;
 }
+
+fn http(status: u16) -> AdoError {
+    AdoError::Http {
+        status,
+        message: "x".into(),
+        code: None,
+        activity: None,
+    }
+}
+
+/// Passing statuses cache nothing and are asked again; permanent ones are remembered as absent
+/// (in memory, a day), and the org stays on.
+#[tokio::test(start_paused = true)]
+async fn transient_statuses_are_retried_and_permanent_ones_remembered() {
+    let server = |status| AdoError::Server {
+        status,
+        message: None,
+        activity: None,
+    };
+    let rate = AdoError::RateLimited { retry_after: None };
+    let cases = [
+        ("408", http(408), true),
+        ("425", http(425), true),
+        ("429", rate, true),
+        ("503", server(503), true),
+        ("500", server(500), true),
+        ("404", AdoError::NotFound { message: None }, false),
+        ("400", http(400), false),
+        ("422", http(422), false),
+    ];
+    for (name, error, retried) in cases {
+        let mut h = ServiceHarness::start(served_setup(&[ann()]));
+        h.api(&org(CONTOSO)).fail(ApiCall::Avatar, error);
+        refreshed(&mut h, CONTOSO, 1).await;
+        h.until("the attempt", |h| {
+            h.api(&org(CONTOSO)).calls(ApiCall::Avatar) >= 1
+        })
+        .await;
+        h.settle().await;
+        let marked = h.avatar_cache.get(&key_of(&ann())).is_some();
+        assert_eq!(marked, name == "404", "{name}: disk marker");
+
+        h.api(&org(CONTOSO)).clear_failures();
+        h.advance(Duration::from_secs(3)).await;
+        h.send(Command::RefreshNow);
+        refreshed(&mut h, CONTOSO, 2).await;
+        if retried {
+            h.until("the face", |h| !loaded(h).is_empty()).await;
+        }
+        h.settle().await;
+        let asked = h.api(&org(CONTOSO)).calls(ApiCall::Avatar);
+        assert_eq!(asked, if retried { 2 } else { 1 }, "{name}: requests");
+        assert_eq!(loaded(&h).len(), usize::from(retried), "{name}: picture");
+        h.stop().await;
+    }
+}
