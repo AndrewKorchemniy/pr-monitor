@@ -82,7 +82,8 @@ fn group_label(
     let cell = ui.max_rect();
     let line = Rect::from_x_y_ranges(full.x_range(), cell.y_range()).intersect(clip);
     // why: the row's band reaches half a gap past the cell; a header owns all of it, on the
-    // canvas rather than a stripe, with its rule on the band's bottom edge.
+    // sheet tone rather than a stripe, with its rule on the band's bottom edge. The toolbar's tone
+    // would read as a lighter half of the column header just above it.
     let half = ui.spacing().item_spacing.y / 2.0;
     let band = line.expand2(egui::vec2(0.0, half)).intersect(clip);
     let mut painter = ui.painter().clone();
@@ -90,7 +91,7 @@ fn group_label(
     let fill = if ui.rect_contains_pointer(band) {
         theme.colors.row_hover
     } else {
-        theme.colors.surface_canvas
+        theme.colors.surface_sunken
     };
     painter.rect_filled(band, 0.0, fill);
     let chevron = if collapsed {
