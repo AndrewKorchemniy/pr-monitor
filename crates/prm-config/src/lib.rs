@@ -5,6 +5,7 @@
 pub mod avatar_cache;
 pub mod diff;
 pub mod error;
+pub mod legacy;
 pub mod limits;
 pub mod migrate;
 pub mod paths;
