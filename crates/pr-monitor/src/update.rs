@@ -49,7 +49,7 @@ pub(crate) fn boot() -> Boot {
         app = app.on_before_uninstall_fast_callback(|_| crate::startup::uninstall_cleanup());
     }
     // why: Velopack's own log lines from here are dropped (our logging starts later); Update.exe
-    // logs to %LocalAppData%\velopack\velopack_AndrewKorchemniy.PRMonitor.log.
+    // logs to %LocalAppData%\velopack\velopack_PRMonitor.log.
     app.run();
     Boot {
         restarted: restarted.get(),

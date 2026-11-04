@@ -13,7 +13,7 @@
   5. Copies only this build's files into -OutDir and filters releases.<rid>.json to this version.
   6. Runs verify-package.ps1 on the result.
 
-  Output files in -OutDir (names are vpk's; <id> = AndrewKorchemniy.PRMonitor):
+  Output files in -OutDir (names are vpk's; <id> = PRMonitor):
     <id>-win-<arch>-Setup.exe, <id>-win-<arch>-Portable.zip   (Windows)
     <id>-linux-<arch>.AppImage                                (Linux)
     <id>-<version>-win-<arch>-full.nupkg, <id>-<version>-win-<arch>-delta.nupkg (when there is a previous release),
@@ -122,7 +122,7 @@ $pack = @(
 )
 if ($platform -eq 'windows') {
     # why: vpk's default AUMID differs, which would break toast activation from the shortcut.
-    $pack += '--aumid', $PackId, '--shortcuts', 'StartMenuRoot'
+    $pack += '--aumid', $Aumid, '--shortcuts', 'StartMenuRoot'
 } else {
     # `[linux]` selects vpk's Linux pack command; --aumid and --shortcuts do not exist there.
     $pack = @('[linux]') + $pack + @('--categories', 'Development;')
