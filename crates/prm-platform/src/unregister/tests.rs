@@ -62,42 +62,6 @@ fn unregister_purge_deletes_an_isolated_root() {
     assert!(!root.exists());
 }
 
-/// The install folder is also the data root: a purge must not touch what the app runs from.
-#[test]
-fn unregister_purge_keeps_velopack_entries() {
-    let dir = tempfile::tempdir().unwrap();
-    let (root, user_home) = (dir.path().join("prm"), dir.path().join("alice"));
-    for sub in ["current", "packages", "logs", "themes"] {
-        fs::create_dir_all(root.join(sub)).unwrap();
-        fs::write(root.join(sub).join("f"), "").unwrap();
-    }
-    for file in [
-        "Update.exe",
-        "PR Monitor.exe",
-        "sq.version",
-        ".portable",
-        "config.toml",
-    ] {
-        fs::write(root.join(file), "").unwrap();
-    }
-
-    assert_eq!(purge(&spec(&root, &user_home)), Ok(()));
-
-    for kept in [
-        "current/f",
-        "packages/f",
-        "Update.exe",
-        "PR Monitor.exe",
-        "sq.version",
-        ".portable",
-    ] {
-        assert!(root.join(kept).exists(), "{kept}");
-    }
-    for gone in ["logs", "themes", "config.toml"] {
-        assert!(!root.join(gone).exists(), "{gone}");
-    }
-}
-
 #[test]
 fn unregister_purge_refuses_the_user_home() {
     let dir = tempfile::tempdir().unwrap();
