@@ -100,7 +100,8 @@ fn connect(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
     let submitted = dialog::body(ui, &theme, |ui| {
         widgets::field_label(ui, &theme, copy::ORG_URL_LABEL);
         ui.add_space(theme.tokens.metrics.space.xs);
-        let mut field = Field::new(egui::Id::unique("first_run_org_url"), copy::ORG_URL_HINT);
+        let mut field =
+            Field::new(egui::Id::unique("first_run_org_url"), copy::ORG_URL_HINT).autofocus(true);
         field.error = st.url_error;
         let action = (&field, copy::CONNECT, Icon::ArrowRight);
         let submitted = fields::action_field(ui, &theme, &mut st.new_org_url, action);
@@ -172,6 +173,8 @@ fn people(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, fr: &mut FirstRun) {
         return;
     };
     let id = org.org_id().cloned();
+    // why: two pickers show at once; the first is where to start typing.
+    st.pickers.reviewers.autofocus = false;
     dialog::body(ui, &theme, |ui| {
         group_label(ui, &theme, copy::TRACK_FROM, Some(copy::TRACK_FROM_HELP));
         let list = &mut org.people.tracked_authors;

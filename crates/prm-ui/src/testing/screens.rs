@@ -30,7 +30,10 @@ use crate::{
     theme::{ThemeRuntime, fonts},
     ui_state::PeekLayout,
     view::{DashboardView, changes::ChangeLog, columns::Choices},
-    widgets::palette_view::{PaletteOutcome, palette_view},
+    widgets::{
+        modal::ModalOutcome,
+        palette_view::{PaletteOutcome, palette_view},
+    },
 };
 
 /// The window size every screen is drawn at.
@@ -61,6 +64,8 @@ pub(crate) struct Fixture {
     pub palette_outcome: Option<PaletteItem>,
     /// The token dialog's text and its last error.
     pub token: (String, Option<Arc<str>>),
+    /// Whether the token dialog was dismissed (Esc or the close button).
+    pub token_dismissed: bool,
     pub keymap: Keymap,
     pub changes: ChangeLog,
     /// Pictures loaded into the fixture; empty shows initials everywhere.
@@ -96,6 +101,7 @@ impl Fixture {
             palette: PaletteState::default(),
             palette_outcome: None,
             token: (String::new(), None),
+            token_dismissed: false,
             keymap: Keymap::defaults(),
             changes: ChangeLog::default(),
             avatars: AvatarStore::default(),
@@ -160,7 +166,9 @@ impl Fixture {
             Shown::Token => {
                 dashboard(ui, &mut cx, &mut self.dash, false);
                 let (input, error) = &mut self.token;
-                let _ = token_dialog(&ctx, &cx.theme, "contoso", (input, error.as_deref()));
+                let (outcome, _) =
+                    token_dialog(&ctx, &cx.theme, "contoso", (input, error.as_deref()));
+                self.token_dismissed |= outcome == ModalOutcome::Dismissed;
             }
         }
     }

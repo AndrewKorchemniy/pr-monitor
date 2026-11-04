@@ -14,7 +14,8 @@ use crate::{
     theme::{UiTheme, icons::Icon},
     view::columns::{COLUMNS, ColumnId},
     widgets::{
-        controls, fields,
+        controls,
+        fields::{self, Field},
         progress::{self, ProgressLine},
     },
 };
@@ -89,8 +90,8 @@ pub(crate) fn toolbar(
         let below = (rect.height() - fields::SEARCH_GLYPH) / 2.0;
         ui.add_space((below - frame_left - fields::SEARCH_GLYPH_INSET).max(0.0));
         let fit = Fit::of(ui, &theme, inputs);
-        let id = (filter_id(), copy::FILTER_HINT);
-        let response = fields::search_field(ui, &theme, filter, id, (0.0, fit.search));
+        let field = Field::new(filter_id(), copy::FILTER_HINT);
+        let response = fields::search_field(ui, &theme, filter, &field, (0.0, fit.search));
         if response.changed() {
             cx.push(UiAction::SetFilterText(filter.clone()));
         }

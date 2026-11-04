@@ -29,7 +29,9 @@ pub(crate) fn token_dialog(
     let mut docs = false;
     let outcome = modal(ctx, theme, &spec, |ui| {
         let label = widgets::field_label(ui, theme, copy::PAT_LABEL);
-        let mut field = Field::new(egui::Id::unique("pat_token"), "").password(true);
+        let mut field = Field::new(egui::Id::unique("pat_token"), "")
+            .password(true)
+            .autofocus(true);
         field.error = error.is_some();
         fields::text_field(ui, theme, input, &field).labelled_by(label.id);
         widgets::muted(ui, theme, copy::PAT_HELP);
