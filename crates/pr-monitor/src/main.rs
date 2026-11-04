@@ -12,6 +12,7 @@ mod net;
 mod panic;
 mod renderer;
 mod report;
+mod root;
 mod self_test;
 mod shutdown;
 mod startup;
