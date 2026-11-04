@@ -65,7 +65,7 @@ fn missing_user_dir_is_fine() {
     let dir = tempfile::tempdir().unwrap();
     let (registry, issues) = ThemeRegistry::builtin().with_user_dir(&dir.path().join("nope"));
     assert_eq!(issues, Vec::new());
-    assert_eq!(registry.list().count(), 4);
+    assert_eq!(registry.list().count(), 5);
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn resolve_unknown_falls_back_with_warning() {
 fn corners_apply_to_every_theme_in_both_slots() {
     let registry = ThemeRegistry::builtin();
     for corners in [Corners::Rounded, Corners::Square] {
-        for theme in ["graphite", "cyanotype", SYSTEM] {
+        for theme in ["graphite", "cyanotype", "andromeda", SYSTEM] {
             let picks = ThemeSelection {
                 corners,
                 ..selection(theme)

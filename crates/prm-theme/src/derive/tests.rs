@@ -42,6 +42,11 @@ fn palette_snapshot_cyanotype() {
 }
 
 #[test]
+fn palette_snapshot_andromeda() {
+    insta::assert_snapshot!(listing(&derive_palette(&builtin("andromeda"))));
+}
+
+#[test]
 fn contrast_seed_monotonic() {
     let mut file = builtin("graphite");
     let mut previous = 0.0;
@@ -59,7 +64,7 @@ fn contrast_seed_monotonic() {
 
 #[test]
 fn dark_elevation_lifts_light_raised_not_darker() {
-    for id in ["graphite", "cyanotype", "vellum", "paper"] {
+    for id in ["graphite", "cyanotype", "vellum", "paper", "andromeda"] {
         let palette = derive_palette(&builtin(id));
         let l = |c: Rgba8| to_oklab(c).l;
         assert!(

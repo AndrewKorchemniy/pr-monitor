@@ -588,7 +588,7 @@ fn gallery() {
         .into_iter()
         .map(|(scene, pointer)| (scene, Some(pointer)));
     for (scene, pointer) in still.chain(pointed) {
-        for theme in ["graphite", "vellum", "cyanotype", "paper"] {
+        for theme in ["graphite", "vellum", "cyanotype", "paper", "andromeda"] {
             render(&scene, theme, &dir, pointer);
         }
     }

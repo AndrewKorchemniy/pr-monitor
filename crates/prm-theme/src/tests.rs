@@ -36,9 +36,10 @@ fn builtin_has_every_shipped_theme() {
     assert!(registry.get(crate::registry::DEFAULT_LIGHT).is_some());
     assert!(registry.get("cyanotype").is_some());
     assert!(registry.get("paper").is_some());
+    assert!(registry.get("andromeda").is_some());
 }
 
 #[test]
-fn self_check_counts_4() {
-    assert_eq!(self_check(), Ok(4));
+fn self_check_counts_5() {
+    assert_eq!(self_check(), Ok(5));
 }
