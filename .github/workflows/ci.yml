@@ -57,7 +57,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-nextest@0.9.148    # exact pin; Dependabot does not bump install-action tools
       - run: cargo lint
@@ -94,7 +94,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           # exact pins; Dependabot does not bump these (keep cargo-deny in step with audit.yml)
           tool: cargo-deny@0.20.2,cargo-shear@1.14.0
@@ -125,7 +125,7 @@ jobs:
           echo "$ACTIONLINT_SHA256  $d/$f" | sha256sum -c -
           tar -xzf "$d/$f" -C "$d" actionlint
           "$d/actionlint" -color      # runs the preinstalled ubuntu-latest ShellCheck on run: blocks
-      - uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
         with:
           advanced-security: false   # fail the job on findings
           version: "1.31.1"          # exact pin (default is latest, so new audits could break CI); not bumped by Dependabot

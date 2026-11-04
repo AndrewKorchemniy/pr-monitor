@@ -59,7 +59,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
-      - uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
+      - uses: release-plz/action@f67a7e724bdad4a0f6875f186060a0ca2770d76c # v0.5.147
         with:
           command: release-pr
         env:
@@ -91,7 +91,7 @@ jobs:
           cache: false
       - id: rp
         if: github.event_name == 'push'
-        uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
+        uses: release-plz/action@f67a7e724bdad4a0f6875f186060a0ca2770d76c # v0.5.147
         with:
           command: release
         env:
@@ -196,7 +196,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           # exact pins; Dependabot does not bump these (keep cargo-about in step with audit.yml)
           tool: cargo-about@0.9.2,cargo-cyclonedx@0.5.9
@@ -249,7 +249,7 @@ jobs:
         with:
           cache: false                 # zizmor cache-poisoning: never restore caches in release builds
           target: ${{ matrix.target }}
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-auditable@0.7.7  # exact pin, not bumped by Dependabot; prebuilt exists for aarch64_windows (verified)
       - uses: ./.github/actions/arm64-clang    # zizmor: ignore[self-repository] actionlint 1.7.12 rejects `$/`
