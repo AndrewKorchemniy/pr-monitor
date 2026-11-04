@@ -4,6 +4,7 @@ use prm_domain::testing::{PrBuilder, key, record};
 
 use super::*;
 use crate::{
+    schema::Corners,
     state::{OrgPersisted, UiState},
     testing::MemoryRepo,
 };
@@ -57,7 +58,74 @@ fn load_with_retired_density_key() {
     assert_eq!(load.issues, Vec::new());
     assert!(!load.read_only);
     assert_eq!(load.config.ui.theme_light, "cyanotype");
+    assert_eq!(load.config.ui.corners, Corners::Square);
     assert!(paths.config.exists(), "the file was not moved aside");
+}
+
+fn corners_loaded_from(ui: &str) -> (Corners, bool) {
+    let (_dir, paths) = temp_paths();
+    std::fs::write(&paths.config, format!("schema_version = 1\n[ui]\n{ui}\n")).unwrap();
+    let load = load_config(&paths);
+    assert_eq!(load.issues, Vec::new(), "{ui}");
+    (load.config.ui.corners, load.read_only)
+}
+
+/// A config written before `ui.corners` keeps its look at the current schema: nothing to
+/// migrate, so older builds still open it too.
+#[test]
+fn a_config_without_corners_keeps_its_look() {
+    assert_eq!(
+        corners_loaded_from("theme = \"cyanotype\""),
+        (Corners::Square, false)
+    );
+    assert_eq!(
+        corners_loaded_from("theme = \"system\"\ntheme_dark = \"cyanotype\""),
+        (Corners::Square, false)
+    );
+    assert_eq!(
+        corners_loaded_from("theme = \"graphite\""),
+        (Corners::Rounded, false)
+    );
+    assert_eq!(corners_loaded_from(""), (Corners::Rounded, false));
+}
+
+#[test]
+fn an_explicit_corners_choice_wins_over_the_theme_rule() {
+    assert_eq!(
+        corners_loaded_from("theme = \"cyanotype\"\ncorners = \"rounded\""),
+        (Corners::Rounded, false)
+    );
+    assert_eq!(
+        corners_loaded_from("theme = \"vellum\"\ncorners = \"square\""),
+        (Corners::Square, false)
+    );
+}
+
+#[test]
+fn corners_round_trip_through_a_save() {
+    let (_dir, paths) = temp_paths();
+    let mut config = Config::default();
+    config.ui.corners = Corners::Square;
+    config.ui.theme = "graphite".into();
+    save_config(&paths, &config).unwrap();
+    let text = std::fs::read_to_string(&paths.config).unwrap();
+    assert!(text.contains("corners = \"square\""), "{text}");
+    let load = load_config(&paths);
+    assert_eq!(load.config.ui.corners, Corners::Square);
+    assert_eq!(load.config.schema_version, CURRENT_SCHEMA);
+}
+
+/// Loading only fills the key in memory: the file stays as written (no backup either), and
+/// the key lands with the next save.
+#[test]
+fn the_fill_does_not_rewrite_the_file() {
+    let (dir, paths) = temp_paths();
+    let text = "schema_version = 1\n[ui]\ntheme = \"cyanotype\"\n";
+    std::fs::write(&paths.config, text).unwrap();
+    let before = files_in(dir.path());
+    assert_eq!(load_config(&paths).config.ui.corners, Corners::Square);
+    assert_eq!(std::fs::read_to_string(&paths.config).unwrap(), text);
+    assert_eq!(files_in(dir.path()), before);
 }
 
 #[test]

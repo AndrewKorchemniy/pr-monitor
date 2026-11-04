@@ -44,3 +44,56 @@ fn the_built_in_themes_have_no_issues() {
     let runtime = ThemeRuntime::new(dir.path(), &UiPrefs::default(), POLICY);
     assert!(runtime.issues.is_empty(), "{:?}", runtime.issues);
 }
+
+fn dark_radius(runtime: &ThemeRuntime) -> prm_theme::metrics::Radius {
+    runtime.dark.tokens.metrics.radius.clone()
+}
+
+#[test]
+fn the_corner_preview_restyles_once_and_reverts_on_none() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut runtime = ThemeRuntime::new(dir.path(), &UiPrefs::default(), POLICY);
+    let rounded = dark_radius(&runtime);
+    let generation = runtime.generation;
+
+    runtime.set_corners_preview(Some(Corners::Square));
+    assert_eq!(
+        dark_radius(&runtime),
+        prm_theme::metrics::Radius::new(Corners::Square)
+    );
+    assert_eq!(runtime.generation, generation + 1);
+    runtime.set_corners_preview(Some(Corners::Square));
+    assert_eq!(
+        runtime.generation,
+        generation + 1,
+        "same preview, no rebuild"
+    );
+
+    runtime.set_corners_preview(None);
+    assert_eq!(dark_radius(&runtime), rounded);
+}
+
+#[test]
+fn saved_corners_apply_and_the_preview_wins_over_them() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut runtime = ThemeRuntime::new(dir.path(), &UiPrefs::default(), POLICY);
+    let prefs = UiPrefs {
+        corners: Corners::Square,
+        ..UiPrefs::default()
+    };
+    runtime.set_selection(selection_from(&prefs));
+    assert_eq!(
+        dark_radius(&runtime),
+        prm_theme::metrics::Radius::new(Corners::Square)
+    );
+    runtime.set_corners_preview(Some(Corners::Rounded));
+    assert_eq!(
+        dark_radius(&runtime),
+        prm_theme::metrics::Radius::new(Corners::Rounded)
+    );
+    runtime.set_corners_preview(None);
+    assert_eq!(
+        dark_radius(&runtime),
+        prm_theme::metrics::Radius::new(Corners::Square)
+    );
+}

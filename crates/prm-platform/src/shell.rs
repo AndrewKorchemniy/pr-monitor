@@ -2,15 +2,15 @@
 
 use prm_domain::ports::PortError;
 
-use crate::shared::{colors::TitleBarColors, session_kind::SessionInfo};
+use crate::shared::{colors::WindowChrome, session_kind::SessionInfo};
 
 /// The OS side of the window: chrome, cloaking, session and display facts. One per process.
 pub trait DesktopShell: Send + Sync + 'static {
-    /// Title bar colors (Windows 11 DWM); `Unsupported` elsewhere.
-    fn apply_title_bar(
+    /// Title bar colors and window corner shape (Windows 11 DWM); `Unsupported` elsewhere.
+    fn apply_chrome(
         &self,
         window: &dyn raw_window_handle::HasWindowHandle,
-        colors: &TitleBarColors,
+        chrome: &WindowChrome,
     ) -> Result<(), PortError>;
     /// Hides the window from the screen and taskbar without unmapping it (start hidden).
     fn set_cloaked(
@@ -31,6 +31,13 @@ pub trait DesktopShell: Send + Sync + 'static {
         let _ = (position, width);
         None
     }
+}
+
+/// The `DWMWA_WINDOW_CORNER_PREFERENCE` value for a corner shape: `DWMWCP_ROUND` or
+/// `DWMWCP_DONOTROUND`.
+#[cfg(any(windows, test))]
+pub(crate) const fn corner_preference(rounded: bool) -> i32 {
+    if rounded { 2 } else { 1 }
 }
 
 /// The `(left, top, right, bottom)` pixel rect to look for a monitor under: the title-bar strip

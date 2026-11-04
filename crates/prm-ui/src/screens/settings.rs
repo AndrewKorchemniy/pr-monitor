@@ -199,7 +199,7 @@ pub(crate) struct SettingsEnv<'a> {
     pub themes: Vec<(String, String)>,
     pub themes_dir: PathBuf,
     /// Problems with theme files ("midnight: row.selected fails contrast"), shown on Appearance.
-    pub theme_issues: Vec<String>,
+    pub theme_issues: Vec<(prm_theme::IssueLevel, String)>,
     pub build: BuildInfo,
     pub licenses: &'static str,
     pub renderer_line: &'a str,

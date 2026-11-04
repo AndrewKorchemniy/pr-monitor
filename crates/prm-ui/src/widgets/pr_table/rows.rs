@@ -202,7 +202,12 @@ fn focus_ring(response: &Response, theme: &UiTheme, list: Rect) {
         .ctx
         .layer_painter(response.layer_id)
         .with_clip_rect(list)
-        .rect_stroke(ring, 2.0, stroke, StrokeKind::Inside);
+        .rect_stroke(
+            ring,
+            egui::CornerRadius::same(theme.tokens.metrics.radius.xs),
+            stroke,
+            StrokeKind::Inside,
+        );
 }
 
 /// The row's actions as menu rows, grouped: open, the copies, then peek and mark as seen.

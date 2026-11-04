@@ -12,6 +12,7 @@ test-support = []
 
 [dependencies]
 prm-domain = { workspace = true }
+prm-theme = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

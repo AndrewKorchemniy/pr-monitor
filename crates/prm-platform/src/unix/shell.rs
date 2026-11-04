@@ -6,7 +6,7 @@ use raw_window_handle::HasWindowHandle;
 use crate::{
     common::unsupported,
     shared::{
-        colors::TitleBarColors,
+        colors::WindowChrome,
         session_kind::{SessionInfo, SessionKind},
     },
     shell::DesktopShell,
@@ -25,10 +25,10 @@ impl UnixShell {
 }
 
 impl DesktopShell for UnixShell {
-    fn apply_title_bar(
+    fn apply_chrome(
         &self,
         _window: &dyn HasWindowHandle,
-        _colors: &TitleBarColors,
+        _chrome: &WindowChrome,
     ) -> Result<(), PortError> {
         Err(unsupported())
     }

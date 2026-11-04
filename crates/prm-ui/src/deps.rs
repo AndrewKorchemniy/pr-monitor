@@ -9,22 +9,20 @@ use prm_service::{AppEvent, AppState, CommandSender};
 
 use crate::render::{RenderEnv, hover_bands::HoverBands};
 
-/// Title-bar colors (DWM caption, text and border); the host derives the dark-glyph flag from
-/// the caption.
+/// The window frame: title-bar colors (DWM caption, text and border) and the corner shape. The
+/// host derives the dark-glyph flag from the caption.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ChromeColors {
+pub struct WindowChrome {
     pub caption: [u8; 3],
     pub text: [u8; 3],
     pub border: [u8; 3],
+    /// Rounded window corners; square when false.
+    pub rounded: bool,
 }
 
 /// OS services the window needs (implemented by the bin over prm-platform).
 pub trait UiHost: 'static {
-    fn apply_title_bar(
-        &self,
-        window: &dyn raw_window_handle::HasWindowHandle,
-        colors: ChromeColors,
-    );
+    fn apply_chrome(&self, window: &dyn raw_window_handle::HasWindowHandle, chrome: WindowChrome);
     fn set_cloaked(&self, window: &dyn raw_window_handle::HasWindowHandle, cloaked: bool);
     fn system_animations_enabled(&self) -> Option<bool>;
 }
@@ -34,10 +32,10 @@ pub trait UiHost: 'static {
 pub struct NoopHost;
 
 impl UiHost for NoopHost {
-    fn apply_title_bar(
+    fn apply_chrome(
         &self,
         _window: &dyn raw_window_handle::HasWindowHandle,
-        _colors: ChromeColors,
+        _chrome: WindowChrome,
     ) {
     }
 

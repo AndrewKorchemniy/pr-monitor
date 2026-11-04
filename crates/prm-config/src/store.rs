@@ -12,7 +12,7 @@ use prm_domain::{OrgId, app::APP_DISPLAY_NAME, model::Catalog};
 
 use crate::{
     error::{ConfigError, ConfigIssue, Severity},
-    migrate::{CURRENT_SCHEMA, MIGRATIONS, migrate_with},
+    migrate::{CURRENT_SCHEMA, MIGRATIONS, legacy_corners, migrate_with},
     paths::AppPaths,
     schema::Config,
     state::{PersistedState, STATE_SCHEMA},
@@ -169,13 +169,19 @@ fn parse_migrated(text: &str) -> Result<(Config, u32), String> {
         .and_then(toml::Value::as_integer)
         .and_then(|v| u32::try_from(v).ok())
         .unwrap_or(CURRENT_SCHEMA);
-    if version < CURRENT_SCHEMA {
+    // why: a file written before `ui.corners` keeps its look. Unversioned (no schema bump, so
+    // older builds keep working) and not saved back: the key lands with the next save.
+    let corners = legacy_corners(&table);
+    let mut config: Config = if version < CURRENT_SCHEMA {
         migrate_with(&mut table, version, CURRENT_SCHEMA, MIGRATIONS).map_err(|e| e.to_string())?;
-        let config = table.try_into().map_err(|e| e.to_string())?;
-        return Ok((config, version));
+        table.try_into().map_err(|e| e.to_string())?
+    } else {
+        // Straight from the user's text, so error positions point into their file.
+        toml::from_str(text).map_err(|e| e.to_string())?
+    };
+    if let Some(corners) = corners {
+        config.ui.corners = corners;
     }
-    // Straight from the user's text, so error positions point into their file.
-    let config = toml::from_str(text).map_err(|e| e.to_string())?;
     Ok((config, version))
 }
 

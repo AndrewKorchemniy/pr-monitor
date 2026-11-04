@@ -29,7 +29,7 @@ use crate::{
         keymap::{Keymap, KeymapIssue},
         palette::PaletteState,
     },
-    deps::{BuildInfo, ChromeColors, UiHost, UiInit},
+    deps::{BuildInfo, UiHost, UiInit, WindowChrome},
     link::{ServiceLink, StateCheck},
     render::{
         AdapterFacts, RenderEnv, RendererKind, adapter_facts,
@@ -96,7 +96,7 @@ pub(crate) struct PrMonitorApp {
     activation: Option<AppUri>,
     build: BuildInfo,
     licenses: &'static str,
-    chrome: Option<ChromeColors>,
+    chrome: Option<WindowChrome>,
     applied_config: Option<Arc<Config>>,
     /// Touchpad wheel input as egui should see it (`render::wheel`).
     touchpad: TouchpadScroll,
@@ -261,6 +261,9 @@ impl eframe::App for PrMonitorApp {
             self.theme.poll_user_dir();
             self.reload_keymap();
         }
+        // why: stateless, so Discard, Save and closing settings all settle with no extra code.
+        self.theme
+            .set_corners_preview(self.settings.as_ref().map(|s| s.draft.ui.corners));
         self.theme.apply(ctx);
         self.sync_tray(ctx);
         self.publish_hover_bands();
@@ -274,7 +277,7 @@ impl eframe::App for PrMonitorApp {
         let ctx = ui.ctx().clone();
         let chrome = self.theme.chrome(&ctx);
         if self.chrome != Some(chrome) {
-            self.host.apply_title_bar(frame, chrome);
+            self.host.apply_chrome(frame, chrome);
             self.chrome = Some(chrome);
         }
         self.dispatch_keys(&ctx);

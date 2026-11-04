@@ -21,3 +21,17 @@ fn probe_saturates_instead_of_wrapping() {
     let [left, _, right, _] = title_bar_probe(f32::MAX, 0.0, 800.0);
     assert_eq!((left, right), (i32::MAX, i32::MAX));
 }
+
+#[test]
+fn corner_preference_picks_round_or_do_not_round() {
+    assert_eq!(corner_preference(true), 2);
+    assert_eq!(corner_preference(false), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn corner_preference_matches_the_windows_constants() {
+    use windows::Win32::Graphics::Dwm::{DWMWCP_DONOTROUND, DWMWCP_ROUND};
+    assert_eq!(corner_preference(true), DWMWCP_ROUND.0);
+    assert_eq!(corner_preference(false), DWMWCP_DONOTROUND.0);
+}

@@ -9,7 +9,7 @@ tested without a network, a credential store or a screen.
 ```
 prm-domain   pure: ids, models, classification, diffing, notification planning, the view model, update status, the Updater port
 prm-theme    pure: theme files, OKLab derivation, contrast checks, the brand mark
-  prm-config   config.toml / state.json: schema, migration, validation, atomic writes
+  prm-config   config.toml / state.json: schema, migration, validation, atomic writes (uses prm-theme's `Corners`)
   prm-ado      Azure DevOps REST client: transport, paging, retries, rate limits, DTO mapping
     prm-auth   token sources (Azure CLI, PAT, Entra), single-flight cache, secret storage
   prm-service  the actor: scheduler, refresh jobs, update checks, notifications, the published AppState
@@ -19,7 +19,7 @@ prm-theme    pure: theme files, OKLab derivation, contrast checks, the brand mar
 ```
 
 `prm-ui` does not depend on `prm-platform`. The binary bridges the two through the
-`prm_ui::UiHost` trait (title bar colours, cloaking, the OS animation setting).
+`prm_ui::UiHost` trait (title bar colours, window corner shape, cloaking, the OS animation setting).
 
 ## Threads and data flow
 

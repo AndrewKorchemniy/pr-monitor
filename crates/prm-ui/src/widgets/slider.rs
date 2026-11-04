@@ -281,7 +281,7 @@ fn paint(
     let knob_x = egui::lerp(rail.left()..=rail.right(), fraction);
     let bar = |from: f32, to: f32, color: Color32| {
         let shape = Rect::from_min_max(pos2(from, mid - 2.0), pos2(to, mid + 2.0));
-        painter.rect_filled(shape, 2.0, color);
+        painter.rect_filled(shape, CornerRadius::same(metrics.radius.xs), color);
     };
     bar(rail.left(), rail.right(), colors.border_default);
     // why: under the knob a short fill read as a stray dot beside it.

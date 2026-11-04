@@ -56,3 +56,47 @@ fn migrate_missing_step_reports_error() {
         Err(ConfigError::Migration { .. })
     ));
 }
+
+fn legacy(text: &str) -> Option<Corners> {
+    legacy_corners(&toml::from_str(text).unwrap())
+}
+
+#[test]
+fn corners_follow_a_cyanotype_theme() {
+    let cases = [
+        ("theme = \"cyanotype\"", Corners::Square),
+        ("theme = \"graphite\"", Corners::Rounded),
+        (
+            "theme = \"paper\"\ntheme_dark = \"cyanotype\"",
+            Corners::Rounded,
+        ),
+        (
+            "theme = \"system\"\ntheme_dark = \"cyanotype\"",
+            Corners::Square,
+        ),
+        (
+            "theme = \"system\"\ntheme_light = \"cyanotype\"",
+            Corners::Square,
+        ),
+        ("theme_light = \"cyanotype\"", Corners::Square),
+        ("theme = \"system\"", Corners::Rounded),
+        ("font_scale = 1.0", Corners::Rounded),
+    ];
+    for (ui, expected) in cases {
+        assert_eq!(legacy(&format!("[ui]\n{ui}\n")), Some(expected), "{ui}");
+    }
+}
+
+#[test]
+fn corners_default_to_rounded_without_a_ui_table() {
+    assert_eq!(legacy(""), Some(Corners::Rounded));
+    assert_eq!(legacy("ui = 3"), Some(Corners::Rounded));
+}
+
+#[test]
+fn an_existing_corners_value_is_never_overridden() {
+    for value in ["rounded", "square", "bevelled"] {
+        let text = format!("[ui]\ntheme = \"cyanotype\"\ncorners = \"{value}\"\n");
+        assert_eq!(legacy(&text), None, "{value}");
+    }
+}

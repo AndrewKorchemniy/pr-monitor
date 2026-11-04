@@ -7,7 +7,7 @@ The four built-in themes are in `crates/prm-theme/themes/`:
 |---|---|---|
 | Graphite | dark (default) | graphite pencil on a dark drafting table |
 | Vellum | light | drafting film; the default light theme |
-| Cyanotype | dark | a blueprint: square corners, no stripes |
+| Cyanotype | dark | a blueprint: Prussian field, white chalk, no stripes |
 | Paper | light | aged paper and fountain-pen ink: warm off-white, deep teal accent |
 
 ## Making your own
@@ -38,7 +38,6 @@ active_comments = "#EF8467"
 reviewed = "#82C79D"
 
 [metrics]
-radius_scale = 1.0             # 0 = square corners
 stripes = true
 
 [overrides]
@@ -58,6 +57,15 @@ stripes = true
   Built-in themes must pass with no issues (a test enforces it).
 - **Bad files.** A theme that fails to parse is listed in Settings › Appearance with its
   error and skipped. The app never refuses to start because of a theme.
+
+## Corners
+
+Rounded or square corners are a setting, not part of a theme: Settings › Appearance ›
+**Corners** applies to every theme and to the window frame, and the choice is stored as
+`ui.corners` (`"rounded"` or `"square"`) in `config.toml`. A config written before the setting
+existed gets Square when its theme was Cyanotype, so its look does not change, and Rounded
+otherwise. The old `[metrics] radius_scale` key is ignored; a theme that still sets it gets an
+info note pointing to the setting.
 
 ## Following Windows
 

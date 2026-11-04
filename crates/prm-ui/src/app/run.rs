@@ -57,7 +57,7 @@ impl PrMonitorApp {
                     .theme
                     .issues
                     .iter()
-                    .map(|i| format!("{}: {}", i.theme.as_str(), i.message))
+                    .map(|i| (i.level, format!("{}: {}", i.theme.as_str(), i.message)))
                     .collect(),
                 build: self.build,
                 licenses: self.licenses,

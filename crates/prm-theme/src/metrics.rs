@@ -1,5 +1,7 @@
-//! Sizes, type, motion and strokes. Row heights are fixed; the theme only scales corner radii
-//! and toggles stripes.
+//! Sizes, type, motion and strokes. Row heights are fixed; a theme only toggles stripes, and
+//! the user's `Corners` choice sets every radius.
+
+use serde::{Deserialize, Serialize};
 
 use crate::file::MetricTweaks;
 
@@ -103,19 +105,55 @@ pub const SPACE: Space = Space {
     xxxl: 32.0,
 };
 
-/// Corner radii in points, already multiplied by the theme's `radius_scale`.
+/// The corner shape picked in Settings › Appearance; it applies to every theme.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Corners {
+    /// Radius 0 everywhere, pills included.
+    Square,
+    #[default]
+    #[serde(other)]
+    Rounded,
+}
+
+impl Corners {
+    pub const fn is_rounded(self) -> bool {
+        matches!(self, Self::Rounded)
+    }
+}
+
+/// Corner radii in points.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Radius {
+    /// Slivers: selection rings, thin bars, slider tracks.
+    pub xs: u8,
     pub sm: u8,
     pub md: u8,
     pub lg: u8,
-    /// Fully rounded ends (pills); not scaled except to 0.
+    /// Fully rounded ends (pills).
     pub pill: u8,
 }
 
-/// Unscaled radii: sm, md, lg, pill.
-const BASE_RADIUS: [f32; 3] = [3.0, 5.0, 8.0];
-const PILL_RADIUS: u8 = 255;
+impl Radius {
+    pub const fn new(corners: Corners) -> Self {
+        match corners {
+            Corners::Rounded => Self {
+                xs: 2,
+                sm: 3,
+                md: 5,
+                lg: 8,
+                pill: 255,
+            },
+            Corners::Square => Self {
+                xs: 0,
+                sm: 0,
+                md: 0,
+                lg: 0,
+                pill: 0,
+            },
+        }
+    }
+}
 
 /// Heights and paddings, in points.
 #[derive(Clone, Debug, PartialEq)]
@@ -192,6 +230,7 @@ pub const ELEVATION: Elevation = Elevation {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Metrics {
+    pub corners: Corners,
     pub space: Space,
     pub radius: Radius,
     pub row: RowMetrics,
@@ -202,28 +241,11 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new(tweaks: &MetricTweaks) -> Self {
-        let scaled = |r: f32| {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "radius_scale is clamped to 0..=2, so the result fits a u8"
-            )]
-            let radius = (r * tweaks.radius_scale).round().clamp(0.0, 255.0) as u8;
-            radius
-        };
+    pub fn new(tweaks: &MetricTweaks, corners: Corners) -> Self {
         Self {
+            corners,
             space: SPACE,
-            radius: Radius {
-                sm: scaled(BASE_RADIUS[0]),
-                md: scaled(BASE_RADIUS[1]),
-                lg: scaled(BASE_RADIUS[2]),
-                pill: if tweaks.radius_scale > 0.0 {
-                    PILL_RADIUS
-                } else {
-                    0
-                },
-            },
+            radius: Radius::new(corners),
             row: ROW,
             motion: MOTION,
             stroke: STROKES,

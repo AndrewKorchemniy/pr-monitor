@@ -1,6 +1,8 @@
 //! The built-in themes as a whole: they parse, match their file names, and pass every rule.
 
-use crate::{ThemeRegistry, builtin::builtin_sources, file::parse_theme, self_check};
+use crate::{
+    ThemeRegistry, builtin::builtin_sources, file::parse_theme, metrics::Corners, self_check,
+};
 
 #[test]
 fn builtin_themes_parse_without_issues() {
@@ -14,7 +16,7 @@ fn builtin_themes_parse_without_issues() {
 fn builtin_themes_meet_contrast_rules() {
     let registry = ThemeRegistry::builtin();
     for (id, _) in registry.list() {
-        let (_, issues) = registry.tokens(id.as_str()).unwrap();
+        let (_, issues) = registry.tokens(id.as_str(), Corners::default()).unwrap();
         assert_eq!(issues, Vec::new(), "{id}");
     }
 }

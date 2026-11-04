@@ -68,7 +68,10 @@ fn notices(out: &Path) -> Result<(), Box<dyn Error>> {
 fn icons(assets: &Path, out: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let registry = prm_theme::ThemeRegistry::builtin();
     let (tokens, _) = registry
-        .tokens(prm_theme::registry::DEFAULT_DARK)
+        .tokens(
+            prm_theme::registry::DEFAULT_DARK,
+            prm_theme::Corners::default(),
+        )
         .ok_or("the built-in dark theme is missing")?;
     let palette = &tokens.palette;
     let colors = prm_theme::MarkColors::from_palette(palette, palette.signature_revision);

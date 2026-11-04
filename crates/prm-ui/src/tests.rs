@@ -22,6 +22,7 @@ use crate::{
 };
 
 mod cards;
+mod corners;
 mod dashboard;
 mod dialogs;
 mod gallery;

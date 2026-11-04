@@ -40,12 +40,32 @@ fn id_mismatch_uses_file_stem() {
 
 #[test]
 fn newer_schema_warns_and_clamps() {
-    let src = format!("schema = 9\n{MINIMAL}\n[metrics]\nradius_scale = 7.0\n");
+    let src = format!("schema = 9\n{MINIMAL}");
     let src = src.replacen("[seeds]\n", "[seeds]\ncontrast = -4.0\n", 1);
     let (file, issues) = parse_theme(&src, "mine").unwrap();
     assert!(issues.iter().any(|i| i.message.contains("newer")));
-    assert!((file.metrics.radius_scale - 2.0).abs() < f32::EPSILON);
     assert!((file.seeds.contrast + 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn a_leftover_radius_scale_parses_with_one_info_issue() {
+    let src = format!("{MINIMAL}\n[metrics]\nradius_scale = 0.0\nstripes = false\n");
+    let (file, issues) = parse_theme(&src, "mine").unwrap();
+    assert!(!file.metrics.stripes);
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].level, IssueLevel::Info);
+    assert_eq!(issues[0].message, RADIUS_SCALE_RETIRED);
+    assert!(
+        issues[0]
+            .message
+            .contains("Settings › Appearance › Corners")
+    );
+}
+
+#[test]
+fn radius_scale_elsewhere_is_not_flagged() {
+    let src = format!("radius_scale = 1.0\n{MINIMAL}");
+    assert_eq!(parse_theme(&src, "mine").unwrap().1, Vec::new());
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use std::fs;
 
 use super::*;
+use crate::metrics::Radius;
 
 const USER_GRAPHITE: &str = r##"
 id = "graphite"
@@ -27,6 +28,7 @@ fn selection(theme: &str) -> ThemeSelection {
         theme: theme.into(),
         dark: DEFAULT_DARK.into(),
         light: DEFAULT_LIGHT.into(),
+        corners: Corners::Rounded,
     }
 }
 
@@ -97,8 +99,37 @@ fn resolve_unknown_falls_back_with_warning() {
 }
 
 #[test]
+fn corners_apply_to_every_theme_in_both_slots() {
+    let registry = ThemeRegistry::builtin();
+    for corners in [Corners::Rounded, Corners::Square] {
+        for theme in ["graphite", "cyanotype", SYSTEM] {
+            let picks = ThemeSelection {
+                corners,
+                ..selection(theme)
+            };
+            let set = resolve(&registry, &picks);
+            for tokens in [&set.dark, &set.light] {
+                assert_eq!(tokens.metrics.radius, Radius::new(corners), "{theme}");
+                assert_eq!(tokens.metrics.corners, corners, "{theme}");
+            }
+        }
+    }
+}
+
+#[test]
+fn corners_survive_the_fallback_to_a_default_theme() {
+    let picks = ThemeSelection {
+        corners: Corners::Square,
+        ..selection("nope")
+    };
+    let set = resolve(&ThemeRegistry::builtin(), &picks);
+    assert_eq!(set.dark.metrics.corners, Corners::Square);
+    assert_eq!(last_resort(Corners::Square).0.metrics.radius.lg, 0);
+}
+
+#[test]
 fn last_resort_builds_first_builtin() {
-    let (tokens, issues) = last_resort();
+    let (tokens, issues) = last_resort(Corners::Rounded);
     assert_eq!(tokens.id.as_str(), builtin_sources()[0].0);
     assert_eq!(issues, Vec::new());
 }
