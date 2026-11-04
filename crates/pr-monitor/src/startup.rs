@@ -154,7 +154,9 @@ fn unregister(args: &Args, purge: bool) -> ExitCode {
 }
 
 /// Velopack's uninstall hook: the same cleanup, keeping the data folder. It runs inside the
-/// uninstaller, which stops it after 30 seconds, so it never shows a dialog.
+/// uninstaller, which stops it after 30 seconds, so it never shows a dialog. Windows only: Velopack
+/// has no uninstall hook on Linux or macOS.
+#[cfg(windows)]
 pub(crate) fn uninstall_cleanup() {
     if let Ok(root) = data_root(&Args::default()) {
         let _ = run_unregister(&root, false);
