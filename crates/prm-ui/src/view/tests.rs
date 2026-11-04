@@ -134,13 +134,13 @@ fn a_column_that_starts_hidden_is_recorded_in_its_own_list() {
     let mut v = view(GroupBy::None);
     v.toggle_column(ColumnId::Required);
     assert_eq!(v.shown_columns, ["required"]);
-    assert!(v.hidden_columns.is_empty());
+    assert_eq!(v.hidden_columns, Vec::<String>::new());
     let mut ui = UiState::default();
     v.write_ui_state(&mut ui);
     assert_eq!(ui.shown_columns, ["required"]);
     assert!(!v.differs_from(&ui));
     v.toggle_column(ColumnId::Required);
-    assert!(v.shown_columns.is_empty());
+    assert_eq!(v.shown_columns, Vec::<String>::new());
     assert!(v.differs_from(&ui));
 }
 
@@ -163,7 +163,7 @@ fn saved_column_choices_from_an_older_state_file_carry_over() {
     };
     let v = DashboardView::new(&ui, sample_rows(), 1, 24.0);
     assert_eq!(v.hidden_columns, ["author"]);
-    assert!(v.shown_columns.is_empty());
+    assert_eq!(v.shown_columns, Vec::<String>::new());
     let chosen = |id| columns::chosen(&columns::column(id).unwrap(), v.picks());
     assert!(!chosen(ColumnId::Author));
     assert!(chosen(ColumnId::Reviews));

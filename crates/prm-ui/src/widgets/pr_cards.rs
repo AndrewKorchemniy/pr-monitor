@@ -13,7 +13,8 @@ use crate::{
     frame::FrameCx,
     theme::UiTheme,
     view::{
-        DashboardView, columns,
+        DashboardView,
+        columns::{self, ColumnId},
         display::{DisplayRow, Pitch},
     },
     widgets::pr_table::{
@@ -43,8 +44,11 @@ pub(crate) fn pr_cards(
     input: &TableInputs<'_>,
 ) -> TableOut {
     let theme = cx.theme.clone();
-    // why: no table is shown, so the column checklist reads every chosen column as left out.
-    view.squeezed = columns::squeezed(&[], view.picks()).collect();
+    // why: no table is shown, so the column checklist reads every chosen column as left out,
+    // except Required, which cards draw themselves.
+    view.squeezed = columns::squeezed(&[], view.picks())
+        .filter(|id| *id != ColumnId::Required)
+        .collect();
     let pitch = card_pitch(ui, &theme);
     let spacing = ui.spacing().item_spacing.y;
     let spacing_x = ui.spacing().item_spacing.x;

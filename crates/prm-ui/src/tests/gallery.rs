@@ -192,6 +192,20 @@ type Named = (&'static str, fn(&mut Fixture));
 
 fn nothing(_: &mut Fixture) {}
 
+/// The Required column turned on, with a pull request that has several groups selected.
+fn required_groups(f: &mut Fixture) {
+    f.dash.view.shown_columns.push("required".to_owned());
+    if let Some(key) = f
+        .state
+        .rows
+        .iter()
+        .find(|r| r.required_groups.len() > 1)
+        .map(|r| r.key.clone())
+    {
+        f.dash.view.select_key(&key);
+    }
+}
+
 fn first_run_step(f: &mut Fixture, step: Step) {
     f.first_run.step = step;
     f.first_run.settings.draft.orgs = vec![f.state.config.orgs[0].clone()];
@@ -347,6 +361,19 @@ fn banner_scenes() -> [Scene; 3] {
     ]
 }
 
+/// The Required column in the table, beside the peek, and on cards.
+fn required_group_scenes() -> [Scene; 3] {
+    let dashboard = |name, setup| scene(name, Shown::Dashboard, demo_state, setup);
+    [
+        dashboard("dashboard-required-groups", required_groups),
+        dashboard("dashboard-required-groups-peek", |f| {
+            required_groups(f);
+            f.dash.peek.open = true;
+        }),
+        dashboard("dashboard-required-groups-cards", required_groups).at(egui::vec2(480.0, 620.0)),
+    ]
+}
+
 fn scenes() -> Vec<Scene> {
     let mut all = vec![
         scene("first-run-connect", Shown::FirstRun, empty_state, nothing),
@@ -382,6 +409,7 @@ fn scenes() -> Vec<Scene> {
         scene("shortcuts", Shown::Shortcuts, demo_state, nothing),
     ];
     all.extend(status_bar_scenes());
+    all.extend(required_group_scenes());
     all.extend(responsive::scenes());
     all.extend(banner_scenes());
     all.extend(settings_scenes());

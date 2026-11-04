@@ -15,6 +15,7 @@ use crate::{
         self,
         avatar::{AvatarFace, avatar},
         controls,
+        required_groups::paint_group,
         status_pill::status_pill,
         vote_tally::{vote_color, vote_icon},
     },
@@ -43,6 +44,7 @@ pub(crate) fn peek(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, pr: Option<&PrRow>) 
         .show(ui, |ui| {
             header(ui, cx, &theme, pr);
             ui.add_space(theme.tokens.metrics.space.xl);
+            required_groups(ui, cx, &theme, pr);
             reviewers(ui, cx, &theme, pr);
             ui.add_space(theme.tokens.metrics.space.xl);
             threads(ui, cx, &theme, pr);
@@ -103,6 +105,29 @@ fn close(ui: &mut egui::Ui, cx: &mut FrameCx<'_>, theme: &UiTheme) {
     if controls::close_button(ui, theme, copy::CLOSE).clicked() {
         cx.run(CommandId::PrPeek);
     }
+}
+
+/// Each required group with its vote on the avatar, and where its review stands.
+fn required_groups(ui: &mut egui::Ui, cx: &FrameCx<'_>, theme: &UiTheme, pr: &PrRow) {
+    if pr.required_groups.is_empty() {
+        return;
+    }
+    widgets::field_label(ui, theme, copy::REQUIRED_GROUPS);
+    for group in pr.required_groups.iter() {
+        ui.horizontal_wrapped(|ui| {
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(REVIEWER_AVATAR, REVIEWER_AVATAR),
+                egui::Sense::hover(),
+            );
+            paint_group(ui, theme, cx.avatars, group, rect);
+            let state = copy::group_state(group);
+            let status = format!("{}: {state}", group.name);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &status));
+            ui.label(RichText::new(group.name.as_ref()).color(theme.colors.text_primary));
+            widgets::muted(ui, theme, &state);
+        });
+    }
+    ui.add_space(theme.tokens.metrics.space.xl);
 }
 
 fn reviewers(ui: &mut egui::Ui, cx: &FrameCx<'_>, theme: &UiTheme, pr: &PrRow) {

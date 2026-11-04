@@ -12,7 +12,9 @@ use prm_domain::{
     model::{Catalog, Project, Repository},
     person::Person,
     scope::{ProjectScope, RepoSel, ScopeSpec},
-    testing::{BASE_TIME_SECS, PrBuilder, ThreadBuilder, key, org, person, record, repo, rows, ts},
+    testing::{
+        BASE_TIME_SECS, PrBuilder, ThreadBuilder, group, key, org, person, record, repo, rows, ts,
+    },
     view::summary::summarize,
 };
 use prm_service::{
@@ -21,6 +23,11 @@ use prm_service::{
 };
 
 use crate::testing::org_status;
+
+/// Required reviewer groups on some demo pull requests, by id.
+const GROUP_REPO: u128 = 30;
+const GROUP_PLATFORM: u128 = 31;
+const GROUP_PAYMENTS: u128 = 32;
 
 /// Pictures for two of the demo people (the rest show their initials): a soft vertical
 /// gradient in a round frame, standing in for a profile photo.
@@ -115,7 +122,8 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
                     &priya,
                     96,
                 )
-                .reviewer(rita.clone(), -5)
+                .reviewer_for(rita.clone(), -5, &[GROUP_PAYMENTS])
+                .required_group(group(GROUP_PAYMENTS, "Payments Approvers"), -5)
                 .build(),
             ),
             vec![comment(3, &rita)],
@@ -126,6 +134,7 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
                 ..pr(2, 4699, "Group dashboard rows by author", &leo, 30)
                     .reviewer(rita.clone(), 10)
                     .reviewer(sam.clone(), 5)
+                    .required_group(group(GROUP_PLATFORM, "Platform Owners"), 0)
                     .build()
             }),
             vec![],
@@ -133,7 +142,9 @@ fn demo_rows() -> Arc<[prm_domain::view::PrRow]> {
         record(
             named(
                 pr(3, 4690, "Move theme tokens into one registry", &maya, 50)
-                    .reviewer(sam.clone(), 10)
+                    .reviewer_for(sam.clone(), 10, &[GROUP_REPO])
+                    .required_group(group(GROUP_REPO, "IPCO Repo Approver - CF"), 10)
+                    .required_group(group(GROUP_PLATFORM, "Platform Owners"), 0)
                     .build(),
             ),
             vec![],

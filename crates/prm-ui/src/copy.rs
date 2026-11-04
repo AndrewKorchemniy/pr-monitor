@@ -8,6 +8,7 @@ use prm_domain::{
     diff::ChangeKind,
     model::VoteKind,
     tombstone::CloseOutcome,
+    view::{GroupChip, GroupVoter},
 };
 
 use crate::format::plural;
@@ -34,6 +35,7 @@ pub(crate) const CONFLICTS: &str = "Merge conflicts";
 pub(crate) const REVIEWS: &str = "Reviews";
 pub(crate) const NO_OPEN_THREADS: &str = "No open threads.";
 pub(crate) const OPEN_THREADS: &str = "Open threads";
+pub(crate) const REQUIRED_GROUPS: &str = "Required groups";
 pub(crate) const NO_REVIEWS: &str = "No reviews yet.";
 pub(crate) const GROUP_TAG: &str = "group";
 /// After a team's name on its pill.
@@ -301,6 +303,44 @@ pub(crate) const fn vote_word(vote: VoteKind) -> &'static str {
         VoteKind::Rejected => "Rejected",
         VoteKind::NoVote | VoteKind::NotApplicable | VoteKind::Other => "No vote",
     }
+}
+
+/// Where a required group stands: "approved via Kevin Haro", "no review yet".
+pub(crate) fn group_state(group: &GroupChip) -> String {
+    let state = if group.declined {
+        "declined"
+    } else {
+        match group.vote {
+            VoteKind::Approved => "approved",
+            VoteKind::ApprovedWithSuggestions => "approved with suggestions",
+            VoteKind::WaitingForAuthor => "waiting for author",
+            VoteKind::Rejected => "rejected",
+            VoteKind::NoVote | VoteKind::NotApplicable | VoteKind::Other => "no review yet",
+        }
+    };
+    let name = |voter: &GroupVoter| {
+        if voter.is_author {
+            format!("{} (PR author)", voter.name)
+        } else {
+            voter.name.to_string()
+        }
+    };
+    match &*group.via {
+        [] => state.to_owned(),
+        [one] => format!("{state} via {}", name(one)),
+        [first, second] => format!("{state} via {} and {}", name(first), name(second)),
+        [first, second, rest @ ..] => format!(
+            "{state} via {}, {} and {} more",
+            name(first),
+            name(second),
+            rest.len()
+        ),
+    }
+}
+
+/// "IPCO Repo Approver: approved via Kevin Haro".
+pub(crate) fn group_status(group: &GroupChip) -> String {
+    format!("{}: {}", group.name, group_state(group))
 }
 
 pub(crate) fn status_count(count: u32, status: PrStatus) -> String {
@@ -579,6 +619,8 @@ pub(crate) const ALL: &[&str] = &[
     COLUMN_SQUEEZED,
     COLUMNS_HELP,
     REVIEWS,
+    REQUIRED_GROUPS,
+    COLUMN_REQUIRED,
     NO_OPEN_THREADS,
     SERVICE_STOPPED,
     EMPTY_LOADING,

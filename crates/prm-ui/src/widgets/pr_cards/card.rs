@@ -14,9 +14,10 @@ use prm_domain::view::PrRow;
 use crate::{
     copy,
     theme::UiTheme,
-    view::columns::FLAG_SLOT,
+    view::columns::{self, ColumnId, FLAG_SLOT},
     widgets::{
         pr_table::{cells, rows::RowCx},
+        required_groups::required_groups,
         vote_tally::vote_tally,
     },
 };
@@ -106,6 +107,11 @@ fn detail(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, (pr, index): (&PrRow, usize), 
     );
     cells::comments_cell(&mut right, theme, pr);
     vote_tally(&mut right, theme, rcx.frame.avatars, &pr.reviewers);
+    if !pr.required_groups.is_empty() && shows_required(rcx) {
+        let gap = theme.tokens.metrics.space.sm;
+        right.add_space(gap);
+        required_groups(&mut right, theme, rcx.frame.avatars, &pr.required_groups);
+    }
     let end = right.min_rect().left() - theme.tokens.metrics.space.md;
     let facts = Rect::from_min_max(line.min, pos2(end.max(line.left()), line.bottom()));
     let mut chain = ui.new_child(
@@ -115,6 +121,11 @@ fn detail(ui: &mut egui::Ui, rcx: &RowCx<'_, '_>, (pr, index): (&PrRow, usize), 
     );
     chain.spacing_mut().item_spacing.x = 0.0;
     facts_line(&mut chain, rcx, (pr, index));
+}
+
+/// Whether the user turned the Required column on; cards, which have no columns, follow it.
+fn shows_required(rcx: &RowCx<'_, '_>) -> bool {
+    columns::column(ColumnId::Required).is_some_and(|c| columns::chosen(&c, rcx.view.picks()))
 }
 
 /// "!4711 · contoso · pr-monitor · Maya Patel · 3h": the number and the age whole, and the
