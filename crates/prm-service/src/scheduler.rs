@@ -204,7 +204,8 @@ impl FailureKind {
             | AdoError::Network(_)
             | AdoError::Timeout
             | AdoError::Decode(_)
-            | AdoError::Cancelled => Self::Other,
+            | AdoError::Cancelled
+            | AdoError::ForeignUrl => Self::Other,
         }
     }
 }

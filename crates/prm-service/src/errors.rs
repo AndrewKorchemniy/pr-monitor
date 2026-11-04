@@ -122,6 +122,7 @@ impl From<&AdoError> for UiError {
                 Self::new(text::UNEXPECTED_RESPONSE).with_detail(Some(message.clone()))
             }
             AdoError::Cancelled => Self::new(text::CANCELLED).transient(None),
+            AdoError::ForeignUrl => Self::internal("untrusted address"),
         }
     }
 }

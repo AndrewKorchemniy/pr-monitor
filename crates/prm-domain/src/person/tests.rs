@@ -7,6 +7,7 @@ fn p(n: u128, name: &str, unique: &str) -> Person {
         unique_name: Some(unique.into()),
         group: false,
         descriptor: None,
+        avatar: None,
     }
 }
 
@@ -116,4 +117,30 @@ fn merge_candidates_dedupe() {
     assert_eq!(m[0].source, CandidateSource::Configured);
     assert_eq!(&*m[1].name, "Bob");
     assert_eq!(merge_candidates(m.clone(), vec![], 1).len(), 1);
+}
+
+#[test]
+fn person_avatar_round_trips_and_old_files_load() {
+    let mut with = p(1, "Jane", "jane@x");
+    with.avatar = Some("https://dev.azure.com/o/a".into());
+    let json = serde_json::to_string(&with).unwrap();
+    assert_eq!(serde_json::from_str::<Person>(&json).unwrap(), with);
+    let without = serde_json::to_string(&p(1, "Jane", "jane@x")).unwrap();
+    assert!(!without.contains("avatar"));
+    assert_eq!(
+        serde_json::from_str::<Person>(&without).unwrap().avatar,
+        None
+    );
+}
+
+#[test]
+fn update_from_keeps_the_avatar_unless_a_newer_one_arrives() {
+    let mut old = p(1, "Jane", "jane@x");
+    old.avatar = Some("old".into());
+    old.update_from(p(1, "Jane", "jane@x"));
+    assert_eq!(old.avatar.as_deref(), Some("old"));
+    let mut newer = p(1, "Jane", "jane@x");
+    newer.avatar = Some("new".into());
+    old.update_from(newer);
+    assert_eq!(old.avatar.as_deref(), Some("new"));
 }

@@ -210,6 +210,7 @@ pub enum ApiCall {
     IdentitiesByQuery,
     IdentitiesByIds,
     ProbeOrgWide,
+    Avatar,
 }
 
 /// The contents of a fake org.
@@ -225,6 +226,8 @@ pub struct FakeOrg {
     pub storage_keys: HashMap<String, Vsid>,
     pub identities: Vec<Person>,
     pub org_wide: Option<OrgWideProbe>,
+    /// Picture bytes by address; any other address is `NotFound`.
+    pub avatars: HashMap<String, Bytes>,
     pub rate: RateSnapshot,
 }
 
@@ -238,6 +241,7 @@ pub struct FakeAdoApi {
     project_failures: Mutex<HashMap<ProjectId, AdoError>>,
     delay: Mutex<Option<Duration>>,
     panic_on: Mutex<Option<ApiCall>>,
+    avatar_requests: Mutex<Vec<String>>,
 }
 
 impl FakeAdoApi {
@@ -250,6 +254,7 @@ impl FakeAdoApi {
             project_failures: Mutex::new(HashMap::new()),
             delay: Mutex::new(None),
             panic_on: Mutex::new(None),
+            avatar_requests: Mutex::new(Vec::new()),
         }
     }
 
@@ -282,6 +287,11 @@ impl FakeAdoApi {
 
     pub fn calls(&self, call: ApiCall) -> u32 {
         lock(&self.calls).get(&call).copied().unwrap_or(0)
+    }
+
+    /// The addresses `avatar` was asked for, in order.
+    pub fn avatar_requests(&self) -> Vec<String> {
+        lock(&self.avatar_requests).clone()
     }
 
     /// Counts the call, then applies delay, panic and failure injection.
@@ -418,6 +428,19 @@ impl AdoApi for FakeAdoApi {
             .snapshot()
             .org_wide
             .unwrap_or(OrgWideProbe::Unsupported))
+    }
+
+    async fn avatar(&self, href: &str) -> Result<Bytes, AdoError> {
+        self.enter(ApiCall::Avatar).await?;
+        if self.endpoint.avatar_url(href).is_none() {
+            return Err(AdoError::ForeignUrl);
+        }
+        lock(&self.avatar_requests).push(href.to_owned());
+        self.snapshot()
+            .avatars
+            .get(href)
+            .cloned()
+            .ok_or(AdoError::NotFound { message: None })
     }
 
     fn rate(&self) -> RateSnapshot {

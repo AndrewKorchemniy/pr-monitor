@@ -248,7 +248,8 @@ const fn probe_answer(probe: &Result<OrgWideProbe, AdoError>) -> Option<bool> {
             | AdoError::ProxyAuthRequired
             | AdoError::Network(_)
             | AdoError::Timeout
-            | AdoError::Cancelled,
+            | AdoError::Cancelled
+            | AdoError::ForeignUrl,
         ) => None,
     }
 }

@@ -72,3 +72,60 @@ fn url_identities_query_encoded() {
             .contains("filterValue=jane%40contoso.com")
     );
 }
+
+#[test]
+fn avatar_url_accepts_only_the_orgs_own_hosts() {
+    let accepted = [
+        "https://dev.azure.com/contoso/_apis/GraphProfile/MemberAvatars/aad.AAA",
+        "https://vssps.dev.azure.com/contoso/_apis/graph/Subjects/aad.AAA/avatars",
+        "https://contoso.visualstudio.com/_apis/GraphProfile/MemberAvatars/aad.AAA",
+        "https://dev.azure.com/Contoso/_apis/GraphProfile/MemberAvatars/aad.AAA",
+    ];
+    for href in accepted {
+        assert!(endpoint().avatar_url(href).is_some(), "{href}");
+    }
+    let rejected = [
+        "",
+        "   ",
+        "/_apis/GraphProfile/MemberAvatars/aad.AAA",
+        "javascript:alert(1)",
+        "http://dev.azure.com/contoso/_apis/x",
+        "https://dev.azure.com/other/_apis/x",
+        "https://dev.azure.com/contosoevil/_apis/x",
+        "https://dev.azure.com.evil.test/contoso/_apis/x",
+        "https://dev.azure.com@evil.test/contoso/_apis/x",
+        "https://user:pw@dev.azure.com/contoso/_apis/x",
+        "https://dev.azure.com:8443/contoso/_apis/x",
+        "https://contoso.visualstudio.com:8443/_apis/x",
+        "https://other.visualstudio.com/_apis/x",
+        "https://evil.test/contoso/_apis/x",
+    ];
+    for href in rejected {
+        assert!(endpoint().avatar_url(href).is_none(), "{href}");
+    }
+}
+
+#[test]
+fn avatar_url_follows_the_test_bases() {
+    let base = |s: &str| Url::parse(s).unwrap();
+    let endpoint = OrgEndpoint::with_bases(
+        org("contoso"),
+        base("http://127.0.0.1:9000/contoso/"),
+        base("http://127.0.0.1:9001/contoso/"),
+    );
+    assert!(
+        endpoint
+            .avatar_url("http://127.0.0.1:9000/contoso/a")
+            .is_some()
+    );
+    assert!(
+        endpoint
+            .avatar_url("http://127.0.0.1:9001/contoso/a")
+            .is_some()
+    );
+    assert!(
+        endpoint
+            .avatar_url("http://127.0.0.1:9002/contoso/a")
+            .is_none()
+    );
+}

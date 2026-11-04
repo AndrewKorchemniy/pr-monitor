@@ -156,6 +156,27 @@ impl OrgEndpoint {
         dev_api(&self.vssps, &["_apis", "identities"], &params)
     }
 
+    /// `href` as an avatar address this org's token may be sent to, else `None`.
+    ///
+    /// The one allowlist: `https`, no credentials in the address, and either the org's own path
+    /// on `dev.azure.com` or `vssps.dev.azure.com`, or the legacy `{org}.visualstudio.com`
+    /// host. The server names avatar addresses itself, so nothing else may receive the token.
+    pub fn avatar_url(&self, href: &str) -> Option<Url> {
+        let url = Url::parse(href).ok()?;
+        if !url.username().is_empty() || url.password().is_some() {
+            return None;
+        }
+        let own_host = [&self.dev, &self.vssps]
+            .into_iter()
+            .any(|b| is_under(b, &url));
+        (own_host || self.is_legacy_host(&url)).then_some(url)
+    }
+
+    fn is_legacy_host(&self, url: &Url) -> bool {
+        let host = format!("{}.visualstudio.com", self.org);
+        url.scheme() == "https" && url.port().is_none() && url.host_str() == Some(host.as_str())
+    }
+
     /// The browser URL of a PR: `https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}`.
     pub fn pr_web(&self, project_name: &str, repo_name: &str, id: PrNumber) -> Url {
         let id = id.to_string();
@@ -165,6 +186,20 @@ impl OrgEndpoint {
             "",
         )
     }
+}
+
+/// Same scheme, host and port as `base`, with a path inside `base`'s.
+fn is_under(base: &Url, url: &Url) -> bool {
+    url.scheme() == base.scheme()
+        && url.host() == base.host()
+        && url.port_or_known_default() == base.port_or_known_default()
+        && starts_with_ignore_case(url.path(), base.path())
+}
+
+/// Organization names are case-insensitive, and the server may send one in its display case.
+fn starts_with_ignore_case(path: &str, prefix: &str) -> bool {
+    path.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
 }
 
 /// `base` + segments + raw query (already encoded).
