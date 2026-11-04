@@ -55,3 +55,5 @@ info = "#7CB7FF"
 # sit about 1:1 on it and vanish.
 "row.hover" = "#31343D"
 "row.selected_inactive" = "#343740"
+# Derived tokens do not follow the sunken override: derived, the stripe is darker than the sheet.
+"row.stripe" = "#2B2F39"
