@@ -67,7 +67,10 @@ pub(crate) async fn run(ctx: AvatarCtx) -> AvatarOutput {
     read_cache(&ctx.cache, unseen(&ctx.wanted, &ctx.checked), &mut out).await;
     slots.extend(out.slots.iter().copied());
     if ctx.fetch {
-        let picks = to_fetch(&ctx.wanted, &slots, ctx.now, AVATAR_FETCH_BUDGET);
+        let endpoint = ctx.api.endpoint();
+        let picks = to_fetch(&ctx.wanted, &slots, ctx.now, AVATAR_FETCH_BUDGET, |href| {
+            endpoint.allows_avatar(href)
+        });
         download(&ctx.api, &ctx.cache, picks, ctx.now, &mut out).await;
     }
     out

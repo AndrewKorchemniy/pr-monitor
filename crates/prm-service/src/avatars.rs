@@ -100,18 +100,20 @@ pub(crate) fn unseen<'a>(
 }
 
 /// Who to download next, at most `budget`: people with no picture yet first, then those whose
-/// entry expired, each in `wanted` order. People without an address are never picked; an address
-/// outside the org still takes a slot, and is then refused without a request.
+/// entry expired, each in `wanted` order. People without an address, or whose address `allowed`
+/// refuses (the org's allowlist), are never picked, so they use no budget and cause no request.
 pub(crate) fn to_fetch(
     wanted: &[Want],
     slots: &HashMap<Vsid, Slot>,
     now: Timestamp,
     budget: usize,
+    allowed: impl Fn(&str) -> bool,
 ) -> Vec<(AvatarKey, Arc<str>)> {
     let with_url = || {
         wanted
             .iter()
             .filter_map(|w| Some((&w.key, w.url.as_ref()?)))
+            .filter(|(_, url)| allowed(url))
     };
     let fresh = |key: &AvatarKey| slots.get(&key.id).is_some_and(|s| s.fresh(now));
     let new = with_url().filter(|(key, _)| !slots.contains_key(&key.id));

@@ -129,3 +129,19 @@ fn avatar_url_follows_the_test_bases() {
             .is_none()
     );
 }
+
+#[test]
+fn allows_avatar_agrees_with_avatar_url() {
+    for href in [
+        "https://dev.azure.com/contoso/_apis/GraphProfile/MemberAvatars/aad.AAA",
+        "https://evil.test/a.png",
+        "https://dev.azure.com@evil.test/contoso/a",
+        "not a url",
+    ] {
+        assert_eq!(
+            endpoint().allows_avatar(href),
+            endpoint().avatar_url(href).is_some(),
+            "{href}"
+        );
+    }
+}

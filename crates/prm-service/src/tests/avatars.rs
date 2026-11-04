@@ -322,3 +322,33 @@ async fn an_address_outside_the_org_is_never_requested() {
     );
     h.stop().await;
 }
+
+/// Addresses outside the org take no slot of the budget and are never asked for, however many.
+#[tokio::test(start_paused = true)]
+async fn foreign_addresses_use_no_budget_and_cause_no_request() {
+    let mut prs: Vec<PullRequest> = (0..AVATAR_FETCH_BUDGET)
+        .map(|n| {
+            let stranger = Person {
+                avatar: Some(format!("https://elsewhere.example/{n}.png").into()),
+                ..Person::new(
+                    prm_domain::Vsid::from_u128(500 + n as u128),
+                    format!("S{n}"),
+                )
+            };
+            pr_by(i32::try_from(n).unwrap() + 1, stranger)
+        })
+        .collect();
+    prs.push(pr_by(100, pictured(ann())));
+    let mut start = setup(vec![(CONTOSO, prs)]);
+    start.config.orgs[0].people.tracked_authors = vec![ann()];
+    start.orgs[0].1.avatars = [(href(&ann()), Bytes::from(source_png()))].into();
+    let mut h = ServiceHarness::start(start);
+    refreshed(&mut h, CONTOSO, 1).await;
+    h.until("ann", |h| !loaded(h).is_empty()).await;
+    h.settle().await;
+
+    assert_eq!(loaded(&h), vec![key_of(&ann())]);
+    assert_eq!(requests(&h), vec![href(&ann())]);
+    assert_eq!(h.api(&org(CONTOSO)).calls(ApiCall::Avatar), 1);
+    h.stop().await;
+}
