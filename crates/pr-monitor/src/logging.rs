@@ -18,7 +18,7 @@ use self::writer::{DayBudget, MAX_DAY_BYTES, RedactingMakeWriter};
 const LOG_FILES_KEPT: usize = 8;
 
 /// Third-party targets kept at warn or quieter.
-const NOISY: [&str; 19] = [
+const NOISY: [&str; 21] = [
     "wgpu_core",
     "wgpu_hal",
     "naga",
@@ -35,6 +35,8 @@ const NOISY: [&str; 19] = [
     "h2",
     "reqwest",
     "rustls",
+    "ureq",
+    "ureq_proto",
     "zbus",
     "interprocess",
     "tracing",

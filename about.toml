@@ -8,4 +8,4 @@ targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
 private = { ignore = true }
-workarounds = []   # add "ring" only if ring ever enters the Windows graph
+workarounds = []   # ring 0.17.14 is in the Windows graph (velopack -> ureq -> rustls); its "Apache-2.0 AND ISC" needs no "ring" workaround (same output with it). Add "ring" if an older ring with an OpenSSL term appears

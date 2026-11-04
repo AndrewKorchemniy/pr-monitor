@@ -18,10 +18,11 @@ mod startup;
 mod ui_host;
 mod ui_launch;
 mod unregister;
+mod update;
 mod wiring;
 
 fn main() -> std::process::ExitCode {
-    startup::run()
+    startup::run(update::boot())
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! Ending a run: the handoff listener stops, the service persists and stops, the instance lock is released. Or,
 //! when the renderer could not start, the same followed by a relaunch with the other renderer.
 
-use std::{ffi::OsString, process::ExitCode, time::Duration};
+use std::{ffi::OsString, path::Path, process::ExitCode, time::Duration};
 
 use prm_platform::{HandoffServer, InstanceLock};
 use prm_service::ServiceHandle;
@@ -41,11 +41,9 @@ pub(crate) fn graceful(held: Held, started: std::time::Instant) -> ExitCode {
 }
 
 /// Starts a fresh process with `args` once this one let go of everything.
-pub(crate) fn fallback_relaunch(held: Held, args: Vec<OsString>) -> ExitCode {
+pub(crate) fn fallback_relaunch(held: Held, exe: &Path, args: Vec<OsString>) -> ExitCode {
     release(held, SERVICE_STOP_BEFORE_RELAUNCH);
-    let spawned =
-        std::env::current_exe().and_then(|exe| std::process::Command::new(exe).args(&args).spawn());
-    match spawned {
+    match std::process::Command::new(exe).args(&args).spawn() {
         Ok(_) => {
             tracing::info!(?args, "relaunched with the other renderer");
             ExitCode::SUCCESS

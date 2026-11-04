@@ -27,6 +27,7 @@ pub struct Config {
     pub ui: UiPrefs,
     pub network: NetworkConfig,
     pub diagnostics: DiagnosticsConfig,
+    pub updates: UpdatesConfig,
     pub orgs: Vec<OrgProfile>,
 }
 
@@ -39,6 +40,7 @@ impl Default for Config {
             ui: UiPrefs::default(),
             network: NetworkConfig::default(),
             diagnostics: DiagnosticsConfig::default(),
+            updates: UpdatesConfig::default(),
             orgs: Vec::new(),
         }
     }
@@ -259,6 +261,21 @@ impl Default for DiagnosticsConfig {
         Self {
             log_level: "info".into(),
         }
+    }
+}
+
+/// Self-updating. A package that is already downloaded is applied at the next start either way.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UpdatesConfig {
+    /// Check for updates in the background (shortly after start, then every few hours) and
+    /// download what is found. Off: only "Check now" in About looks for one.
+    pub auto: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self { auto: true }
     }
 }
 

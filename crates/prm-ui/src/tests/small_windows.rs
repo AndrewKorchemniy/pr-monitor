@@ -4,6 +4,7 @@
 
 mod lists;
 mod navigation;
+mod updates;
 
 use std::sync::Arc;
 

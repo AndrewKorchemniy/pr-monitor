@@ -8,7 +8,7 @@ use super::Service;
 use crate::{
     command::Command,
     event::AppEvent,
-    jobs::{JobKind, JobOutput, JobTag, blocking},
+    jobs::{JobKind, JobOutput, JobTag, blocking, port_panic_error},
     publish,
 };
 
@@ -50,6 +50,8 @@ impl Service {
                 self.mark_persist();
             }
             Command::TestNotification => self.test_notification(),
+            Command::CheckForUpdates => self.check_for_updates(),
+            Command::ApplyUpdate => self.apply_update(),
             Command::Activate(uri) => self.activate(uri),
             Command::Shutdown => return ControlFlow::Break(()),
         }
@@ -184,10 +186,6 @@ impl Service {
             }
         });
     }
-}
-
-fn port_panic_error() -> prm_domain::ports::PortError {
-    prm_domain::ports::PortError::new(prm_domain::ports::PortErrorKind::Failed, "task panicked")
 }
 
 fn port_panicked() -> Result<(), prm_domain::ports::PortError> {

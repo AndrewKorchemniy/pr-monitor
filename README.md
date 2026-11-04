@@ -73,7 +73,8 @@ PR Monitor tries these in order and remembers what worked for each organization:
 Settings, cached results and logs live in `%LOCALAPPDATA%\PRMonitor` (logs in its `logs`
 subfolder). To keep them somewhere else, pass `--home <dir>` or set the `PRMONITOR_HOME`
 environment variable; `--home` wins if both are set. Logs are redacted: tokens never reach
-them. PR Monitor talks only to Azure DevOps and Microsoft sign-in.
+them. PR Monitor talks only to Azure DevOps, Microsoft sign-in and GitHub (to look for
+updates; turn that off in Settings > General).
 `pr-monitor --unregister --purge` removes everything it added to Windows, including the data
 folder.
 

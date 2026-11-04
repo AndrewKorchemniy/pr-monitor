@@ -11,7 +11,7 @@ use std::{
 
 use prm_ado::ClientPolicy;
 use prm_config::{Config, ConfigIssue, PersistedState};
-use prm_domain::{OrgId, Timestamp, model::Catalog};
+use prm_domain::{OrgId, Timestamp, model::Catalog, update::UpdateStatus};
 use tokio::sync::{mpsc, watch};
 
 use crate::{
@@ -20,7 +20,8 @@ use crate::{
     consts::MAX_BLOCKING_THREADS,
     org::{Connectors, OrgLive, startup_orgs},
     ports::{
-        AdoConnector, AuthFactory, Autostart, Clock, EventSink, Notifier, StateRepo, UrlOpener,
+        AdoConnector, AuthFactory, Autostart, Clock, EventSink, Notifier, StateRepo, Updater,
+        UrlOpener,
     },
     publish::{self, Composition, OrgView},
     scheduler::Moment,
@@ -37,6 +38,7 @@ pub struct ServiceDeps {
     pub clock: Arc<dyn Clock>,
     pub opener: Arc<dyn UrlOpener>,
     pub autostart: Arc<dyn Autostart>,
+    pub updater: Arc<dyn Updater>,
     pub repo: Arc<dyn StateRepo>,
 }
 
@@ -173,6 +175,7 @@ pub fn initial_state(
             desired: config.ui.launch_at_login,
             ..AutostartStatus::default()
         },
+        update: &UpdateStatus::default(),
         state_not_saved: false,
         shutting_down: false,
         now: Moment {

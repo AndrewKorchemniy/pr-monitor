@@ -4,7 +4,7 @@
 pub(crate) mod people;
 pub(crate) mod refresh;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use prm_ado::{AdoApi, AdoError};
 use prm_auth::{OrgAuthenticator, pat::validate_pat_format};
@@ -15,7 +15,8 @@ use prm_domain::{
     model::Catalog,
     notify::NotifierOp,
     person::PersonCandidate,
-    ports::PortError,
+    ports::{PortError, PortErrorKind},
+    update::UpdateOffer,
 };
 
 use crate::{
@@ -86,6 +87,14 @@ pub(crate) enum JobOutput {
     },
     Opened(Result<(), PortError>),
     TestNotification(Result<(), PortError>),
+    /// A downloaded update that was already waiting when the service started.
+    UpdatePending(Result<Option<Arc<str>>, PortError>),
+    UpdateChecked(Result<Option<UpdateOffer>, PortError>),
+    UpdateDownloaded {
+        version: Arc<str>,
+        result: Result<(), PortError>,
+    },
+    UpdateApplied(Result<(), PortError>),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -116,6 +125,7 @@ pub(crate) enum JobKind {
     Save,
     Flush,
     Port,
+    Update,
 }
 
 impl JobTag {
@@ -143,6 +153,25 @@ where
             tracing::error!(%error, "blocking task failed");
             None
         }
+    }
+}
+
+/// What a blocking port call that panicked reports.
+pub(crate) fn port_panic_error() -> PortError {
+    PortError::new(PortErrorKind::Failed, "task panicked")
+}
+
+/// A blocking port call that gives up waiting after `limit`. A call that never returns keeps its
+/// blocking thread, but not the service. A panic or a timeout becomes a `PortError`.
+pub(crate) async fn port_call<T, F>(limit: Duration, call: F) -> Result<T, PortError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, PortError> + Send + 'static,
+{
+    match tokio::time::timeout(limit, blocking(call)).await {
+        Ok(Some(result)) => result,
+        Ok(None) => Err(port_panic_error()),
+        Err(_) => Err(PortError::new(PortErrorKind::Failed, "timed out")),
     }
 }
 

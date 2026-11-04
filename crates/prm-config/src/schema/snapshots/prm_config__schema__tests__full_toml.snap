@@ -54,6 +54,9 @@ max_concurrency = 6
 [diagnostics]
 log_level = "info"
 
+[updates]
+auto = true
+
 [[orgs]]
 id = "contoso"
 url = "https://dev.azure.com/contoso"

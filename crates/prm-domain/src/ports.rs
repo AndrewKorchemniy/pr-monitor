@@ -1,9 +1,13 @@
-//! Ports the domain itself needs: time and opening URLs. Implemented by prm-service
-//! (`SystemClock`) and prm-platform (URL opener); faked in `testing`.
+//! Ports the domain itself needs: time, opening URLs and self-updating. Implemented by
+//! prm-service (`SystemClock`), prm-platform (URL opener) and the binary (updater); faked in
+//! `testing`.
 
-use std::sync::Arc;
+use std::{ffi::OsString, sync::Arc};
 
-use crate::time::Timestamp;
+use crate::{
+    time::Timestamp,
+    update::{ApplyMode, DisabledReason, UpdateOffer},
+};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PortErrorKind {
@@ -43,4 +47,28 @@ pub trait Clock: Send + Sync + 'static {
 /// Opens an allow-listed https URL in the user's browser.
 pub trait UrlOpener: Send + Sync + 'static {
     fn open(&self, url: &url::Url) -> Result<(), PortError>;
+}
+
+/// Looks for, downloads and applies a newer release of this app. Every call blocks, so the
+/// service runs them on the blocking pool.
+pub trait Updater: Send + Sync + 'static {
+    /// Whether updating can work in this run, decided once and cheap to ask.
+    fn availability(&self) -> Result<(), DisabledReason>;
+
+    /// The version of a downloaded package that waits for a restart.
+    fn pending(&self) -> Option<Arc<str>>;
+
+    /// `Some` when a newer release exists; no newer release is not an error.
+    fn check(&self) -> Result<Option<UpdateOffer>, PortError>;
+
+    /// Downloads the offer that the last `check` returned, calling `progress` with 0 to 100.
+    fn download(
+        &self,
+        offer: &UpdateOffer,
+        progress: &(dyn Fn(u8) + Sync),
+    ) -> Result<(), PortError>;
+
+    /// Starts the updater so that it applies the pending package once this process has exited,
+    /// then starts the app again with `restart_args`. It does not exit the process.
+    fn apply_on_exit(&self, restart_args: &[OsString], mode: ApplyMode) -> Result<(), PortError>;
 }

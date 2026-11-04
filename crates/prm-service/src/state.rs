@@ -10,6 +10,7 @@ use prm_domain::{
     auth::{AuthMethod, SignInMethod, TenantInfo, UserAction},
     model::Catalog,
     scope::ScopeStats,
+    update::UpdateStatus,
     view::{PrRow, StatusSummary, TrayBadge, tray_badge, tray_tooltip},
 };
 
@@ -38,6 +39,7 @@ pub struct AppState {
     /// Read once by the UI at startup.
     pub ui_state: Arc<UiState>,
     pub autostart: AutostartStatus,
+    pub update: UpdateStatus,
     /// No org is enabled: the UI offers onboarding.
     pub first_run: bool,
     pub shutting_down: bool,

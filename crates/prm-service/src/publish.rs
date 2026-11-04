@@ -8,6 +8,7 @@ use prm_domain::{
     OrgId, PrKey, Timestamp,
     auth::{AuthMethod, UserAction},
     snapshot::SeenMap,
+    update::UpdateStatus,
     view::{PrRow, RowBuildInput, build_rows, summarize},
 };
 
@@ -41,6 +42,7 @@ pub(crate) struct Composition<'a> {
     pub notifications: NotificationsStatus,
     pub ui_state: &'a Arc<UiState>,
     pub autostart: &'a AutostartStatus,
+    pub update: &'a UpdateStatus,
     /// The last `state.json` save failed.
     pub state_not_saved: bool,
     pub shutting_down: bool,
@@ -76,6 +78,7 @@ pub(crate) fn compose(c: Composition<'_>) -> AppState {
         config_issues: c.config_issues.clone(),
         ui_state: c.ui_state.clone(),
         autostart: c.autostart.clone(),
+        update: c.update.clone(),
         first_run: enabled == 0,
         shutting_down: c.shutting_down,
     }

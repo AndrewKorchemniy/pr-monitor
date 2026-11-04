@@ -9,6 +9,7 @@ mod people;
 mod persist;
 mod refresh;
 mod results;
+mod updates;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -42,6 +43,7 @@ use crate::{
     publish::{self, Composition, OrgView},
     scheduler::{Moment, Policy},
     state::{AppState, AutostartStatus, NotificationsStatus, PauseReason, RefreshProgress},
+    updates::UpdateRuntime,
 };
 
 use cycle::Cycles;
@@ -90,6 +92,7 @@ pub(crate) struct Service {
     progress_rx: UnboundedReceiver<RefreshProgress>,
     progress: BTreeMap<OrgId, RefreshProgress>,
     cycles: Cycles,
+    updates: UpdateRuntime,
     rows: Rows,
     publisher: Publisher,
     persist: PersistState,
@@ -140,6 +143,7 @@ impl Service {
             progress_rx,
             progress: BTreeMap::new(),
             cycles: Cycles::default(),
+            updates: UpdateRuntime::new(),
             rows: Rows {
                 rows: Arc::from([]),
                 generation: 0,
@@ -179,6 +183,10 @@ impl Service {
                 }
                 Some(progress) = self.progress_rx.recv() => {
                     self.on_progress(progress);
+                    ControlFlow::Continue(())
+                }
+                Some(percent) = self.updates.progress_rx.recv() => {
+                    self.on_update_progress(percent);
                     ControlFlow::Continue(())
                 }
                 () = tokio::time::sleep_until(wake) => {
@@ -238,6 +246,7 @@ impl Service {
         }
         self.spawn_capability_check();
         self.spawn_autostart(None);
+        self.start_updates();
         tracing::info!(orgs = self.orgs.len(), "service started");
     }
 
@@ -258,6 +267,7 @@ impl Service {
             self.publisher.deadline,
             self.persist.deadline,
             self.paused_until.map(|until| now.mono_of(until)),
+            self.updates.next_check,
         ];
         deadlines.into_iter().flatten().fold(wake, Instant::min)
     }
@@ -277,6 +287,7 @@ impl Service {
             self.start_due_refreshes(now);
         }
         self.start_due_probes(now);
+        self.start_due_update_check(now.mono);
         if self.paused_until.is_some_and(|until| until <= now.wall) {
             self.paused_until = None;
             self.publisher.dirty = true;
@@ -353,6 +364,7 @@ impl Service {
             notifications: self.notifications_status(),
             ui_state: &self.ui_state,
             autostart: &self.autostart,
+            update: &self.updates.status,
             state_not_saved: self.persist.failed,
             shutting_down: self.shutting_down,
             now,

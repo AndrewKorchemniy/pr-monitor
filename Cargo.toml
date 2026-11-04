@@ -71,6 +71,8 @@ tray-icon    = { version = "0.26.1", default-features = false }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "registry", "tracing-log"] }
 tracing-appender = "0.2.5"
 png          = "0.18.1"
+# --- self-update ---
+velopack     = "=1.2.161"                        # vpk (CI) is pinned to the same version
 
 [workspace.lints.rust]
 unsafe_code = "deny"                # every crate but prm-platform also has #![forbid(unsafe_code)]; prm-platform opts in per win/* module with SAFETY comments

@@ -5,6 +5,7 @@ use prm_config::{
     Config, limits,
     schema::{OrgColumn, ProxyConfig},
 };
+use prm_domain::update::UpdateStatus;
 
 use crate::{
     actions::UiAction,
@@ -71,6 +72,12 @@ pub(crate) fn page(
             proxy(ui, &theme, &mut draft.network.proxy);
         });
     });
+    if !matches!(cx.state.update, UpdateStatus::Disabled(_)) {
+        section(ui, &theme, copy::SECTION_UPDATES, None, |ui| {
+            let text = (copy::AUTO_UPDATE, Some(copy::AUTO_UPDATE_HELP));
+            toggle_row(ui, &theme, &mut draft.updates.auto, text);
+        });
+    }
     section(ui, &theme, copy::SECTION_PRIVACY, None, |ui| {
         widgets::muted(ui, &theme, copy::PRIVACY);
     });

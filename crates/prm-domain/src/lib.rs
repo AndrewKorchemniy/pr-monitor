@@ -19,6 +19,7 @@ pub mod secret;
 pub mod snapshot;
 pub mod time;
 pub mod tombstone;
+pub mod update;
 pub mod uri;
 pub mod view;
 
