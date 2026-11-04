@@ -69,7 +69,8 @@ UI thread (winit + eframe + tray)            "svc" thread (tokio, current_thread
 1. Run Velopack's hooks (`update::boot`: the installer and updater start the app with
    `--veloapp-*` flags that they answer and exit on), then parse arguments. `--version`,
    `--help` and `--self-test` exit here.
-2. Resolve the data folder (`--home`, `PRMONITOR_HOME`, else `%LOCALAPPDATA%\PRMonitor`).
+2. Resolve the data folders (`--home` or `PRMONITOR_HOME` for one folder, else settings in
+   `%APPDATA%\pr-monitor` and local files in `%LOCALAPPDATA%\pr-monitor`).
 3. Take the single-instance lock. A second launch forwards (show, or open a link) and exits
    before any logging or GPU work.
 4. Create folders, the clock, logging and the panic hook.

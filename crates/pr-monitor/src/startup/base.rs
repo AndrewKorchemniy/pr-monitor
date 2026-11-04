@@ -39,7 +39,7 @@ fn register_override() -> RegisterOverride {
 }
 
 pub(super) fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
-    let paths = AppPaths::from_root(root.path.clone());
+    let paths = AppPaths::split(root.config_root.clone(), root.path.clone());
     if let Err(error) = paths.ensure_dirs() {
         console::fatal_dialog(copy::DATA_FOLDER, &error.to_string());
         return Err(ExitCode::FAILURE);

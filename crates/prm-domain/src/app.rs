@@ -18,8 +18,10 @@ pub const APP_EXE_NAME: &str = "pr-monitor.exe";
 /// Windows AppUserModelID used for toasts and taskbar grouping. Never includes the version.
 pub const AUMID: &str = "AndrewKorchemniy.PRMonitor";
 pub const URI_SCHEME: &str = "prmonitor";
-/// Folder under `%LOCALAPPDATA%`.
-pub const DATA_DIR_NAME: &str = "PRMonitor";
+/// Folder name under both `%LOCALAPPDATA%` (local files, install) and `%APPDATA%` (settings).
+pub const DATA_DIR_NAME: &str = "pr-monitor";
+/// The local data folder from before settings moved out of it; moved on first start.
+pub const LEGACY_DATA_DIR_NAME: &str = "PRMonitor";
 /// keyring "service" name.
 pub const SECRET_SERVICE: &str = "PRMonitor";
 /// `HKCU\...\Run` value name.

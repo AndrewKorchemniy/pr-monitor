@@ -43,6 +43,8 @@ fn unregister_step_is_shared_table() {
 fn spec<'a>(root: &'a Path, user_home: &'a Path) -> UnregisterSpec<'a> {
     UnregisterSpec {
         root,
+        config_root: root,
+        legacy_root: None,
         scope: InstanceScope::Isolated,
         instance_suffix: "abcd1234",
         purge: true,
@@ -60,6 +62,68 @@ fn unregister_purge_deletes_an_isolated_root() {
 
     assert_eq!(purge(&spec(&root, &user_home)), Ok(()));
     assert!(!root.exists());
+}
+
+/// The local root is also the install folder: a purge must not touch what the app runs from.
+#[test]
+fn unregister_purge_keeps_velopack_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, user_home) = (dir.path().join("prm"), dir.path().join("alice"));
+    for sub in ["current", "packages", "logs", "themes"] {
+        fs::create_dir_all(root.join(sub)).unwrap();
+        fs::write(root.join(sub).join("f"), "").unwrap();
+    }
+    for file in [
+        "Update.exe",
+        "PR Monitor.exe",
+        "sq.version",
+        ".portable",
+        "config.toml",
+    ] {
+        fs::write(root.join(file), "").unwrap();
+    }
+
+    assert_eq!(purge(&spec(&root, &user_home)), Ok(()));
+
+    for kept in [
+        "current/f",
+        "packages/f",
+        "Update.exe",
+        "PR Monitor.exe",
+        "sq.version",
+        ".portable",
+    ] {
+        assert!(root.join(kept).exists(), "{kept}");
+    }
+    for gone in ["logs", "themes", "config.toml"] {
+        assert!(!root.join(gone).exists(), "{gone}");
+    }
+}
+
+/// Settings live in their own folder: the purge removes it, and the legacy folder too.
+#[test]
+fn unregister_purge_removes_the_config_and_legacy_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let user_home = dir.path().join("alice");
+    let local = dir.path().join("local").join("pr-monitor");
+    let config = dir.path().join("roaming").join("pr-monitor");
+    let legacy = dir.path().join("local").join("PRMonitor");
+    for folder in [&local, &config, &legacy] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("f"), "").unwrap();
+    }
+    fs::create_dir_all(local.join("current")).unwrap();
+    let mut spec = spec(&local, &user_home);
+    spec.scope = InstanceScope::Default;
+    spec.config_root = &config;
+    spec.legacy_root = Some(&legacy);
+
+    assert_eq!(purge(&spec), Ok(()));
+
+    assert!(!config.exists());
+    assert!(!legacy.exists());
+    assert!(!local.join("f").exists());
+    assert!(local.join("current").exists());
 }
 
 #[test]

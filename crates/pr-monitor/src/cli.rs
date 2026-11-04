@@ -210,7 +210,8 @@ pub(crate) fn usage() -> String {
   --activate <uri>          Open a {URI_SCHEME}:// link (also accepted bare)
   --renderer <auto|glow|wgpu>
                             Choose the graphics backend
-  --home <dir>              Keep data in <dir> instead of %LOCALAPPDATA%\\{DATA_DIR_NAME}
+  --home <dir>              Keep all data in <dir> instead of %LOCALAPPDATA%\\{DATA_DIR_NAME}
+                            and %APPDATA%\\{DATA_DIR_NAME}
   --debug                   Log to the console at debug level
   --self-test               Run built-in checks and exit
   --unregister [--purge]    Remove {APP_DISPLAY_NAME}'s system registrations (and data)

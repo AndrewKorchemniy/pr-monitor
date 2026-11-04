@@ -8,7 +8,7 @@ each one is.
 > [!NOTE]
 > Early preview. If something breaks,
 > [open an issue](https://github.com/AndrewKorchemniy/pr-monitor/issues/new/choose) and attach
-> the relevant lines from `%LOCALAPPDATA%\PRMonitor\logs`.
+> the relevant lines from `%LOCALAPPDATA%\pr-monitor\logs`.
 
 - **One status per PR:** *Needs review*, *Active comments* or *Reviewed*, based on the
   reviewers whose votes count for your team.
@@ -83,8 +83,9 @@ PR Monitor tries these in order and remembers what worked for each organization:
 
 ## Your data
 
-Settings, cached results and logs live in `%LOCALAPPDATA%\PRMonitor` (logs in `logs`). Use
-`--home <dir>` or the `PRMONITOR_HOME` environment variable to move them; `--home` wins. Logs
+Settings and themes live in `%APPDATA%\pr-monitor`; cached results, window state and logs live
+in `%LOCALAPPDATA%\pr-monitor` (logs in `logs`). Use `--home <dir>` or the `PRMONITOR_HOME`
+environment variable to keep everything in one folder instead; `--home` wins. Logs
 never contain tokens. PR Monitor talks only to Azure DevOps, Microsoft sign-in and GitHub (for
 update checks; turn that off in Settings > General).
 
@@ -111,7 +112,7 @@ pr-monitor [--minimized] [--activate <prmonitor://...>] [--renderer auto|glow|wg
   watched, signed in, and have repositories and people chosen.
 - **The window is blank or flickers, especially over Remote Desktop.** Start PR Monitor with
   `--renderer glow`, or choose OpenGL under Settings › Appearance.
-- **Something else.** Logs are in `%LOCALAPPDATA%\PRMonitor\logs` (redacted: no tokens).
+- **Something else.** Logs are in `%LOCALAPPDATA%\pr-monitor\logs` (redacted: no tokens).
   `pr-monitor --debug` logs more detail to the console. Attach the latest log when you
   [report a problem](https://github.com/AndrewKorchemniy/pr-monitor/issues/new/choose).
 

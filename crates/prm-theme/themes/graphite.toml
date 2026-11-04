@@ -1,5 +1,5 @@
 # PR Monitor theme. One file = one theme.
-# To make your own, copy this file to %LOCALAPPDATA%\PRMonitor\themes\<your-id>.toml,
+# To make your own, copy this file to %APPDATA%\pr-monitor\themes\<your-id>.toml,
 # change `id` to match the file name, and pick it in Settings › Appearance.
 schema = 1
 id = "graphite"

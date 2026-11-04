@@ -196,7 +196,7 @@ fn parse_config(
     if version < CURRENT_SCHEMA {
         backup(
             &paths.config,
-            &paths.root.join(format!("config.v{version}.bak")),
+            &paths.config_root.join(format!("config.v{version}.bak")),
         );
         return Ok((config, Origin::Migrated));
     }
@@ -218,7 +218,8 @@ fn parse_config(
 /// aside when possible; otherwise it stays where it is and is protected from saves.
 fn recover(paths: &AppPaths, mut load: ConfigLoad, reason: &str) -> ConfigLoad {
     tracing::error!(reason, "config could not be read; using defaults");
-    let message = if let Some(moved) = quarantine(&paths.config, &paths.root, "config.toml") {
+    let message = if let Some(moved) = quarantine(&paths.config, &paths.config_root, "config.toml")
+    {
         format!(
             "Your config could not be read and was moved to {}.",
             moved.display()

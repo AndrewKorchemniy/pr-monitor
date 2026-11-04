@@ -94,11 +94,13 @@ Built with [Velopack](https://velopack.io) (`vpk`), package id `pr-monitor`, per
 There is no bare exe (the app cannot update itself outside an install) and no macOS build
 (Gatekeeper blocks unsigned apps).
 
-**Install and data folders.** The package id is `pr-monitor` (install folder
-`%LOCALAPPDATA%\pr-monitor`) and the app's data folder is `%LOCALAPPDATA%\PRMonitor`. They must
-differ: Velopack's installer treats a non-empty install folder as an existing install and replaces
-it, and its uninstaller deletes the whole folder. A Portable and an installed copy share the data
-folder and the single-instance key, so only one runs at a time.
+**Install and data folders.** The package id is `pr-monitor`. Settings (`config.toml`,
+`keymap.toml`, `themes`) live in `%APPDATA%\pr-monitor`, so Velopack never touches them; the
+local files (state, cache, logs) share the install folder `%LOCALAPPDATA%\pr-monitor`. Uninstall
+removes the program and the local files but keeps the settings; `--unregister --purge` removes
+both folders but leaves Velopack's own entries. The app moves a legacy `%LOCALAPPDATA%\PRMonitor`
+folder into these two on first start. A Portable and an installed copy share the data folders
+and the single-instance key, so only one runs at a time.
 
 ## How the packages are built
 
@@ -169,7 +171,7 @@ then picks `pr-monitor-win-<arch>-Setup.exe` from each release.
 - **`release-current` says the release exists:** bump the version; a version is released once.
 - **An install or update misbehaves on a user's machine:** `Update.exe` logs to
   `%LocalAppData%\velopack\velopack_pr-monitor.log`; the app's logs are in
-  `%LOCALAPPDATA%\PRMonitor\logs`.
+  `%LOCALAPPDATA%\pr-monitor\logs`.
 
 ## Verifying a release
 
