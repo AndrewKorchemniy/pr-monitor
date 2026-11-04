@@ -21,7 +21,7 @@ const FUTURE: &str = include_str!(concat!(
 /// A fresh data root in a temp dir (deleted when dropped).
 fn temp_paths() -> (tempfile::TempDir, AppPaths) {
     let dir = tempfile::tempdir().unwrap();
-    let paths = AppPaths::from_root(dir.path().to_path_buf());
+    let paths = AppPaths::split(dir.path().to_path_buf(), dir.path().to_path_buf());
     paths.ensure_dirs().unwrap();
     (dir, paths)
 }

@@ -15,7 +15,7 @@ use prm_platform::{
 
 use crate::{
     report::print_results,
-    startup::{LOCK_RETRY, Root},
+    root::{LOCK_RETRY, Root},
 };
 
 /// How long a running instance gets to quit.
