@@ -249,7 +249,8 @@ const fn probe_answer(probe: &Result<OrgWideProbe, AdoError>) -> Option<bool> {
             | AdoError::Network(_)
             | AdoError::Timeout
             | AdoError::Cancelled
-            | AdoError::ForeignUrl,
+            | AdoError::ForeignUrl
+            | AdoError::NotAnImage { .. },
         ) => None,
     }
 }

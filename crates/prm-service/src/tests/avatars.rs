@@ -322,3 +322,125 @@ async fn an_address_outside_the_org_is_never_requested() {
     );
     h.stop().await;
 }
+
+/// Addresses outside the org take no slot of the budget and are never asked for, however many.
+#[tokio::test(start_paused = true)]
+async fn foreign_addresses_use_no_budget_and_cause_no_request() {
+    let mut prs: Vec<PullRequest> = (0..AVATAR_FETCH_BUDGET)
+        .map(|n| {
+            let stranger = Person {
+                avatar: Some(format!("https://elsewhere.example/{n}.png").into()),
+                ..Person::new(
+                    prm_domain::Vsid::from_u128(500 + n as u128),
+                    format!("S{n}"),
+                )
+            };
+            pr_by(i32::try_from(n).unwrap() + 1, stranger)
+        })
+        .collect();
+    prs.push(pr_by(100, pictured(ann())));
+    let mut start = setup(vec![(CONTOSO, prs)]);
+    start.config.orgs[0].people.tracked_authors = vec![ann()];
+    start.orgs[0].1.avatars = [(href(&ann()), Bytes::from(source_png()))].into();
+    let mut h = ServiceHarness::start(start);
+    refreshed(&mut h, CONTOSO, 1).await;
+    h.until("ann", |h| !loaded(h).is_empty()).await;
+    h.settle().await;
+
+    assert_eq!(loaded(&h), vec![key_of(&ann())]);
+    assert_eq!(requests(&h), vec![href(&ann())]);
+    assert_eq!(h.api(&org(CONTOSO)).calls(ApiCall::Avatar), 1);
+    h.stop().await;
+}
+
+fn http(status: u16) -> AdoError {
+    AdoError::Http {
+        status,
+        message: "x".into(),
+        code: None,
+        activity: None,
+    }
+}
+
+/// Passing statuses cache nothing and are asked again; permanent ones are remembered as absent
+/// (in memory, a day), and the org stays on.
+#[tokio::test(start_paused = true)]
+async fn transient_statuses_are_retried_and_permanent_ones_remembered() {
+    let server = |status| AdoError::Server {
+        status,
+        message: None,
+        activity: None,
+    };
+    let rate = AdoError::RateLimited { retry_after: None };
+    let cases = [
+        ("408", http(408), true),
+        ("425", http(425), true),
+        ("429", rate, true),
+        ("503", server(503), true),
+        ("500", server(500), true),
+        ("404", AdoError::NotFound { message: None }, false),
+        ("400", http(400), false),
+        ("422", http(422), false),
+    ];
+    for (name, error, retried) in cases {
+        let mut h = ServiceHarness::start(served_setup(&[ann()]));
+        h.api(&org(CONTOSO)).fail(ApiCall::Avatar, error);
+        refreshed(&mut h, CONTOSO, 1).await;
+        h.until("the attempt", |h| {
+            h.api(&org(CONTOSO)).calls(ApiCall::Avatar) >= 1
+        })
+        .await;
+        h.settle().await;
+        let marked = h.avatar_cache.get(&key_of(&ann())).is_some();
+        assert_eq!(marked, name == "404", "{name}: disk marker");
+
+        h.api(&org(CONTOSO)).clear_failures();
+        h.advance(Duration::from_secs(3)).await;
+        h.send(Command::RefreshNow);
+        refreshed(&mut h, CONTOSO, 2).await;
+        if retried {
+            h.until("the face", |h| !loaded(h).is_empty()).await;
+        }
+        h.settle().await;
+        let asked = h.api(&org(CONTOSO)).calls(ApiCall::Avatar);
+        assert_eq!(asked, if retried { 2 } else { 1 }, "{name}: requests");
+        assert_eq!(loaded(&h).len(), usize::from(retried), "{name}: picture");
+        h.stop().await;
+    }
+}
+
+/// An HTML sign-in page switches avatars off for the org; any other non-picture response only
+/// leaves that picture absent, and the next day's refresh asks again.
+#[tokio::test(start_paused = true)]
+async fn only_an_html_page_switches_avatars_off() {
+    let json = AdoError::NotAnImage {
+        content_type: Some("application/json".into()),
+    };
+    let html = AdoError::Auth(prm_domain::auth::AuthError::SignInPageReturned);
+    for (name, error, disabled) in [("json", json, false), ("html", html, true)] {
+        let mut h = ServiceHarness::start(served_setup(&[ann(), bob()]));
+        h.api(&org(CONTOSO)).fail(ApiCall::Avatar, error);
+        refreshed(&mut h, CONTOSO, 1).await;
+        h.until("the attempt", |h| {
+            h.api(&org(CONTOSO)).calls(ApiCall::Avatar) >= 1
+        })
+        .await;
+        h.settle().await;
+        let first = h.api(&org(CONTOSO)).calls(ApiCall::Avatar);
+        assert!(h.avatar_cache.is_empty(), "{name}: nothing cached");
+
+        h.api(&org(CONTOSO)).clear_failures();
+        h.advance(Duration::from_secs(DAY.unsigned_abs() + 60))
+            .await;
+        h.send(Command::RefreshNow);
+        refreshed(&mut h, CONTOSO, 2).await;
+        if !disabled {
+            h.until("both faces", |h| loaded(h).len() == 2).await;
+        }
+        h.settle().await;
+        let more = h.api(&org(CONTOSO)).calls(ApiCall::Avatar) - first;
+        assert_eq!(more > 0, !disabled, "{name}: asked again after a day");
+        assert_eq!(loaded(&h).len(), if disabled { 0 } else { 2 }, "{name}");
+        h.stop().await;
+    }
+}

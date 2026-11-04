@@ -46,6 +46,10 @@ pub enum AdoError {
     /// was made (the token goes only to the organization's hosts).
     #[error("Not an address of this organization.")]
     ForeignUrl,
+    /// A successful response that is not a picture and not a sign-in page (for example a JSON
+    /// error body): only that picture is unusable, the credentials are fine.
+    #[error("Expected a picture, got {}.", .content_type.as_deref().unwrap_or("no content type"))]
+    NotAnImage { content_type: Option<Arc<str>> },
 }
 
 impl AdoError {
@@ -74,7 +78,8 @@ impl AdoError {
             | Self::Timeout
             | Self::Decode(_)
             | Self::Cancelled
-            | Self::ForeignUrl => None,
+            | Self::ForeignUrl
+            | Self::NotAnImage { .. } => None,
         }
     }
 }

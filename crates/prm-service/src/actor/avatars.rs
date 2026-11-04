@@ -41,7 +41,11 @@ impl Service {
         let fetch = fetch && !book.disabled && !low_headroom;
         let wanted = avatars::wanted(&org.data.id, org.data.records.values());
         let unread = unseen(&wanted, &book.checked).next().is_some();
-        let due = fetch && !to_fetch(&wanted, &book.slots, now, AVATAR_FETCH_BUDGET).is_empty();
+        let endpoint = org.link.api.endpoint();
+        let picks = to_fetch(&wanted, &book.slots, now, AVATAR_FETCH_BUDGET, |href| {
+            endpoint.allows_avatar(href)
+        });
+        let due = fetch && !picks.is_empty();
         if book.busy || !(unread || due) {
             return;
         }

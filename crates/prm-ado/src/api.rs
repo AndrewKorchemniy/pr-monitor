@@ -75,7 +75,8 @@ pub trait AdoApi: Send + Sync + 'static {
     async fn probe_org_wide(&self, project_count: usize) -> Result<OrgWideProbe, AdoError>;
     /// The picture at `href`, an address the server named. Refused with
     /// `AdoError::ForeignUrl` (and no request) unless it is one of this org's own hosts, since
-    /// the token goes wherever the request does.
+    /// the token goes wherever the request does. A 2xx that is HTML is the sign-in page
+    /// (`AuthError::SignInPageReturned`); any other non-image 2xx is `AdoError::NotAnImage`.
     async fn avatar(&self, href: &str) -> Result<Bytes, AdoError>;
     fn rate(&self) -> RateSnapshot;
     fn request_count(&self) -> u64;

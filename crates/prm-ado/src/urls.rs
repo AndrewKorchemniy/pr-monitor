@@ -172,6 +172,11 @@ impl OrgEndpoint {
         (own_host || self.is_legacy_host(&url)).then_some(url)
     }
 
+    /// Whether `href` passes the allowlist of [`Self::avatar_url`], without keeping the address.
+    pub fn allows_avatar(&self, href: &str) -> bool {
+        self.avatar_url(href).is_some()
+    }
+
     fn is_legacy_host(&self, url: &Url) -> bool {
         let host = format!("{}.visualstudio.com", self.org);
         url.scheme() == "https" && url.port().is_none() && url.host_str() == Some(host.as_str())

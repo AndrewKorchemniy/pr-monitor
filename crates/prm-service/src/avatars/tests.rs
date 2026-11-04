@@ -71,7 +71,7 @@ fn to_fetch_puts_unseen_before_expired_and_honours_the_budget() {
         (Vsid::from_u128(3), Slot::Absent(ts(100 * DAY - 10))),
     ]);
     let picked = |budget| -> Vec<u128> {
-        to_fetch(&wants, &slots, now, budget)
+        to_fetch(&wants, &slots, now, budget, |_| true)
             .iter()
             .map(|(key, _)| key.id.0.as_u128())
             .collect()
@@ -94,4 +94,47 @@ fn slots_expire_at_their_own_ttl() {
 #[test]
 fn a_time_in_the_future_is_never_fresh() {
     assert!(!Slot::Loaded(ts(1_000)).fresh(ts(10)));
+}
+
+#[test]
+fn to_fetch_skips_addresses_the_allowlist_refuses_before_budgeting() {
+    let allowed = |url: &str| url.starts_with("https://dev.azure.com/");
+    let own = "https://dev.azure.com/contoso/a";
+    let cases: [(&str, Vec<Want>, usize, Vec<u128>); 4] = [
+        (
+            "foreign first, one slot",
+            vec![want(1, Some("https://evil.test/a")), want(2, Some(own))],
+            1,
+            vec![2],
+        ),
+        (
+            "userinfo trick and plain http",
+            vec![
+                want(1, Some("http://dev.azure.com/contoso/a")),
+                want(2, Some("not a url")),
+                want(3, Some(own)),
+            ],
+            1,
+            vec![3],
+        ),
+        (
+            "only foreign",
+            vec![want(1, Some("https://evil.test/a"))],
+            5,
+            vec![],
+        ),
+        (
+            "own ones keep their order",
+            vec![want(1, Some(own)), want(2, Some("x")), want(3, Some(own))],
+            5,
+            vec![1, 3],
+        ),
+    ];
+    for (name, wants, budget, expected) in cases {
+        let picked: Vec<u128> = to_fetch(&wants, &HashMap::new(), ts(0), budget, allowed)
+            .iter()
+            .map(|(key, _)| key.id.0.as_u128())
+            .collect();
+        assert_eq!(picked, expected, "{name}");
+    }
 }
