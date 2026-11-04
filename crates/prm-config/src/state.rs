@@ -83,7 +83,11 @@ pub struct UiState {
     pub window: Option<WindowRect>,
     /// Column id → width in points.
     pub columns: BTreeMap<String, f32>,
+    /// Keys of the columns the user hid from those that show by default.
     pub hidden_columns: Vec<String>,
+    /// Keys of the columns the user turned on from those that start hidden. A list apart from
+    /// `hidden_columns`, so files saved before such a column existed keep their choices.
+    pub shown_columns: Vec<String>,
     pub sort: Sort,
     pub group: GroupBy,
     pub filter: ViewQuery,

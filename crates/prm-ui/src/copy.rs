@@ -55,6 +55,7 @@ pub(crate) const COLUMN_REPO: &str = "Repository";
 pub(crate) const COLUMN_AUTHOR: &str = "Author";
 pub(crate) const COLUMN_COMMENTS: &str = "Comments";
 pub(crate) const COLUMN_AGE: &str = "Age";
+pub(crate) const COLUMN_REQUIRED: &str = "Required";
 pub(crate) const COLUMN_LOCKED: &str = "Always shown";
 pub(crate) const COLUMN_SQUEEZED: &str = "Hidden while the table is this narrow";
 pub(crate) const AUTO_COMPLETE: &str = "Auto-complete is set";

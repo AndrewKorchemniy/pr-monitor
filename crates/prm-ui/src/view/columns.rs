@@ -19,6 +19,8 @@ pub(crate) enum ColumnId {
     Repo,
     Author,
     Reviews,
+    /// The required reviewer groups and whether each approved.
+    Required,
     Comments,
     Age,
     Org,
@@ -58,6 +60,7 @@ impl ColumnId {
             | Self::Repo
             | Self::Author
             | Self::Reviews
+            | Self::Required
             | Self::Comments
             | Self::Age => Visibility::Optional,
             Self::Org => Visibility::BySetting,
@@ -80,7 +83,8 @@ pub(crate) enum Width {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct ColumnSpec {
     pub id: ColumnId,
-    /// Persisted in `UiState.columns` / `hidden_columns`; empty for the margin.
+    /// Persisted in `UiState.columns` and `hidden_columns` or `shown_columns` (see `Picks`);
+    /// empty for the margin.
     pub key: &'static str,
     /// What the header shows; may be empty when the cells explain themselves.
     pub header: &'static str,
@@ -90,6 +94,22 @@ pub(crate) struct ColumnSpec {
     pub min: f32,
     pub sort: Option<SortKey>,
     pub align_right: bool,
+    /// Whether an optional column shows until the user chooses otherwise. Columns added after
+    /// release start hidden: the saved lists only record what the user changed (`Picks`).
+    pub default_visible: bool,
+    /// How the column changes when the table is grouped by status.
+    pub compact: Compact,
+}
+
+/// What a column becomes in a table grouped by status, where the group header names the status.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Compact {
+    /// Unchanged.
+    Keep,
+    /// Only the glyph, in a narrow column that no longer sorts.
+    StatusGlyph,
+    /// Left-aligned and under its own key, so its width is kept apart from the ungrouped one.
+    NumberLeft,
 }
 
 impl ColumnSpec {
@@ -124,7 +144,20 @@ const fn spec(
         min,
         sort,
         align_right: false,
+        default_visible: true,
+        compact: Compact::Keep,
     }
+}
+
+/// An optional column that stays hidden until the user turns it on.
+const fn hidden_by_default(mut column: ColumnSpec) -> ColumnSpec {
+    column.default_visible = false;
+    column
+}
+
+const fn compacting(mut column: ColumnSpec, compact: Compact) -> ColumnSpec {
+    column.compact = compact;
+    column
 }
 
 const fn right(mut column: ColumnSpec) -> ColumnSpec {
@@ -143,24 +176,30 @@ pub(crate) const FLAG_SLOT: f32 = 14.0;
 /// The Flags column: a slot each for draft, merge conflicts and auto-complete.
 pub(crate) const FLAGS_WIDTH: f32 = 3.0 * FLAG_SLOT;
 
-pub(crate) const COLUMNS: [ColumnSpec; 11] = [
+pub(crate) const COLUMNS: [ColumnSpec; 12] = [
     spec(ColumnId::Margin, "", "", Width::Exact, 0.0, None),
-    spec(
-        ColumnId::Status,
-        "status",
-        copy::COLUMN_STATUS,
-        Width::Initial(140.0),
-        30.0,
-        Some(SortKey::Status),
+    compacting(
+        spec(
+            ColumnId::Status,
+            "status",
+            copy::COLUMN_STATUS,
+            Width::Initial(140.0),
+            30.0,
+            Some(SortKey::Status),
+        ),
+        Compact::StatusGlyph,
     ),
-    right(spec(
-        ColumnId::Number,
-        "number",
-        copy::COLUMN_NUMBER,
-        Width::Initial(64.0),
-        52.0,
-        Some(SortKey::Number),
-    )),
+    compacting(
+        right(spec(
+            ColumnId::Number,
+            "number",
+            copy::COLUMN_NUMBER,
+            Width::Initial(64.0),
+            52.0,
+            Some(SortKey::Number),
+        )),
+        Compact::NumberLeft,
+    ),
     blank_header(spec(
         ColumnId::Flags,
         "flags",
@@ -201,6 +240,14 @@ pub(crate) const COLUMNS: [ColumnSpec; 11] = [
         56.0,
         None,
     ),
+    hidden_by_default(spec(
+        ColumnId::Required,
+        "required",
+        copy::COLUMN_REQUIRED,
+        Width::Initial(120.0),
+        56.0,
+        None,
+    )),
     right(spec(
         ColumnId::Comments,
         "comments",
@@ -229,8 +276,9 @@ pub(crate) const COLUMNS: [ColumnSpec; 11] = [
 
 /// What a table too narrow for its columns drops, first to last, until the rest fit. Status,
 /// Number, Flags, Title and Age always stay.
-const SQUEEZE_ORDER: [ColumnId; 5] = [
+const SQUEEZE_ORDER: [ColumnId; 6] = [
     ColumnId::Org,
+    ColumnId::Required,
     ColumnId::Reviews,
     ColumnId::Repo,
     ColumnId::Author,
@@ -253,6 +301,26 @@ pub(crate) struct Room {
     pub margin: f32,
 }
 
+/// What the user changed from each optional column's default: the keys they hid from columns
+/// that show by default, and the keys they showed from columns that start hidden. Saved lists
+/// from before a column existed hold neither, so it keeps its default.
+#[derive(Copy, Clone, Debug, Default)]
+pub(crate) struct Picks<'a> {
+    pub hidden: &'a [String],
+    pub shown: &'a [String],
+}
+
+impl Picks<'_> {
+    /// The list that records the user's choice for `column`.
+    pub(crate) fn changed(&self, column: &ColumnSpec) -> &[String] {
+        if column.default_visible {
+            self.hidden
+        } else {
+            self.shown
+        }
+    }
+}
+
 /// The user's choices that shape the table's columns.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ColumnLayout<'a> {
@@ -260,8 +328,7 @@ pub(crate) struct ColumnLayout<'a> {
     pub group: GroupBy,
     /// Settings › General › Organization column.
     pub show_org: bool,
-    /// Column keys the user hid.
-    pub hidden: &'a [String],
+    pub picks: Picks<'a>,
     /// Widths the user dragged, by key (points).
     pub widths: &'a BTreeMap<String, f32>,
 }
@@ -298,7 +365,7 @@ impl ColumnLayout<'_> {
         match column.visibility() {
             Visibility::BySetting => self.show_org,
             Visibility::Unlisted | Visibility::Locked | Visibility::Optional => {
-                chosen(column, self.hidden)
+                chosen(column, self.picks)
             }
         }
     }
@@ -362,7 +429,7 @@ impl ColumnLayout<'_> {
 
 /// The column with this id, from the table above.
 pub(crate) fn column(id: ColumnId) -> Option<ColumnSpec> {
-    COLUMNS.into_iter().find(|c| c.id == id)
+    COLUMNS.iter().find(|c| c.id == id).copied()
 }
 
 /// The columns the column menu and the settings checklist offer, in table order.
@@ -372,9 +439,12 @@ pub(crate) fn listed() -> impl Iterator<Item = ColumnSpec> {
 
 /// Whether the user's choice keeps `column` shown: only optional columns can be hidden, so a
 /// hand-edited `hidden` never drops Status or Title.
-pub(crate) fn chosen(column: &ColumnSpec, hidden: &[String]) -> bool {
+pub(crate) fn chosen(column: &ColumnSpec, picks: Picks<'_>) -> bool {
     match column.visibility() {
-        Visibility::Optional => !hidden.iter().any(|h| h == column.key),
+        Visibility::Optional => {
+            let changed = picks.changed(column).iter().any(|k| k == column.key);
+            changed != column.default_visible
+        }
         Visibility::Unlisted | Visibility::Locked | Visibility::BySetting => true,
     }
 }
@@ -453,7 +523,7 @@ pub(crate) fn table_minimum(room: Room) -> f32 {
     let layout = ColumnLayout {
         group: GroupBy::None,
         show_org: false,
-        hidden: &[],
+        picks: Picks::default(),
         widths: &defaults,
     };
     let last = SQUEEZE_ORDER.last().copied();
@@ -466,27 +536,19 @@ pub(crate) fn table_minimum(room: Room) -> f32 {
 /// Grouped by status, the group header already names it: the status cell shows only its glyph.
 fn compact_status(columns: &mut [ColumnSpec]) {
     for spec in columns.iter_mut() {
-        match spec.id {
-            ColumnId::Status => {
+        match spec.compact {
+            Compact::Keep => {}
+            Compact::StatusGlyph => {
                 spec.header = "";
                 spec.width = Width::Fixed(STATUS_GLYPH);
                 spec.min = STATUS_GLYPH;
                 spec.sort = None;
             }
-            ColumnId::Number => {
+            Compact::NumberLeft => {
                 spec.key = "number_left";
                 spec.align_right = false;
                 spec.width = Width::Initial(NUMBER_COMPACT);
             }
-            ColumnId::Margin
-            | ColumnId::Flags
-            | ColumnId::Title
-            | ColumnId::Repo
-            | ColumnId::Author
-            | ColumnId::Reviews
-            | ColumnId::Comments
-            | ColumnId::Age
-            | ColumnId::Org => {}
         }
     }
 }
@@ -494,10 +556,10 @@ fn compact_status(columns: &mut [ColumnSpec]) {
 /// Listed columns the user chose that `visible` (this frame's columns) had no room for.
 pub(crate) fn squeezed<'a>(
     visible: &'a [ColumnSpec],
-    hidden: &'a [String],
+    picks: Picks<'a>,
 ) -> impl Iterator<Item = ColumnId> + 'a {
     listed()
-        .filter(move |c| chosen(c, hidden) && !visible.iter().any(|v| v.id == c.id))
+        .filter(move |c| chosen(c, picks) && !visible.iter().any(|v| v.id == c.id))
         .map(|c| c.id)
 }
 
@@ -515,15 +577,14 @@ pub(crate) enum ColumnCheck {
 /// The user's column choices and what the table's width overrode last frame.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Choices<'a> {
-    /// Column keys the user hid.
-    pub hidden: &'a [String],
+    pub picks: Picks<'a>,
     /// Chosen columns the table had no room for last frame (`squeezed`).
     pub squeezed: &'a [ColumnId],
 }
 
 impl Choices<'_> {
     pub(crate) fn check(&self, column: &ColumnSpec) -> ColumnCheck {
-        if !chosen(column, self.hidden) {
+        if !chosen(column, self.picks) {
             ColumnCheck::Off
         } else if self.squeezed.contains(&column.id) {
             ColumnCheck::Squeezed

@@ -348,6 +348,17 @@ fn state_roundtrip_snapshot() {
     insta::assert_json_snapshot!(state);
 }
 
+/// A file from before the Required column has no `shown_columns`: its hidden columns stay.
+#[test]
+fn state_without_shown_columns_keeps_its_hidden_columns() {
+    let (_dir, paths) = temp_paths();
+    std::fs::write(&paths.state, r#"{ "ui": { "hidden_columns": ["author"] } }"#).unwrap();
+    let loaded = load_state(&paths);
+    assert_eq!(loaded.issue, None);
+    assert_eq!(loaded.state.ui.hidden_columns, ["author"]);
+    assert_eq!(loaded.state.ui.shown_columns, Vec::<String>::new());
+}
+
 #[test]
 fn state_prkey_keys_are_strings() {
     let json = serde_json::to_value(sample_state()).unwrap();

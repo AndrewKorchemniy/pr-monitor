@@ -55,6 +55,7 @@ pub(super) fn cell(
         ColumnId::Reviews => {
             vote_tally(ui, theme, rcx.frame.avatars, &pr.reviewers);
         }
+        ColumnId::Required => {}
         ColumnId::Comments => comments_cell(ui, theme, pr),
         ColumnId::Age => {
             right(ui, |ui| age_label(ui, rcx, pr, index));

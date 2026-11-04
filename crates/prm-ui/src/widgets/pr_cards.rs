@@ -44,9 +44,7 @@ pub(crate) fn pr_cards(
 ) -> TableOut {
     let theme = cx.theme.clone();
     // why: no table is shown, so the column checklist reads every chosen column as left out.
-    view.squeezed.clear();
-    view.squeezed
-        .extend(columns::squeezed(&[], &view.hidden_columns));
+    view.squeezed = columns::squeezed(&[], view.picks()).collect();
     let pitch = card_pitch(ui, &theme);
     let spacing = ui.spacing().item_spacing.y;
     let spacing_x = ui.spacing().item_spacing.x;

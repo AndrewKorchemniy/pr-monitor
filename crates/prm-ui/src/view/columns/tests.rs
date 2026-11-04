@@ -17,8 +17,26 @@ fn layout<'a>(
     ColumnLayout {
         group,
         show_org: true,
-        hidden,
+        picks: Picks {
+            hidden,
+            ..Picks::default()
+        },
         widths,
+    }
+}
+
+/// A layout where the user turned on the columns with these keys.
+fn showing<'a>(
+    group: GroupBy,
+    shown: &'a [String],
+    widths: &'a BTreeMap<String, f32>,
+) -> ColumnLayout<'a> {
+    ColumnLayout {
+        picks: Picks {
+            shown,
+            ..Picks::default()
+        },
+        ..layout(group, &[], widths)
     }
 }
 
@@ -37,7 +55,11 @@ fn shown(width: f32, group: GroupBy, hidden: &[String]) -> Vec<ColumnId> {
 fn wide_tables_show_every_column_and_org_only_when_asked() {
     let none = BTreeMap::new();
     let wide = visible_columns(room(1400.0), &layout(GroupBy::None, &[], &none));
-    assert_eq!(ids(&wide), ids(&COLUMNS));
+    let every_default: Vec<_> = ids(&COLUMNS)
+        .into_iter()
+        .filter(|id| *id != ColumnId::Required)
+        .collect();
+    assert_eq!(ids(&wide), every_default);
     let no_org = ColumnLayout {
         show_org: false,
         ..layout(GroupBy::None, &[], &none)
@@ -212,9 +234,12 @@ fn a_drag_in_a_roomy_table_saves_one_width() {
 #[test]
 fn narrow_tables_drop_columns_in_squeeze_order() {
     let mut dropped = Vec::new();
+    let required = ["required".to_owned()];
+    let none = BTreeMap::new();
     for step in (0..=100).rev() {
         let width = 400.0 + 10.0 * step as f32;
-        let visible = shown(width, GroupBy::Status, &[]);
+        let layout = showing(GroupBy::Status, &required, &none);
+        let visible = ids(&visible_columns(room(width), &layout));
         let gone: Vec<_> = SQUEEZE_ORDER
             .into_iter()
             .filter(|id| !visible.contains(id))
@@ -322,10 +347,17 @@ fn squeezed_lists_chosen_columns_the_table_left_out() {
     let hidden = ["author".to_owned()];
     let none = BTreeMap::new();
     let visible = visible_columns(room(600.0), &layout(GroupBy::Status, &hidden, &none));
-    let left_out: Vec<_> = squeezed(&visible, &hidden).collect();
+    let picks = Picks {
+        hidden: &hidden,
+        ..Picks::default()
+    };
+    let left_out: Vec<_> = squeezed(&visible, picks).collect();
     assert_eq!(left_out, [ColumnId::Repo, ColumnId::Reviews]);
     let choices = Choices {
-        hidden: &hidden,
+        picks: Picks {
+            hidden: &hidden,
+            ..Picks::default()
+        },
         squeezed: &left_out,
     };
     let check = |id| column(id).map(|c| choices.check(&c));
@@ -348,10 +380,89 @@ fn the_column_menu_lists_everything_but_the_margin_and_org() {
             (ColumnId::Repo, optional),
             (ColumnId::Author, optional),
             (ColumnId::Reviews, optional),
+            (ColumnId::Required, optional),
             (ColumnId::Comments, optional),
             (ColumnId::Age, optional),
         ]
     );
+}
+
+#[test]
+fn a_column_that_starts_hidden_shows_only_once_the_user_turns_it_on() {
+    let none = BTreeMap::new();
+    let required = column(ColumnId::Required).unwrap();
+    assert!(!chosen(&required, Picks::default()));
+    let on = ["required".to_owned()];
+    let picks = Picks {
+        shown: &on,
+        ..Picks::default()
+    };
+    assert!(chosen(&required, picks));
+    let plain = visible_columns(room(1400.0), &layout(GroupBy::None, &[], &none));
+    assert!(!ids(&plain).contains(&ColumnId::Required));
+    let turned_on = visible_columns(room(1400.0), &showing(GroupBy::None, &on, &none));
+    assert!(ids(&turned_on).contains(&ColumnId::Required));
+}
+
+/// A state file saved before the Required column existed holds only `hidden_columns`.
+#[test]
+fn saved_choices_from_before_a_new_column_keep_every_other_column_as_it_was() {
+    let hidden = ["author".to_owned(), "age".to_owned()];
+    let visible = shown(1400.0, GroupBy::None, &hidden);
+    for gone in [ColumnId::Author, ColumnId::Age, ColumnId::Required] {
+        assert!(!visible.contains(&gone), "{gone:?}");
+    }
+    for kept in [ColumnId::Repo, ColumnId::Reviews, ColumnId::Comments] {
+        assert!(visible.contains(&kept), "{kept:?}");
+    }
+}
+
+#[test]
+fn a_hidden_key_in_the_wrong_list_changes_nothing() {
+    let wrong = ["required".to_owned()];
+    let required = column(ColumnId::Required).unwrap();
+    let picks = Picks {
+        hidden: &wrong,
+        ..Picks::default()
+    };
+    assert!(!chosen(&required, picks));
+    let author = column(ColumnId::Author).unwrap();
+    let on = ["author".to_owned()];
+    let picks = Picks {
+        shown: &on,
+        ..Picks::default()
+    };
+    assert!(chosen(&author, picks));
+}
+
+#[test]
+fn required_drops_after_the_organization_and_before_reviews() {
+    let none = BTreeMap::new();
+    let on = ["required".to_owned()];
+    let mut required_without_org = false;
+    for width in (500..1500).step_by(10) {
+        let columns = visible_columns(room(width as f32), &showing(GroupBy::None, &on, &none));
+        let has = |id| ids(&columns).contains(&id);
+        let (org, required, reviews) = (
+            has(ColumnId::Org),
+            has(ColumnId::Required),
+            has(ColumnId::Reviews),
+        );
+        assert!(!org || required, "{width}: Org outlived Required");
+        assert!(!required || reviews, "{width}: Required outlived Reviews");
+        required_without_org |= required && !org;
+    }
+    assert!(required_without_org, "no width drops only the Org column");
+}
+
+#[test]
+fn grouped_by_status_compacting_follows_each_columns_own_field() {
+    let compacting: Vec<_> = COLUMNS
+        .iter()
+        .filter(|c| c.compact != Compact::Keep)
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(compacting, [ColumnId::Status, ColumnId::Number]);
 }
 
 #[test]
