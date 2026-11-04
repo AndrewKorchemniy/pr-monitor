@@ -1,7 +1,7 @@
 # Theming
 
 Every colour, radius, spacing and motion value comes from a theme. A theme is one TOML file.
-The four built-in themes are in `crates/prm-theme/themes/`:
+The five built-in themes are in `crates/prm-theme/themes/`:
 
 | Theme | Appearance | Character |
 |---|---|---|
@@ -9,6 +9,7 @@ The four built-in themes are in `crates/prm-theme/themes/`:
 | Vellum | light | drafting film; the default light theme |
 | Cyanotype | dark | a blueprint: Prussian field, white chalk, no stripes |
 | Paper | light | aged paper and fountain-pen ink: warm off-white, deep teal accent |
+| Andromeda | dark | cool charcoal with a cyan accent; after the [Andromeda](https://github.com/EliverLara/Andromeda) VS Code theme by Eliver Lara (MIT, `Andromeda-italic-color-theme-bordered.json` at commit d1abb48) |
 
 ## Making your own
 
