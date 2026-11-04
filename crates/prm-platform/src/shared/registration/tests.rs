@@ -75,7 +75,7 @@ fn safe_to_purge_table() {
         "too shallow"
     );
 
-    let default = dir.path().join("PRMonitor");
+    let default = dir.path().join("pr-monitor");
     assert!(safe_to_purge(&default, InstanceScope::Default, None));
     assert!(!safe_to_purge(&ours, InstanceScope::Default, None));
 }

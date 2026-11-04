@@ -2,7 +2,10 @@
 
 use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
-use prm_config::AppPaths;
+use prm_config::{
+    AppPaths,
+    legacy::{LegacyMove, move_legacy_folder},
+};
 use prm_domain::{
     app::{ENV_LOG, ENV_REGISTER},
     ports::Clock,
@@ -38,8 +41,33 @@ fn register_override() -> RegisterOverride {
     }
 }
 
+fn log_legacy_move(outcome: &LegacyMove) {
+    if !outcome.found {
+        return;
+    }
+    if outcome.failed.is_empty() {
+        tracing::info!(
+            moved = outcome.moved.len(),
+            skipped = ?outcome.skipped,
+            removed = outcome.removed,
+            "moved the old PRMonitor folder"
+        );
+    } else {
+        tracing::warn!(
+            moved = outcome.moved.len(),
+            failed = ?outcome.failed,
+            "could not move all of the old PRMonitor folder; will retry on the next start"
+        );
+    }
+}
+
 pub(super) fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
-    let paths = AppPaths::from_root(root.path.clone());
+    // why: before anything reads settings or opens a log; the outcome is logged once logging is up.
+    let legacy = root
+        .legacy
+        .as_deref()
+        .map(|old| move_legacy_folder(old, &root.config_root, &root.path));
+    let paths = AppPaths::split(root.config_root.clone(), root.path.clone());
     if let Err(error) = paths.ensure_dirs() {
         console::fatal_dialog(copy::DATA_FOLDER, &error.to_string());
         return Err(ExitCode::FAILURE);
@@ -50,6 +78,9 @@ pub(super) fn base(args: &Args, root: &Root) -> Result<Base, ExitCode> {
     let log = logging::init(&paths.logs, args.debug, std::env::var(ENV_LOG).ok());
     if !log.file_ok {
         tracing::warn!("log files unavailable; logging to the console only");
+    }
+    if let Some(outcome) = &legacy {
+        log_legacy_move(outcome);
     }
     panic::prune_crash_logs(&paths.logs, panic::CRASH_LOGS_KEPT);
     let exe =

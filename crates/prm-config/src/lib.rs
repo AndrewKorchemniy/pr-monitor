@@ -5,6 +5,7 @@
 pub mod avatar_cache;
 pub mod diff;
 pub mod error;
+pub mod legacy;
 pub mod limits;
 pub mod migrate;
 pub mod paths;
@@ -19,7 +20,7 @@ pub mod testing;
 pub use avatar_cache::{AvatarCache, CachedAvatar, FileAvatarCache};
 pub use diff::{ConfigChanges, OrgChanges, diff_configs};
 pub use error::{ConfigError, ConfigIssue, Severity};
-pub use paths::{AppPaths, resolve_root};
+pub use paths::{AppPaths, Roots, resolve_root};
 pub use schema::{Config, OrgProfile, UiPrefs};
 pub use state::{OrgPersisted, PersistedState, UiState, WindowRect};
 pub use store::{

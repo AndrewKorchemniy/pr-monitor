@@ -13,7 +13,12 @@ use crate::shared::{
 
 /// What to remove, built by the bin while it holds the instance lock.
 pub struct UnregisterSpec<'a> {
+    /// The local data folder (state, cache, logs), also the Velopack install folder.
     pub root: &'a Path,
+    /// The settings folder (`config.toml`, `themes`); equal to `root` for `--home`.
+    pub config_root: &'a Path,
+    /// The old single data folder, when it may still exist.
+    pub legacy_root: Option<&'a Path>,
     pub scope: InstanceScope,
     pub instance_suffix: &'a str,
     /// Also delete the data folder (only when it is clearly ours).
@@ -105,15 +110,82 @@ pub fn unregister(spec: &UnregisterSpec<'_>) -> UnregisterReport {
     UnregisterReport { steps }
 }
 
-fn purge(spec: &UnregisterSpec<'_>) -> Result<(), String> {
-    if !safe_to_purge(spec.root, spec.scope, spec.user_home) {
-        return Err("refusing to delete a folder that does not look like PR Monitor's".into());
-    }
-    match std::fs::remove_dir_all(spec.root) {
+/// Velopack's own entries in the install folder, which is also the local data root. `--purge`
+/// never deletes them: the app runs from `current`, and Velopack's uninstaller removes them.
+fn is_velopack_entry(name: &std::ffi::OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let lower = name.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "current" | "packages" | "sq.version" | ".portable"
+    ) || Path::new(&lower)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+}
+
+/// Removes a whole folder; a missing one counts as removed.
+fn remove_folder(path: &Path) -> Result<(), String> {
+    match std::fs::remove_dir_all(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// Removes everything in the local root except Velopack's entries, then the root itself when
+/// none were there.
+fn purge_local(root: &Path) -> Result<(), String> {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut kept_any = false;
+    let mut result = Ok(());
+    for entry in entries.flatten() {
+        if is_velopack_entry(&entry.file_name()) {
+            kept_any = true;
+            continue;
+        }
+        let path = entry.path();
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(error) = removed
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            result = Err(error.to_string());
+        }
+    }
+    // why: a folder that holds an install stays; otherwise the folder goes too.
+    if !kept_any && result.is_ok() {
+        let _ = std::fs::remove_dir(root);
+    }
+    result
+}
+
+/// The local root, the settings folder and the legacy folder, each only if it is clearly ours.
+fn purge(spec: &UnregisterSpec<'_>) -> Result<(), String> {
+    for dir in [spec.root, spec.config_root] {
+        if !safe_to_purge(dir, spec.scope, spec.user_home) {
+            return Err("refusing to delete a folder that does not look like PR Monitor's".into());
+        }
+    }
+    let mut result = purge_local(spec.root);
+    if spec.config_root != spec.root {
+        result = result.and(remove_folder(spec.config_root));
+    }
+    if let Some(legacy) = spec.legacy_root.filter(|l| {
+        l.file_name()
+            .is_some_and(|name| name == prm_domain::app::LEGACY_DATA_DIR_NAME)
+    }) {
+        result = result.and(remove_folder(legacy));
+    }
+    result
 }
 
 #[cfg(windows)]

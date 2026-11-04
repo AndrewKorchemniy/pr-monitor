@@ -13,9 +13,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use prm_config::AppPaths;
+use prm_config::{AppPaths, Roots};
 use prm_domain::{
-    app::ENV_HOME,
+    app::{DATA_DIR_NAME, ENV_HOME, LEGACY_DATA_DIR_NAME},
     ports::{PortError, Updater},
     uri::AppUri,
 };
@@ -142,7 +142,7 @@ pub(crate) fn run(boot: Boot) -> ExitCode {
 fn run_unregister(root: &Root, purge: bool) -> ExitCode {
     // why: the purge guard needs the user's real home folder, not the `--home` override the data
     // root came from.
-    unregister::run(&root.path, root.scope, purge, dirs::home_dir().as_deref())
+    unregister::run(root, purge, dirs::home_dir().as_deref())
 }
 
 /// `--unregister`.
@@ -188,30 +188,43 @@ fn fatal(error: &dyn std::fmt::Display) -> ExitCode {
 
 /// The data folder and whether it is the default one.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Root {
-    path: PathBuf,
-    scope: InstanceScope,
+pub(crate) struct Root {
+    /// The local folder: state, cache, logs, instance lock.
+    pub(crate) path: PathBuf,
+    /// Where `config.toml`, `keymap.toml` and `themes` live (equal to `path` for `--home`).
+    pub(crate) config_root: PathBuf,
+    pub(crate) scope: InstanceScope,
     /// The resolved absolute root when it is not the default one (from `--home` or
     /// `PRMONITOR_HOME`), repeated in the launch-at-login command.
     home: Option<PathBuf>,
+    /// The old single data folder, for the default roots only.
+    pub(crate) legacy: Option<PathBuf>,
 }
 
 impl Root {
-    /// `resolved` is the absolute root; `explicit` when it came from `--home` or
+    /// `resolved` holds the absolute roots; `explicit` when they came from `--home` or
     /// `PRMONITOR_HOME`. An explicit root that names the default folder, however spelled, is the
     /// default instance under the default spelling, so one folder never gets two instance locks.
-    fn new(resolved: PathBuf, explicit: bool, default: Option<PathBuf>) -> Self {
-        let home = explicit.then_some(resolved.as_path());
-        match root_scope(home, &resolved, default.as_deref()) {
-            InstanceScope::Default => Self {
-                path: default.unwrap_or(resolved),
-                scope: InstanceScope::Default,
-                home: None,
-            },
+    fn new(resolved: Roots, explicit: bool, default: Option<Roots>) -> Self {
+        let home = explicit.then_some(resolved.local.as_path());
+        let default_local = default.as_ref().map(|d| d.local.as_path());
+        match root_scope(home, &resolved.local, default_local) {
+            InstanceScope::Default => {
+                let roots = default.unwrap_or(resolved);
+                Self {
+                    path: roots.local,
+                    config_root: roots.config,
+                    scope: InstanceScope::Default,
+                    home: None,
+                    legacy: None,
+                }
+            }
             InstanceScope::Isolated => Self {
-                home: Some(resolved.clone()),
-                path: resolved,
+                home: Some(resolved.local.clone()),
+                path: resolved.local,
+                config_root: resolved.config,
                 scope: InstanceScope::Isolated,
+                legacy: None,
             },
         }
     }
@@ -221,12 +234,22 @@ fn data_root(args: &Args) -> Result<Root, prm_config::ConfigError> {
     let env_home = std::env::var_os(ENV_HOME).filter(|v| !v.is_empty());
     let explicit = args.home.is_some() || env_home.is_some();
     let cwd = std::env::current_dir().unwrap_or_default();
-    let data_local = dirs::data_local_dir();
-    let default_root = data_local
+    let (data_local, config_dir) = (dirs::data_local_dir(), dirs::config_dir());
+    let default_roots = data_local
         .as_ref()
-        .map(|dir| dir.join(prm_domain::app::DATA_DIR_NAME));
-    let resolved = prm_config::resolve_root(args.home.clone(), env_home, data_local, &cwd)?;
-    Ok(Root::new(resolved, explicit, default_root))
+        .zip(config_dir.as_ref())
+        .map(|(local, config)| Roots {
+            config: config.join(DATA_DIR_NAME),
+            local: local.join(DATA_DIR_NAME),
+        });
+    let legacy = data_local.as_ref().map(|l| l.join(LEGACY_DATA_DIR_NAME));
+    let resolved =
+        prm_config::resolve_root(args.home.clone(), env_home, data_local, config_dir, &cwd)?;
+    let mut root = Root::new(resolved, explicit, default_roots);
+    if root.scope == InstanceScope::Default {
+        root.legacy = legacy;
+    }
+    Ok(root)
 }
 
 /// An override (`home`) that names the default folder, however spelled, is still the default

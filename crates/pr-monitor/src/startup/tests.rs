@@ -60,21 +60,45 @@ fn attempt_is_a_fallback_only_when_relaunched() {
 
 fn default_root() -> PathBuf {
     PathBuf::from(if cfg!(windows) {
-        r"C:\Users\me\AppData\Local\PRMonitor"
+        r"C:\Users\me\AppData\Local\pr-monitor"
     } else {
-        "/home/me/.local/share/PRMonitor"
+        "/home/me/.local/share/pr-monitor"
     })
+}
+
+fn default_config_root() -> PathBuf {
+    PathBuf::from(if cfg!(windows) {
+        r"C:\Users\me\AppData\Roaming\pr-monitor"
+    } else {
+        "/home/me/.config/pr-monitor"
+    })
+}
+
+fn default_roots() -> Roots {
+    Roots {
+        config: default_config_root(),
+        local: default_root(),
+    }
+}
+
+fn one_folder(path: PathBuf) -> Roots {
+    Roots {
+        config: path.clone(),
+        local: path,
+    }
 }
 
 #[test]
 fn root_without_home_is_the_default_instance() {
-    let root = Root::new(default_root(), false, Some(default_root()));
+    let root = Root::new(default_roots(), false, Some(default_roots()));
     assert_eq!(
         root,
         Root {
             path: default_root(),
+            config_root: default_config_root(),
             scope: InstanceScope::Default,
-            home: None
+            home: None,
+            legacy: None,
         }
     );
 }
@@ -84,13 +108,14 @@ fn root_without_home_is_the_default_instance() {
 #[test]
 fn root_home_naming_the_default_folder_is_the_default_instance() {
     let spelled = if cfg!(windows) {
-        PathBuf::from(r"c:\users\me\appdata\local\prmonitor")
+        PathBuf::from(r"c:\users\me\appdata\local\pr-monitor")
     } else {
         default_root()
     };
-    let root = Root::new(spelled, true, Some(default_root()));
+    let root = Root::new(one_folder(spelled), true, Some(default_roots()));
     assert_eq!(root.scope, InstanceScope::Default);
     assert_eq!(root.path, default_root(), "the default spelling is kept");
+    assert_eq!(root.config_root, default_config_root());
     assert_eq!(root.home, None);
 }
 
@@ -103,24 +128,26 @@ fn root_home_elsewhere_is_isolated_and_carries_the_resolved_path() {
     } else {
         "/work/prm-data"
     });
-    let root = Root::new(custom.clone(), true, Some(default_root()));
+    let root = Root::new(one_folder(custom.clone()), true, Some(default_roots()));
     assert_eq!(
         root,
         Root {
             path: custom.clone(),
+            config_root: custom.clone(),
             scope: InstanceScope::Isolated,
-            home: Some(custom)
+            home: Some(custom),
+            legacy: None,
         }
     );
 }
 
-/// `--home %LOCALAPPDATA%\PRMonitor\` used to run as an isolated instance beside the default
+/// `--home %LOCALAPPDATA%\pr-monitor\` used to run as an isolated instance beside the default
 /// one, both writing the same `state.json`.
 #[test]
 fn root_scope_treats_the_default_folder_as_default() {
-    let default = PathBuf::from("/data/PRMonitor");
+    let default = PathBuf::from("/data/pr-monitor");
     let other = PathBuf::from("/data/prm-test");
-    let spelled = PathBuf::from("/data/./PRMonitor/");
+    let spelled = PathBuf::from("/data/./pr-monitor/");
     let cases = [
         (None, &default, InstanceScope::Default),
         (Some(&spelled), &spelled, InstanceScope::Default),

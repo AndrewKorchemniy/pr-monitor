@@ -15,7 +15,7 @@ The five built-in themes are in `crates/prm-theme/themes/`:
 
 1. In Settings › Appearance, choose **Copy theme as TOML** on the theme closest to what you
    want.
-2. Save it as `%LOCALAPPDATA%\PRMonitor\themes\<id>.toml`. **Copy themes folder path** gives
+2. Save it as `%APPDATA%\pr-monitor\themes\<id>.toml`. **Copy themes folder path** gives
    you the folder.
 3. Set `id` to the file name (without `.toml`) and give it a `name`.
 4. Change the seeds. PR Monitor reloads the folder whenever its window gains focus, and

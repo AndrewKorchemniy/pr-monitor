@@ -1,5 +1,5 @@
 //! `--unregister [--purge]`: asks a running instance to quit, then removes what PR Monitor added
-//! to the system (and, with `--purge`, its data folder).
+//! to the system (and, with `--purge`, its data folders).
 
 use std::{
     io::Write as _,
@@ -14,7 +14,10 @@ use prm_platform::{
     Acquired, HandoffRequest, InstanceScope, UnregisterSpec, acquire_instance, forward_to_primary,
 };
 
-use crate::{report::print_results, startup::LOCK_RETRY};
+use crate::{
+    report::print_results,
+    startup::{LOCK_RETRY, Root},
+};
 
 /// How long a running instance gets to quit.
 const QUIT_WAIT: Duration = Duration::from_secs(5);
@@ -22,10 +25,13 @@ const QUIT_WAIT: Duration = Duration::from_secs(5);
 const QUIT_FORWARD_BUDGET: Duration = Duration::from_secs(1);
 
 /// Org ids from `config.toml` (migrated in memory), read without writing anything.
-fn org_ids(root: &Path) -> Vec<OrgId> {
-    prm_config::read_config(&AppPaths::from_root(root.to_path_buf()))
-        .map(|config| config.org_ids())
-        .unwrap_or_default()
+fn org_ids(root: &Root) -> Vec<OrgId> {
+    prm_config::read_config(&AppPaths::split(
+        root.config_root.clone(),
+        root.path.clone(),
+    ))
+    .map(|config| config.org_ids())
+    .unwrap_or_default()
 }
 
 /// Holds the instance lock (asking a running primary to quit first).
@@ -52,14 +58,10 @@ fn take_lock(root: &Path, scope: InstanceScope) -> Option<(prm_platform::Instanc
 /// `user_home` is the user's profile folder, which `--purge` never deletes (not the `--home`
 /// override the data root came from: comparing a root with itself let `--home .` delete the
 /// profile).
-pub(crate) fn run(
-    root: &Path,
-    scope: InstanceScope,
-    purge: bool,
-    user_home: Option<&Path>,
-) -> ExitCode {
+pub(crate) fn run(root: &Root, purge: bool, user_home: Option<&Path>) -> ExitCode {
     let mut out = prm_platform::console::console_out();
-    let Some((lock, suffix)) = take_lock(root, scope) else {
+    let scope = root.scope;
+    let Some((lock, suffix)) = take_lock(&root.path, scope) else {
         let _ = writeln!(
             out,
             "{APP_DISPLAY_NAME} is still running. Close it and try again."
@@ -68,7 +70,9 @@ pub(crate) fn run(
     };
     let orgs = org_ids(root);
     let report = prm_platform::unregister(&UnregisterSpec {
-        root,
+        root: &root.path,
+        config_root: &root.config_root,
+        legacy_root: root.legacy.as_deref(),
         scope,
         instance_suffix: &suffix,
         purge,

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Never paste tokens, PATs or secrets.** Logs are in `%LOCALAPPDATA%\PRMonitor\logs`; redact confidential org/project/repo names.
+        **Never paste tokens, PATs or secrets.** Logs are in `%LOCALAPPDATA%\pr-monitor\logs`; redact confidential org/project/repo names.
   - type: input
     id: version
     attributes: { label: PR Monitor version, description: "Tray menu → About, or `pr-monitor.exe --version`", placeholder: "0.3.1" }

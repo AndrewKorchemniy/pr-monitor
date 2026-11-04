@@ -108,7 +108,8 @@ fn activation_keeps_the_flags_a_relaunch_adds() {
 fn usage_names_the_scheme_and_data_folder() {
     let text = usage();
     assert!(text.contains("prmonitor://"), "{text}");
-    assert!(text.contains("%LOCALAPPDATA%\\PRMonitor"), "{text}");
+    assert!(text.contains("%LOCALAPPDATA%\\pr-monitor"), "{text}");
+    assert!(text.contains("%APPDATA%\\pr-monitor"), "{text}");
 }
 
 #[test]
