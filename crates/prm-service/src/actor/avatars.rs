@@ -84,7 +84,7 @@ impl Service {
         link.avatars.checked.extend(checked);
         if disable && link.generation == generation && !link.avatars.disabled {
             link.avatars.disabled = true;
-            tracing::info!(org = %org, "the org refused avatar requests; avatars off until restart");
+            tracing::info!(org = %org, "the org refused avatar requests; avatars off until its settings change or restart");
         }
         if !loaded.is_empty() {
             self.deps.events.emit(AppEvent::Avatars(Arc::from(loaded)));

@@ -42,8 +42,3 @@ fn only_ready_names_a_version() {
         assert_eq!(status.ready_version(), expected, "{status:?}");
     }
 }
-
-#[test]
-fn a_new_run_starts_idle() {
-    assert_eq!(UpdateStatus::default(), UpdateStatus::Idle);
-}

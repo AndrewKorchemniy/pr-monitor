@@ -63,7 +63,7 @@ impl<'a> ModalSpec<'a> {
 /// How much further in from the window a dialog over the settings sheet sits (points).
 const NESTED_INSET: f32 = 14.0;
 /// The usual dialog width.
-pub(crate) const WIDTH: f32 = 420.0;
+const WIDTH: f32 = 420.0;
 /// The tallest a dialog's body gets before it scrolls, however tall the window (points).
 pub(crate) const MAX_BODY: f32 = 520.0;
 /// The least room a body keeps in a very short window (points).

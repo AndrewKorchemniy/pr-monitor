@@ -228,8 +228,8 @@ fn no_spring_back(mut style: egui::style::ScrollStyle) -> egui::style::ScrollSty
     style
 }
 
-/// The peek drawer. No border: the panel's separator draws its left edge, and the toolbar, status bar and
-/// window bound the rest, so a stroke here doubled those hairlines.
+/// The peek drawer. No border: the panel's separator draws its left edge, and the toolbar, status
+/// bar and window bound the rest, so a stroke here doubled those hairlines.
 pub(crate) fn frame_raised(theme: &UiTheme) -> egui::Frame {
     let m = &theme.tokens.metrics;
     egui::Frame::NONE
@@ -259,25 +259,11 @@ pub(crate) fn frame_sheet(theme: &UiTheme) -> egui::Frame {
 }
 
 /// Which top corners of a surface are rounded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct TopCorners {
-    pub left: bool,
-    pub right: bool,
-}
-
-impl TopCorners {
-    pub(crate) const BOTH: Self = Self {
-        left: true,
-        right: true,
-    };
-    pub(crate) const LEFT: Self = Self {
-        left: true,
-        right: false,
-    };
-    pub(crate) const RIGHT: Self = Self {
-        left: false,
-        right: true,
-    };
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TopCorners {
+    Both,
+    Left,
+    Right,
 }
 
 /// Arc segments in one notch.
@@ -301,10 +287,10 @@ pub(crate) fn paint_notches(
         return;
     }
     let canvas = theme.colors.surface_canvas;
-    if corners.left {
+    if matches!(corners, TopCorners::Both | TopCorners::Left) {
         painter.add(notch(rect.left_top(), 1.0, r, canvas));
     }
-    if corners.right {
+    if matches!(corners, TopCorners::Both | TopCorners::Right) {
         painter.add(notch(rect.right_top(), -1.0, r, canvas));
     }
 }
@@ -381,6 +367,12 @@ pub(crate) fn frame_dialog(theme: &UiTheme, policy: RenderPolicy) -> egui::Frame
 pub(crate) const AVATAR_HUES: usize = 24;
 /// Initials must read as well as body text.
 const AVATAR_MIN_CONTRAST: f64 = 4.5;
+/// OKLab lightness (0 to 1) of an initials circle's fill in a dark theme.
+const AVATAR_LIGHTNESS_DARK: f64 = 0.42;
+/// OKLab lightness (0 to 1) of an initials circle's fill in a light theme.
+const AVATAR_LIGHTNESS_LIGHT: f64 = 0.88;
+/// OKLab chroma of the fills: enough to tell the hues apart, muted enough to sit quietly.
+const AVATAR_CHROMA: f64 = 0.08;
 
 /// An initials circle's fill and text.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -398,15 +390,18 @@ pub(crate) fn avatar_hue(id: Vsid) -> usize {
 
 /// The circle colours for every hue: a muted fill (dark in dark themes, pale in light ones)
 /// with the theme's primary text colour moved just far enough to hold `AVATAR_MIN_CONTRAST`.
-pub(crate) fn avatar_tints(palette: &Palette, dark: bool) -> [AvatarTint; AVATAR_HUES] {
-    let lightness = if dark { 0.42 } else { 0.88 };
+pub(crate) fn avatar_tints(palette: &Palette, appearance: Appearance) -> [AvatarTint; AVATAR_HUES] {
+    let lightness = if appearance == Appearance::Dark {
+        AVATAR_LIGHTNESS_DARK
+    } else {
+        AVATAR_LIGHTNESS_LIGHT
+    };
     std::array::from_fn(|bucket| {
         let hue = (bucket as f64 * 360.0 / AVATAR_HUES as f64).to_radians();
-        let chroma = 0.08;
         let lab = Oklab {
             l: lightness,
-            a: chroma * hue.cos(),
-            b: chroma * hue.sin(),
+            a: AVATAR_CHROMA * hue.cos(),
+            b: AVATAR_CHROMA * hue.sin(),
         };
         let bg = from_oklab(lab, u8::MAX);
         let text = ensure_contrast(palette.text_primary, bg, AVATAR_MIN_CONTRAST);

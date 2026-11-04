@@ -463,9 +463,10 @@ jobs:
         run: |
           set -euo pipefail
           # why: a re-run (recover) must not leave assets from an earlier attempt that this run did not make
-          for name in $(gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[].name'); do
+          existing=$(gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[].name')
+          while IFS= read -r name; do
             [ -e "dist/$name" ] || gh release delete-asset "$TAG" "$name" -R "$REPO" --yes
-          done
+          done <<<"$existing"
           gh release upload "$TAG" -R "$REPO" --clobber \
             dist/*.exe dist/*.zip dist/*.AppImage dist/*.nupkg dist/releases.*.json dist/*.pdb dist/*.cdx.json \
             dist/THIRD-PARTY-LICENSES.html dist/SHA256SUMS.txt

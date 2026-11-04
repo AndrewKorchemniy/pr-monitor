@@ -1,6 +1,7 @@
-use prm_domain::testing::{PrBuilder, key, org, person, record, ts};
-
-use std::collections::HashSet;
+use prm_domain::{
+    Person,
+    testing::{PrBuilder, key, org, person, record, ts},
+};
 
 use super::*;
 
@@ -12,8 +13,6 @@ fn with_url(n: u128, url: Option<&str>) -> Person {
         ..person(n, "P")
     }
 }
-
-use prm_domain::Person;
 
 fn want(n: u128, url: Option<&str>) -> Want {
     Want {

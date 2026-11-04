@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Rect, Shape};
 use egui_kittest::Harness;
-use prm_theme::Corners;
+use prm_theme::{Corners, Rgba8};
 
 use crate::{
     testing::{
         demo::{demo_state, now, quiet_state},
-        screens::{Fixture, NARROW, Shown, WINDOW, harness_at},
+        screens::{Fixture, NARROW, Shown, WINDOW, gpu_harness, harness_at},
     },
     theme::UiTheme,
 };
@@ -138,17 +138,24 @@ fn radius(h: &Harness<'_, Fixture>) -> f32 {
     f32::from(theme_of(h).tokens.metrics.radius.lg)
 }
 
-/// `notch` is the `r` x `r` square at `corner`.
-fn assert_notch_at(notch: Rect, corner: egui::Pos2, r: f32, what: &str) {
-    let inward = if notch.min.x < corner.x - 0.5 { -r } else { r };
-    let x = if inward < 0.0 { corner.x - r } else { corner.x };
-    // why: the soft edge keeps inside the square; the fan reaches both its sides.
+/// The `r` x `r` notch at a top-left `corner`: the square to its right and below.
+fn left_notch(corner: egui::Pos2, r: f32) -> Rect {
+    Rect::from_min_size(corner, egui::vec2(r, r))
+}
+
+/// The `r` x `r` notch at a top-right `corner`: the square to its left and below.
+fn right_notch(corner: egui::Pos2, r: f32) -> Rect {
+    Rect::from_min_size(corner - egui::vec2(r, 0.0), egui::vec2(r, r))
+}
+
+/// The painted notch must be the `expected` square. The fan reaches both of its sides and the
+/// soft edge stays inside it, so the bounds match to the hundredth of a point.
+fn assert_notch(notch: Rect, expected: Rect, what: &str) {
     assert!(
-        (notch.min.x - x).abs() < 0.01
-            && (notch.min.y - corner.y).abs() < 0.01
-            && (notch.width() - r).abs() < 0.01
-            && (notch.height() - r).abs() < 0.01,
-        "{what}: {notch:?} is not the {r} pt square at {corner:?}"
+        notch.min.distance(expected.min) < 0.01
+            && (notch.width() - expected.width()).abs() < 0.01
+            && (notch.height() - expected.height()).abs() < 0.01,
+        "{what}: {notch:?} is not {expected:?}"
     );
 }
 
@@ -165,8 +172,8 @@ fn rounded_corners_cut_the_sheet_top_corners_to_the_toolbar_colour() {
             let mut found = notches(&h);
             assert_eq!(found.len(), 2, "{name} {scene:?}: {found:?}");
             found.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
-            assert_notch_at(found[0], sheet.left_top(), r, "left");
-            assert_notch_at(found[1], sheet.right_top(), r, "right");
+            assert_notch(found[0], left_notch(sheet.left_top(), r), "left");
+            assert_notch(found[1], right_notch(sheet.right_top(), r), "right");
         }
     }
 }
@@ -177,8 +184,11 @@ fn the_sheet_starts_below_the_toolbar_and_banners() {
     let banners = shown("graphite", Corners::Rounded, Scene::Banners);
     let sunken = theme_of(&bare).colors.surface_sunken;
     let top = |h: &Harness<'_, Fixture>| surface(h, sunken).map(|r| r.top());
-    let (bare, banners) = (top(&bare).unwrap_or(0.0), top(&banners).unwrap_or(0.0));
-    assert!(bare > 0.0 && banners > bare + 20.0, "{bare} {banners}");
+    let (bare_top, banners_top) = (top(&bare).unwrap_or(0.0), top(&banners).unwrap_or(0.0));
+    assert!(
+        bare_top > 0.0 && banners_top > bare_top + 20.0,
+        "{bare_top} {banners_top}"
+    );
 }
 
 #[test]
@@ -187,11 +197,8 @@ fn square_corners_paint_no_notch_in_any_theme() {
         for scene in SCENES {
             let h = shown(name, Corners::Square, scene);
             assert_eq!(radius(&h), 0.0, "{name}");
-            assert!(
-                notches(&h).is_empty(),
-                "{name} {scene:?}: {:?}",
-                notches(&h)
-            );
+            let found = notches(&h);
+            assert!(found.is_empty(), "{name} {scene:?}: {found:?}");
         }
     }
 }
@@ -208,8 +215,16 @@ fn a_docked_peek_takes_the_right_corner_and_the_junction_stays_square() {
         let mut found = notches(&h);
         assert_eq!(found.len(), 2, "{name}: {found:?}");
         found.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
-        assert_notch_at(found[0], sheet.left_top(), r, "the sheet's left");
-        assert_notch_at(found[1], peek.right_top(), r, "the peek's right");
+        assert_notch(
+            found[0],
+            left_notch(sheet.left_top(), r),
+            "the sheet's left",
+        );
+        assert_notch(
+            found[1],
+            right_notch(peek.right_top(), r),
+            "the peek's right",
+        );
     }
 }
 
@@ -223,8 +238,8 @@ fn a_peek_over_the_list_rounds_both_its_top_corners() {
         let mut found = notches(&h);
         assert_eq!(found.len(), 2, "{name}: {found:?}");
         found.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
-        assert_notch_at(found[0], peek.left_top(), r, "left");
-        assert_notch_at(found[1], peek.right_top(), r, "right");
+        assert_notch(found[0], left_notch(peek.left_top(), r), "left");
+        assert_notch(found[1], right_notch(peek.right_top(), r), "right");
     }
 }
 
@@ -240,17 +255,14 @@ fn the_sheet_is_a_modest_step_from_the_canvas() {
     }
 }
 
-/// CIE lightness L*, 0 to 100, of an sRGB colour.
-fn lightness(c: Color32) -> f32 {
-    let lin = |v: u8| {
-        let v = f32::from(v) / 255.0;
-        if v <= 0.04045 {
-            v / 12.92
-        } else {
-            ((v + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    let y = 0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b());
+/// CIE lightness L*, 0 to 100, of an sRGB colour, from its WCAG relative luminance.
+fn lightness(c: Color32) -> f64 {
+    let y = prm_theme::contrast::relative_luminance(Rgba8 {
+        r: c.r(),
+        g: c.g(),
+        b: c.b(),
+        a: 255,
+    });
     if y > 0.008_856 {
         116.0 * y.cbrt() - 16.0
     } else {
@@ -283,13 +295,7 @@ fn render_sheet_gallery() {
 /// One scene on the GPU at `ppp` pixels per point, saved to `path`.
 fn render(scene: Scene, (name, corners): (&str, Corners), ppp: f32, path: &std::path::Path) {
     let (fixture, size) = fixture(name, corners, scene);
-    let mut h = Harness::builder()
-        .with_size(size)
-        .with_pixels_per_point(ppp)
-        .with_accessibility_check(false)
-        .with_context_setup(crate::theme::fonts::install)
-        .wgpu()
-        .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture);
+    let mut h = gpu_harness(fixture, size, ppp);
     h.run();
     h.run_steps(1);
     let image = h.render().unwrap_or_else(|e| panic!("{scene:?}: {e}"));

@@ -1,7 +1,8 @@
-//! Startup, in a fixed order: the panic hook, arguments, data root, the single-instance lock (a
-//! second launch forwards and exits before any logging or GPU work, or takes over from a primary
-//! that is quitting), files and logging, shell identity, activation, config, the service, the
-//! renderer, the window; then shutdown or a relaunch.
+//! Startup, in a fixed order: the Velopack hooks (in `main`), the panic hook, arguments, data root,
+//! the single-instance lock (a second launch forwards and exits before any logging or GPU work, or
+//! takes over from a primary that is quitting), files and logging, shell identity, a pending update
+//! (handed to Update.exe, which ends this start), activation, config, the service, the renderer,
+//! the window; then shutdown or a relaunch.
 
 use std::{
     ffi::OsString,
@@ -15,7 +16,7 @@ use std::{
 
 use prm_config::{AppPaths, Roots};
 use prm_domain::{
-    app::{DATA_DIR_NAME, ENV_HOME, LEGACY_DATA_DIR_NAME},
+    app::{ENV_HOME, LEGACY_DATA_DIR_NAME},
     ports::{PortError, Updater},
     uri::AppUri,
 };
@@ -228,6 +229,11 @@ impl Root {
             },
         }
     }
+
+    /// The files of this root: settings under `config_root`, the rest under `path`.
+    pub(crate) fn app_paths(&self) -> AppPaths {
+        AppPaths::split(self.config_root.clone(), self.path.clone())
+    }
 }
 
 fn data_root(args: &Args) -> Result<Root, prm_config::ConfigError> {
@@ -235,13 +241,9 @@ fn data_root(args: &Args) -> Result<Root, prm_config::ConfigError> {
     let explicit = args.home.is_some() || env_home.is_some();
     let cwd = std::env::current_dir().unwrap_or_default();
     let (data_local, config_dir) = (dirs::data_local_dir(), dirs::config_dir());
-    let default_roots = data_local
-        .as_ref()
-        .zip(config_dir.as_ref())
-        .map(|(local, config)| Roots {
-            config: config.join(DATA_DIR_NAME),
-            local: local.join(DATA_DIR_NAME),
-        });
+    // With no override, resolve_root names the default folders; that rule lives there.
+    let default_roots =
+        prm_config::resolve_root(None, None, data_local.clone(), config_dir.clone(), &cwd).ok();
     let legacy = data_local.as_ref().map(|l| l.join(LEGACY_DATA_DIR_NAME));
     let resolved =
         prm_config::resolve_root(args.home.clone(), env_home, data_local, config_dir, &cwd)?;

@@ -27,6 +27,7 @@ cargo insta review     # accept or reject changed snapshots
 cargo fmt --all
 typos
 cargo shear
+cargo deny --all-features --locked check bans licenses sources
 ```
 
 ## Rules
@@ -36,15 +37,14 @@ cargo shear
   `.cargo/config.toml`.
 - Tests are hermetic: no real network (use wiremock), no credential store, no registry, no
   toasts, no wall clock, no sleeps. See RUST_STYLE section 10.
-- `unsafe` is allowed only in `crates/prm-platform`. See RUST_STYLE section 11.
+- `unsafe` is allowed only in `crates/prm-platform/src/win/`. See RUST_STYLE section 11.
 
 ## Pull requests
 
 - The PR title must be a [Conventional Commit](https://www.conventionalcommits.org/), for
   example `fix(ui): keep the selection after refresh`. PRs are squash-merged, so the title
   becomes the commit message and feeds the changelog.
-- Fill in the PR template: what changed, why and how you tested it. Attach dark and light
-  screenshots for UI changes.
+- Fill in the PR template. UI changes need dark and light screenshots.
 
 ## Dependencies
 

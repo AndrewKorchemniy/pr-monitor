@@ -1,4 +1,4 @@
-//! General: refresh interval, tray behaviour, launch at login, columns, times and proxy.
+//! General: refresh interval, tray behaviour, launch at login, columns, times, proxy and updates.
 
 use eframe::egui;
 use prm_config::{

@@ -85,10 +85,7 @@ impl UiTheme {
     pub(crate) fn new(tokens: Arc<Tokens>, policy: RenderPolicy) -> Self {
         Self {
             colors: adapter::UiColors::from(&tokens.palette),
-            avatar_tints: adapter::avatar_tints(
-                &tokens.palette,
-                tokens.appearance == Appearance::Dark,
-            ),
+            avatar_tints: adapter::avatar_tints(&tokens.palette, tokens.appearance),
             fonts: FontIds::new(),
             tokens,
             policy,

@@ -14,15 +14,15 @@ each one is.
   reviewers whose votes count for your team.
 - **Many orgs and repos.** Choose projects or single repositories, the people whose PRs you
   track (empty tracks everyone in those repositories) and the reviewers whose votes count.
-- **Notifications:** new PRs, comments, votes, re-reviews and pushes, grouped per PR and capped
-  per refresh.
+- **Notifications** for new PRs, comments, votes, re-reviews and pushes, grouped per PR and
+  capped per refresh.
 - **Lives in the tray.** It refreshes every 5 minutes by default. `Ctrl+K` opens the command
-  palette, `?` lists every shortcut.
-- **Updates itself.** A per-user installer or a portable zip; no admin rights.
+  palette; `?` lists every shortcut.
+- **Updates itself.** Installer or portable zip; no admin rights.
 
 ## Download
 
-Get one for your architecture (x64 or arm64) from the
+Get the package for your architecture (x64 or arm64) from the
 [latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest):
 
 - **Installer:** `pr-monitor-win-x64-Setup.exe` (or `-win-arm64`). Installs for your user into
@@ -38,8 +38,8 @@ Direct links:
 
 Supported: Windows 10 1809 or later (x64) and Windows 11 (arm64).
 
-Releases are built by GitHub Actions and are not signed. Verify a download (the same works for
-the Portable zip):
+Releases are built by GitHub Actions and are not code-signed. Verify a download (the same works
+for the Portable zip):
 
 ```powershell
 gh attestation verify pr-monitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
@@ -60,44 +60,49 @@ chmod +x pr-monitor-linux-x64.AppImage
 ./pr-monitor-linux-x64.AppImage
 ```
 
-- **It updates itself.** Keep the AppImage in a folder you can write to (for example
-  `~/Applications`); in a system folder every update asks for a password.
-- **Libraries.** libxkbcommon, X11 or Wayland, and GL (Mesa or a vendor driver). If FUSE is
+- **Updates** install themselves. Keep the AppImage in a folder you can write to (for example
+  `~/Applications`); otherwise an update asks for a password.
+- **Libraries:** libxkbcommon, X11 or Wayland, and GL (Mesa or a vendor driver). If FUSE is
   missing, run it with `--appimage-extract-and-run`.
-- **Tray icon.** Needs a StatusNotifier host (GNOME needs the AppIndicator extension).
+- **Tray icon:** needs a StatusNotifier host (GNOME needs the AppIndicator extension).
 - **Launch at login** points at the AppImage file; if you move it, turn the setting off and on.
 - Needs glibc 2.35 or newer (Ubuntu 22.04 and later).
 - The `prmonitor://` link handler is Windows-only.
-- Not signed. Verify with `gh attestation verify <file> -R AndrewKorchemniy/pr-monitor`.
+- Not code-signed. Verify with `gh attestation verify <file> -R AndrewKorchemniy/pr-monitor`.
 
 ## Signing in
 
-PR Monitor tries these in order and remembers what worked for each organization:
+Automatic sign-in (the default) tries your Azure CLI session first, then your organization's app
+(if you set one up), then a saved personal access token. It remembers what worked for each
+organization. To choose a method yourself, use Settings › Organizations › **Change sign-in**:
 
-1. **Azure CLI.** If `az login` already works on your machine, there is nothing to set up.
-2. **Sign in with Microsoft.** This runs `az login` for the organization's tenant.
-3. **Personal access token.** It needs Code (Read), Project and Team (Read), Graph (Read) and
-   Identity (Read). The token is kept in Windows Credential Manager.
-4. **Your organization's app (advanced).** This uses an Entra app registration that your
-   admin provides.
+- **Sign in with Microsoft** runs `az login` for the organization's tenant. **Sign in with the
+  browser instead** does the same, forcing the system browser instead of Windows' account
+  broker. Both need the Azure CLI (`az`).
+- **Personal access token.** It needs Code (Read), Project and Team (Read), Graph (Read) and
+  Identity (Read). The token is kept in Windows Credential Manager.
+- **Your organization's app (advanced).** An Entra public-client app registration with an
+  `http://localhost` redirect, which your admin provides. Enter its Client ID (and tenant)
+  under Advanced.
 
 ## Your data
 
-Settings and themes live in `%APPDATA%\pr-monitor`; cached results, window state and logs live
-in `%LOCALAPPDATA%\pr-monitor` (logs in `logs`). Use `--home <dir>` or the `PRMONITOR_HOME`
-environment variable to keep everything in one folder instead; `--home` wins. Logs
-never contain tokens. PR Monitor talks only to Azure DevOps, Microsoft sign-in and GitHub (for
-update checks; turn that off in Settings > General).
+Settings (`config.toml`, `keymap.toml`, `themes`) live in `%APPDATA%\pr-monitor`. Cached results,
+window state, avatars, logs and the single-instance lock live in `%LOCALAPPDATA%\pr-monitor`
+(logs in `logs`). `--home <dir>` or the `PRMONITOR_HOME` environment variable keeps everything in
+one folder instead; `--home` wins. A copy started that way never updates itself. Logs never
+contain tokens. PR Monitor talks only to Azure DevOps, Microsoft sign-in and GitHub (for update
+checks; turn those off in Settings › General).
 
-`pr-monitor --unregister --purge` removes what PR Monitor added to Windows and its data (not
-the installed program). Uninstalling from Add/Remove Programs removes only the program;
-delete the data folder to remove settings and logs.
+Uninstalling from Add/Remove Programs removes the program, its Windows entries and saved
+sign-ins; your settings in `%APPDATA%\pr-monitor` stay. `pr-monitor --unregister --purge` removes
+what PR Monitor added to Windows and both data folders, and keeps the installed program.
 
 ## Command line
 
 ```text
 pr-monitor [--minimized] [--activate <prmonitor://...>] [--renderer auto|glow|wgpu]
-           [--home <dir>] [--debug] [--self-test] [--unregister [--purge]] [--version]
+           [--home <dir>] [--debug] [--self-test] [--unregister [--purge]] [--version] [--help]
 ```
 
 `pr-monitor --help` describes each flag.
@@ -106,14 +111,14 @@ pr-monitor [--minimized] [--activate <prmonitor://...>] [--renderer auto|glow|wg
 
 - **Sign-in keeps failing.** Run `az login` in a terminal and check that
   `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798` works. If your
-  organization blocks the Azure CLI, use a personal access token from Settings ›
-  Organizations › Change sign-in.
-- **No pull requests show up.** Check Settings › Organizations: the organization must be
-  watched, signed in, and have repositories and people chosen.
+  organization blocks the Azure CLI, use a personal access token under Settings › Organizations ›
+  Change sign-in.
+- **No pull requests show up.** Check Settings › Organizations: the organization must be enabled
+  and signed in, with projects or repositories chosen.
 - **The window is blank or flickers, especially over Remote Desktop.** Start PR Monitor with
   `--renderer glow`, or choose OpenGL under Settings › Appearance.
-- **Something else.** Logs are in `%LOCALAPPDATA%\pr-monitor\logs` (redacted: no tokens).
-  `pr-monitor --debug` logs more detail to the console. Attach the latest log when you
+- **Something else.** Logs are in `%LOCALAPPDATA%\pr-monitor\logs`. `pr-monitor --debug` also
+  logs to the console. Attach the latest log when you
   [report a problem](https://github.com/AndrewKorchemniy/pr-monitor/issues/new/choose).
 
 ## Building from source

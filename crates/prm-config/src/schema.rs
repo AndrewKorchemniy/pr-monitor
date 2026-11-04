@@ -15,8 +15,7 @@ use prm_domain::{
     plan::{Authors, DraftPolicy, TrackSpec},
     scope::ScopeSpec,
 };
-pub use prm_theme::Corners;
-use prm_theme::registry;
+use prm_theme::{Corners, registry};
 
 use crate::{limits, migrate::CURRENT_SCHEMA};
 

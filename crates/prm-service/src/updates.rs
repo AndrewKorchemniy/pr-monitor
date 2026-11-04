@@ -1,5 +1,5 @@
 //! When the service looks for updates, how long it waits for the updater, and the state it
-//! keeps between those calls. The decisions here are pure; `actor/updates.rs` carries them out.
+//! keeps between those calls. `actor/updates.rs` makes the decisions and carries them out.
 
 use std::{
     sync::{
@@ -12,12 +12,13 @@ use std::{
 use prm_domain::update::UpdateStatus;
 use tokio::{sync::mpsc, time::Instant};
 
-/// The first automatic check comes this long after the service starts, so a login is not slowed.
+/// The first automatic check comes this long after the service starts, or after automatic
+/// checks are turned on, so a login is not slowed.
 pub(crate) const FIRST_CHECK: Duration = Duration::from_secs(60);
 /// Between automatic checks that worked.
 pub(crate) const CHECK_INTERVAL: Duration = Duration::from_hours(6);
-/// After a failed check or download. GitHub allows 60 API calls an hour per address, and a
-/// check costs one, so an hour is safe even for an office behind one address.
+/// After a failed check, download or restart. GitHub allows 60 API calls an hour per address,
+/// and a check costs one, so an hour is safe even for an office behind one address.
 pub(crate) const RETRY_AFTER_FAILURE: Duration = Duration::from_hours(1);
 /// The updater's HTTP client has no timeout of its own, so a check that takes longer than this
 /// counts as failed.
@@ -27,9 +28,9 @@ pub(crate) const DOWNLOAD_TIMEOUT: Duration = Duration::from_mins(30);
 /// Starting the updater only launches a process.
 pub(crate) const APPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Whether an updater call still occupies a blocking thread. A job that timed out stops
-/// waiting, but its thread keeps running; until it returns, no new call starts, so a hung
-/// connection costs one thread of the small blocking pool, not one per retry.
+/// Whether a check or download still occupies a blocking thread. A job that timed out stops
+/// waiting, but its thread keeps running; until it returns, no new check or download starts, so
+/// a hung connection costs one thread of the small blocking pool, not one per retry.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Occupied(Arc<AtomicBool>);
 

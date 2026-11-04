@@ -106,7 +106,7 @@ pub const SPACE: Space = Space {
 };
 
 /// The corner shape picked in Settings › Appearance; it applies to every theme.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Corners {
     /// Radius 0 everywhere, pills included.

@@ -149,7 +149,13 @@ fn table_columns(
 ) -> (Vec<ColumnSpec>, Room) {
     let room = table_room(ui.spacing(), theme, ui.available_width());
     let visible = visible_columns(room, &column_layout(view, show_org));
-    view.squeezed = columns::squeezed(&visible, view.picks()).collect();
+    // Built from the fields, not `view.picks()`, so the squeezed buffer is refilled in place.
+    let picks = columns::Picks {
+        hidden: &view.hidden_columns,
+        shown: &view.shown_columns,
+    };
+    view.squeezed.clear();
+    view.squeezed.extend(columns::squeezed(&visible, picks));
     (visible, room)
 }
 

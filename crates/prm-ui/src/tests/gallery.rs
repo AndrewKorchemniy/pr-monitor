@@ -28,9 +28,8 @@ use crate::{
         demo::{
             busy_state, crowded_state, demo_state, empty_state, everyone_state, now, quiet_state,
         },
-        screens::{Fixture, NARROW, Shown, WINDOW},
+        screens::{Fixture, NARROW, Shown, WINDOW, gpu_harness},
     },
-    theme::fonts,
     widgets::people_picker::Step as Highlight,
 };
 
@@ -555,13 +554,7 @@ fn render(scene: &Scene, theme: &str, dir: &std::path::Path, pointer: Option<Poi
     let mut fixture = Fixture::new(scene.shown, state);
     fixture.now = now();
     (scene.setup)(&mut fixture);
-    let mut harness = Harness::builder()
-        .with_size(scene.size)
-        .with_pixels_per_point(1.25)
-        .with_accessibility_check(false) // the kittest tests enforce accessibility; this only renders
-        .with_context_setup(fonts::install)
-        .wgpu()
-        .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture);
+    let mut harness = gpu_harness(fixture, scene.size, 1.25);
     harness.run();
     if let Some(pointer) = pointer {
         pointer(&mut harness);

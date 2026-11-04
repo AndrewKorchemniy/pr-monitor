@@ -8,7 +8,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use prm_config::AppPaths;
 use prm_domain::{OrgId, app::APP_DISPLAY_NAME};
 use prm_platform::{
     Acquired, HandoffRequest, InstanceScope, UnregisterSpec, acquire_instance, forward_to_primary,
@@ -26,12 +25,9 @@ const QUIT_FORWARD_BUDGET: Duration = Duration::from_secs(1);
 
 /// Org ids from `config.toml` (migrated in memory), read without writing anything.
 fn org_ids(root: &Root) -> Vec<OrgId> {
-    prm_config::read_config(&AppPaths::split(
-        root.config_root.clone(),
-        root.path.clone(),
-    ))
-    .map(|config| config.org_ids())
-    .unwrap_or_default()
+    prm_config::read_config(&root.app_paths())
+        .map(|config| config.org_ids())
+        .unwrap_or_default()
 }
 
 /// Holds the instance lock (asking a running primary to quit first).

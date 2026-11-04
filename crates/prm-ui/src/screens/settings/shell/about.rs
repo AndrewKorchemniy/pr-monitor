@@ -41,7 +41,8 @@ const LINKS: [(&str, Link); 4] = [
     ),
 ];
 
-/// The foot of the sidebar, in its bottom-up layout: the links, with the version above them.
+/// The foot of the sidebar, in its bottom-up layout: the links, with the update line and the
+/// version above them.
 pub(super) fn footer(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -57,12 +58,12 @@ pub(super) fn footer(
         }
     }
     ui.add_space(theme.tokens.metrics.space.xs);
-    let action = update::show(ui, cx, true);
+    let action = update::show(ui, cx, update::Stack::BottomUp);
     version(ui, &theme, env);
     finish(cx, st, env, opened, action);
 }
 
-/// The version, then the links on lines that wrap.
+/// The version, the update line, then the links on lines that wrap.
 pub(super) fn section(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
@@ -71,7 +72,7 @@ pub(super) fn section(
 ) {
     let theme = cx.theme.clone();
     version(ui, &theme, env);
-    let action = update::show(ui, cx, false);
+    let action = update::show(ui, cx, update::Stack::TopDown);
     let mut opened = None;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.tokens.metrics.space.lg;

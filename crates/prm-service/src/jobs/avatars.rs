@@ -48,8 +48,17 @@ pub(crate) struct AvatarOutput {
     pub slots: Vec<(Vsid, Slot)>,
     /// Everyone whose cache file was looked at.
     pub checked: Vec<Vsid>,
-    /// The org refused avatar requests; stop asking until restart.
+    /// The org refused avatar requests; stop asking until its settings change or the app restarts.
     pub disable: bool,
+}
+
+impl AvatarOutput {
+    /// Records one person's settled slot, and their picture when there is one.
+    fn settle(&mut self, key: AvatarKey, slot: Slot, image: Option<AvatarImage>) {
+        self.slots.push((key.id, slot));
+        self.loaded
+            .extend(image.map(|image| LoadedAvatar { key, image }));
+    }
 }
 
 pub(crate) async fn run(ctx: AvatarCtx) -> AvatarOutput {
@@ -80,16 +89,14 @@ async fn read_cache<'a>(
         keys.into_iter()
             .filter_map(|key| {
                 let entry = cache.read(&key)?;
-                Some(settle_cached(key, &entry))
+                settle_cached(key, &entry)
             })
             .collect::<Vec<_>>()
     })
     .await
     .unwrap_or_default();
-    for (key, slot, image) in read.into_iter().flatten() {
-        out.slots.push((key.id, slot));
-        out.loaded
-            .extend(image.map(|image| LoadedAvatar { key, image }));
+    for (key, slot, image) in read {
+        out.settle(key, slot, image);
     }
 }
 
@@ -131,11 +138,7 @@ async fn download(
         .buffered(AVATAR_CONCURRENCY);
     while let Some(fetched) = results.next().await {
         match fetched {
-            Fetched::Settled { key, slot, image } => {
-                out.slots.push((key.id, slot));
-                out.loaded
-                    .extend(image.map(|image| LoadedAvatar { key, image }));
-            }
+            Fetched::Settled { key, slot, image } => out.settle(key, slot, image),
             Fetched::Refused => {
                 out.disable = true;
                 return;
@@ -181,7 +184,7 @@ fn absent(key: AvatarKey, now: Timestamp) -> Fetched {
 /// "No picture" as of `now`, also written to disk so a restart does not ask again.
 async fn marker(cache: &Arc<dyn AvatarCache>, key: AvatarKey, now: Timestamp) -> Fetched {
     let (cache, written) = (cache.clone(), key.clone());
-    blocking(move || store(cache.as_ref(), &written, &[], now)).await;
+    blocking(move || store(cache.as_ref(), &written, Vec::new(), now)).await;
     absent(key, now)
 }
 
@@ -196,7 +199,7 @@ async fn settle_download(
         let (cache, key) = (cache.clone(), key.clone());
         blocking(move || {
             let image = decode::from_source(bytes.as_ref())?;
-            store(cache.as_ref(), &key, &decode::to_png(&image)?, now);
+            store(cache.as_ref(), &key, decode::to_png(&image)?, now);
             Some(image)
         })
     };
@@ -210,9 +213,9 @@ async fn settle_download(
     }
 }
 
-fn store(cache: &dyn AvatarCache, key: &AvatarKey, png: &[u8], now: Timestamp) {
+fn store(cache: &dyn AvatarCache, key: &AvatarKey, png: Vec<u8>, now: Timestamp) {
     let entry = CachedAvatar {
-        png: png.to_vec(),
+        png,
         stored_at: now,
     };
     if let Err(error) = cache.write(key, &entry) {

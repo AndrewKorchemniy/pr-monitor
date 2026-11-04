@@ -86,8 +86,8 @@ pub(super) fn assert_still(seen: &[Marks], what: &str) {
 
 /// Every title is where the first one was, whatever the rest of the dialog did.
 pub(super) fn assert_title_still(seen: &[Marks], what: &str) {
+    let first = seen[0].title_top;
     for (frame, mark) in seen.iter().enumerate() {
-        let first = seen[0].title_top;
         assert_eq!(mark.title_top, first, "{what}: frame {frame} of {seen:?}");
     }
 }
@@ -122,8 +122,13 @@ pub(super) fn windows() -> impl Iterator<Item = (egui::Vec2, f32)> {
         .flat_map(|size| [1.0, 1.25, 1.5].map(|scale| (size, scale)))
 }
 
+/// The scope search's placeholder for the demo catalog the dialog tests run on.
+pub(super) fn scope_hint() -> String {
+    copy::search_scope(3, 10)
+}
+
 fn search_field<'h>(h: &'h Harness<'_, Fixture>) -> egui_kittest::Node<'h> {
-    field(h, &copy::search_scope(3, 10))
+    field(h, &scope_hint())
 }
 
 /// Filtering the repositories re-opens and re-closes projects, so the list changed height on

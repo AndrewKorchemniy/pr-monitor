@@ -4,9 +4,9 @@
 use eframe::egui;
 use prm_config::{
     Config, limits,
-    schema::{Corners, RendererPref, Tristate},
+    schema::{RendererPref, Tristate},
 };
-use prm_theme::{IssueLevel, registry::SYSTEM};
+use prm_theme::{Corners, IssueLevel, registry::SYSTEM};
 
 use crate::{
     actions::UiAction,
@@ -109,7 +109,8 @@ pub(crate) fn page(
     });
 }
 
-/// Theme files that failed to load or to pass the contrast checks.
+/// Theme problems (files that failed to load, failed contrast checks) and notes, each in its
+/// level's colour.
 fn issues(ui: &mut egui::Ui, theme: &crate::theme::UiTheme, issues: &[(IssueLevel, String)]) {
     for (level, issue) in issues {
         // why: an Info note (a retired key, say) is not a problem, so it stays quiet.

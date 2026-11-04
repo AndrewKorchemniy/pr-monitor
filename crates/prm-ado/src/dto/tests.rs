@@ -91,3 +91,13 @@ fn dto_blank_avatar_is_none() {
     .unwrap();
     assert_eq!(who.avatar(), None);
 }
+
+/// A blank `_links` href must not hide a usable `imageUrl`: the picture would never load.
+#[test]
+fn dto_blank_link_falls_back_to_image_url() {
+    let who: super::common::IdentityRefDto = serde_json::from_str(
+        r#"{ "id": "00000000-0000-4000-8000-000000000001", "imageUrl": "https://dev.azure.com/contoso/a", "_links": { "avatar": { "href": " " } } }"#,
+    )
+    .unwrap();
+    assert_eq!(who.avatar(), Some("https://dev.azure.com/contoso/a"));
+}

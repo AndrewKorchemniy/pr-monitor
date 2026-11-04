@@ -145,7 +145,7 @@ fn step_keys(
 }
 
 /// The editor a slider value is being typed in, left in egui's data for `value_edit_active`.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 struct ActiveEditor(egui::Id);
 
 /// Whether a slider's value is being typed, so Esc belongs to the editor (it cancels the edit)

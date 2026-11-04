@@ -191,7 +191,7 @@ impl AdoClient {
             let outcome = match self.transport.send(request).await {
                 Ok(response) => {
                     self.gate.observe(&response.headers);
-                    classify(&method, response, (can_retry, refreshed), expect)
+                    classify(&method, response, can_retry, refreshed, expect)
                 }
                 Err(e) => transport_outcome(e, can_retry),
             };
@@ -291,21 +291,13 @@ fn transport_outcome(error: TransportError, can_retry: bool) -> Outcome {
 fn classify(
     method: &Method,
     response: HttpResponse,
-    (can_retry, refreshed): (bool, bool),
+    can_retry: bool,
+    refreshed: bool,
     expect: Expect,
 ) -> Outcome {
     let status = response.status.as_u16();
     match status {
-        200..=299 => {
-            let expects_body = *method != Method::HEAD && status != 204;
-            if expects_body && !has_expected_type(&response.headers, expect) {
-                // A 203 with an HTML sign-in page, or any success of the wrong type: the token
-                // was not accepted.
-                Outcome::Fail(AuthError::SignInPageReturned.into())
-            } else {
-                Outcome::Done(response)
-            }
-        }
+        200..=299 => classify_success(method, response, expect),
         // Redirects are disabled; for JSON one means a sign-in redirect.
         300..=399 if expect == Expect::Json => Outcome::Fail(AuthError::SignInPageReturned.into()),
         401 if !refreshed => Outcome::RefreshAuth {
@@ -349,6 +341,18 @@ fn classify(
                 activity: activity_id(&response.headers),
             })
         }
+    }
+}
+
+/// A 2xx response is done, unless it should carry a body of the wrong type.
+fn classify_success(method: &Method, response: HttpResponse, expect: Expect) -> Outcome {
+    let expects_body = *method != Method::HEAD && response.status.as_u16() != 204;
+    if expects_body && !has_expected_type(&response.headers, expect) {
+        // A 203 with an HTML sign-in page, or any success of the wrong type: the token
+        // was not accepted.
+        Outcome::Fail(AuthError::SignInPageReturned.into())
+    } else {
+        Outcome::Done(response)
     }
 }
 

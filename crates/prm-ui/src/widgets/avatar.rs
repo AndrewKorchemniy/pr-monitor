@@ -1,6 +1,6 @@
 //! A person's picture as a circle: their Azure DevOps avatar when one has loaded, otherwise
 //! their initials on a colour chosen from their id. Reviewer and group chips reuse
-//! `paint_avatar` and `face`.
+//! `paint_avatar`.
 
 use eframe::egui::{self, Align2, FontId, Pos2, Rect, Sense, Stroke, TextureId, vec2};
 use prm_domain::{

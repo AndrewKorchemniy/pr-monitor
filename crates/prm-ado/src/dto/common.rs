@@ -47,14 +47,15 @@ pub(crate) struct IdentityRefDto {
 }
 
 impl IdentityRefDto {
-    /// The avatar address as sent: `_links.avatar.href`, else `imageUrl`. Not yet trusted.
+    /// The avatar address as sent: the first non-blank of `_links.avatar.href` and `imageUrl`.
+    /// Not yet trusted.
     pub(crate) fn avatar(&self) -> Option<&str> {
         let linked = self.links.as_ref().and_then(|l| l.avatar.as_ref());
-        linked
-            .map(|a| a.href.as_str())
-            .or(self.image_url.as_deref())
+        [linked.map(|a| a.href.as_str()), self.image_url.as_deref()]
+            .into_iter()
+            .flatten()
             .map(str::trim)
-            .filter(|href| !href.is_empty())
+            .find(|href| !href.is_empty())
     }
 }
 

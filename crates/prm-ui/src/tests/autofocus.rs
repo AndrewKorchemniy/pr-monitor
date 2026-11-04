@@ -1,6 +1,6 @@
 //! Dialogs with a text input open with it focused, so the user can type at once. Focus is asked
-//! for once, when the field appears: a click elsewhere keeps it, and Esc still closes the dialog
-//! in one press.
+//! for once, when the field appears: a click elsewhere moves it away and it is not handed back,
+//! and Esc still closes the dialog in one press.
 
 use eframe::egui::{self, accesskit::Role};
 use egui_kittest::{
@@ -36,8 +36,7 @@ fn text_focused(h: &Harness<'_, Fixture>) -> bool {
 
 /// Whether the text input showing `placeholder` has the keyboard focus.
 fn focused_with(h: &Harness<'_, Fixture>, placeholder: &str) -> bool {
-    h.query_by(|n| n.data().placeholder() == Some(placeholder))
-        .is_some_and(|node| node.is_focused())
+    dialogs::field(h, placeholder).is_focused()
 }
 
 /// Types `text` as the keyboard would, to whatever has the focus.
@@ -64,7 +63,7 @@ fn every_dialog_with_a_text_input_opens_with_it_focused() {
         assert!(focused_with(&h, copy::ORG_URL_HINT), "the add-org field");
     }
     for h in open(|| settings_fixture(Editor::Repositories)) {
-        let hint = copy::search_scope(3, 10);
+        let hint = dialogs::scope_hint();
         assert!(focused_with(&h, &hint), "the scope search");
     }
     for h in open(|| settings_fixture(Editor::Reviewers)) {
@@ -136,12 +135,15 @@ fn esc_closes_a_dialog_in_one_press() {
     assert_eq!(h.state().settings.editing, None, "reviewers, empty field");
 }
 
-/// The focus is asked for when the field appears, not every frame: a click elsewhere keeps it.
+/// The focus is asked for when the field appears, not every frame: a click elsewhere takes it,
+/// and it is not handed back.
 #[test]
 fn clicking_elsewhere_does_not_hand_the_focus_back() {
     let mut h = dialog_harness(shown(Shown::Token), ROOMY, 1.0);
-    let title = h.query_all_by_label(copy::PAT_TITLE).last();
-    title.expect("the title").click();
+    h.query_all_by_label(copy::PAT_TITLE)
+        .last()
+        .expect("the title")
+        .click();
     for _ in 0..3 {
         h.step();
     }
@@ -159,7 +161,7 @@ fn clicking_elsewhere_does_not_hand_the_focus_back() {
 /// takes the focus when it shows up, each time.
 #[test]
 fn the_scope_search_takes_the_focus_when_it_appears() {
-    let hint = copy::search_scope(3, 10);
+    let hint = dialogs::scope_hint();
     let mut h = dialog_harness(settings_fixture(Editor::Repositories), ROOMY, 1.0);
     assert!(focused_with(&h, &hint));
 

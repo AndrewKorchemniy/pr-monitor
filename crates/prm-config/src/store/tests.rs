@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, io};
 
 use prm_domain::testing::{PrBuilder, key, record};
+use prm_theme::Corners;
 
 use super::*;
 use crate::{
-    schema::Corners,
     state::{OrgPersisted, UiState},
     testing::MemoryRepo,
 };
@@ -62,12 +62,14 @@ fn load_with_retired_density_key() {
     assert!(paths.config.exists(), "the file was not moved aside");
 }
 
-fn corners_loaded_from(ui: &str) -> (Corners, bool) {
+/// The corners a config with this `[ui]` text loads with. It must load clean and writable.
+fn corners_loaded_from(ui: &str) -> Corners {
     let (_dir, paths) = temp_paths();
     std::fs::write(&paths.config, format!("schema_version = 1\n[ui]\n{ui}\n")).unwrap();
     let load = load_config(&paths);
     assert_eq!(load.issues, Vec::new(), "{ui}");
-    (load.config.ui.corners, load.read_only)
+    assert!(!load.read_only, "{ui}");
+    load.config.ui.corners
 }
 
 /// A config written before `ui.corners` keeps its look at the current schema: nothing to
@@ -76,28 +78,28 @@ fn corners_loaded_from(ui: &str) -> (Corners, bool) {
 fn a_config_without_corners_keeps_its_look() {
     assert_eq!(
         corners_loaded_from("theme = \"cyanotype\""),
-        (Corners::Square, false)
+        Corners::Square
     );
     assert_eq!(
         corners_loaded_from("theme = \"system\"\ntheme_dark = \"cyanotype\""),
-        (Corners::Square, false)
+        Corners::Square
     );
     assert_eq!(
         corners_loaded_from("theme = \"graphite\""),
-        (Corners::Rounded, false)
+        Corners::Rounded
     );
-    assert_eq!(corners_loaded_from(""), (Corners::Rounded, false));
+    assert_eq!(corners_loaded_from(""), Corners::Rounded);
 }
 
 #[test]
 fn an_explicit_corners_choice_wins_over_the_theme_rule() {
     assert_eq!(
         corners_loaded_from("theme = \"cyanotype\"\ncorners = \"rounded\""),
-        (Corners::Rounded, false)
+        Corners::Rounded
     );
     assert_eq!(
         corners_loaded_from("theme = \"vellum\"\ncorners = \"square\""),
-        (Corners::Square, false)
+        Corners::Square
     );
 }
 

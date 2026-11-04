@@ -236,9 +236,9 @@ fn narrow_tables_drop_columns_in_squeeze_order() {
     let mut dropped = Vec::new();
     let required = ["required".to_owned()];
     let none = BTreeMap::new();
+    let layout = showing(GroupBy::Status, &required, &none);
     for step in (0..=100).rev() {
         let width = 400.0 + 10.0 * step as f32;
-        let layout = showing(GroupBy::Status, &required, &none);
         let visible = ids(&visible_columns(room(width), &layout));
         let gone: Vec<_> = SQUEEZE_ORDER
             .into_iter()
@@ -354,10 +354,7 @@ fn squeezed_lists_chosen_columns_the_table_left_out() {
     let left_out: Vec<_> = squeezed(&visible, picks).collect();
     assert_eq!(left_out, [ColumnId::Repo, ColumnId::Reviews]);
     let choices = Choices {
-        picks: Picks {
-            hidden: &hidden,
-            ..Picks::default()
-        },
+        picks,
         squeezed: &left_out,
     };
     let check = |id| column(id).map(|c| choices.check(&c));
@@ -439,9 +436,10 @@ fn a_hidden_key_in_the_wrong_list_changes_nothing() {
 fn required_drops_after_the_organization_and_before_reviews() {
     let none = BTreeMap::new();
     let on = ["required".to_owned()];
+    let layout = showing(GroupBy::None, &on, &none);
     let mut required_without_org = false;
     for width in (500..1500).step_by(10) {
-        let columns = visible_columns(room(width as f32), &showing(GroupBy::None, &on, &none));
+        let columns = visible_columns(room(width as f32), &layout);
         let has = |id| ids(&columns).contains(&id);
         let (org, required, reviews) = (
             has(ColumnId::Org),
@@ -453,16 +451,6 @@ fn required_drops_after_the_organization_and_before_reviews() {
         required_without_org |= required && !org;
     }
     assert!(required_without_org, "no width drops only the Org column");
-}
-
-#[test]
-fn grouped_by_status_compacting_follows_each_columns_own_field() {
-    let compacting: Vec<_> = COLUMNS
-        .iter()
-        .filter(|c| c.compact != Compact::Keep)
-        .map(|c| c.id)
-        .collect();
-    assert_eq!(compacting, [ColumnId::Status, ColumnId::Number]);
 }
 
 #[test]

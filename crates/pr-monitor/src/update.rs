@@ -22,7 +22,7 @@ use velopack::{
 };
 
 /// What the Velopack hooks learned before our own startup began.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) struct Boot {
     /// Velopack just restarted this process after applying an update. A pending update is then
     /// not applied again, so a package that cannot be applied can never loop.

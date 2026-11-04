@@ -32,7 +32,8 @@ echo "$line"
 [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "$line" >> "$GITHUB_STEP_SUMMARY"
 [ "$size" -le "$max_bytes" ] || { echo "::error::binary exceeds size budget"; exit 1; }
 
-needed=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n 1 || true)
+symbols=$(objdump -T "$bin")
+needed=$(grep -o 'GLIBC_[0-9][0-9.]*' <<<"$symbols" | sed 's/^GLIBC_//' | sort -V | tail -n 1 || true)
 echo "highest glibc symbol version needed: ${needed:-none} (floor $max_glibc)"
 if [ -n "$needed" ] && [ "$(printf '%s\n%s\n' "$needed" "$max_glibc" | sort -V | tail -n 1)" != "$max_glibc" ]; then
   echo "::error::needs glibc $needed, above the $max_glibc floor promised in the README"; exit 1

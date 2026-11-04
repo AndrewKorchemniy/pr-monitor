@@ -127,29 +127,23 @@ fn marks_in(room: f32) -> usize {
 }
 
 /// The vote's glyph on the bottom-right corner of an avatar's `rect`, on a disc in the canvas
-/// colour so it stays readable over any picture. No glyph for a vote that has none.
+/// colour so it stays readable over any picture. A vote with no glyph (no review yet) is an
+/// empty ring in its place.
 pub(crate) fn paint_vote_badge(
     painter: &egui::Painter,
     theme: &UiTheme,
     rect: egui::Rect,
     vote: VoteKind,
 ) {
-    let Some(icon) = vote_icon(vote) else {
-        return;
-    };
     let center = badge_center(rect);
     painter.circle_filled(center, BADGE_DISC / 2.0, theme.colors.surface_canvas);
-    let glyph = egui::Rect::from_center_size(center, vec2(BADGE, BADGE));
-    crate::theme::icons::paint(painter, glyph, icon, vote_color(theme, vote));
-}
-
-/// An empty ring where the vote's glyph would go: no review yet.
-pub(crate) fn paint_pending_badge(painter: &egui::Painter, theme: &UiTheme, rect: egui::Rect) {
-    let center = badge_center(rect);
-    let radius = BADGE_DISC / 2.0;
-    painter.circle_filled(center, radius, theme.colors.surface_canvas);
-    let ring = egui::Stroke::new(1.0, theme.colors.vote_none);
-    painter.circle_stroke(center, radius - ring.width / 2.0, ring);
+    if let Some(icon) = vote_icon(vote) {
+        let glyph = egui::Rect::from_center_size(center, vec2(BADGE, BADGE));
+        crate::theme::icons::paint(painter, glyph, icon, vote_color(theme, vote));
+    } else {
+        let ring = egui::Stroke::new(1.0, theme.colors.vote_none);
+        painter.circle_stroke(center, BADGE_DISC / 2.0 - ring.width / 2.0, ring);
+    }
 }
 
 /// Where the badge sits: the bottom-right corner of an avatar's `rect`.
@@ -158,7 +152,7 @@ fn badge_center(rect: egui::Rect) -> egui::Pos2 {
 }
 
 /// "Ana: Approved · Ben: Waiting for author".
-pub(crate) fn tooltip(reviewers: &[ReviewerChip]) -> String {
+fn tooltip(reviewers: &[ReviewerChip]) -> String {
     voters(reviewers)
         .map(|r| format!("{}: {}", r.name, copy::vote_word(r.vote)))
         .collect::<Vec<_>>()

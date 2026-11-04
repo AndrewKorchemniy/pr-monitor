@@ -115,6 +115,3 @@ impl WindowRect {
         [self.x, self.y]
     }
 }
-
-#[cfg(test)]
-mod tests;

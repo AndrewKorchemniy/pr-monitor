@@ -197,11 +197,6 @@ impl FakeOrgAuth {
         *lock(&self.sign_in) = result;
     }
 
-    pub fn with_sign_in_delay(self, delay: Duration) -> Self {
-        self.set_sign_in_delay(Some(delay));
-        self
-    }
-
     /// Later sign-ins wait this long (or until cancelled) before answering.
     pub fn set_sign_in_delay(&self, delay: Option<Duration>) {
         *lock(&self.sign_in_delay) = delay;
@@ -210,10 +205,6 @@ impl FakeOrgAuth {
     /// How many times `sign_in` was called (any method).
     pub fn sign_ins(&self) -> usize {
         self.sign_ins.load(Ordering::SeqCst)
-    }
-
-    pub fn set_snapshot(&self, snapshot: AuthSnapshot) {
-        *lock(&self.snapshot) = snapshot;
     }
 
     pub fn stored_pats(&self) -> Vec<String> {

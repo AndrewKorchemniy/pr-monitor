@@ -121,8 +121,9 @@ fn required_groups(ui: &mut egui::Ui, cx: &FrameCx<'_>, theme: &UiTheme, pr: &Pr
             );
             paint_group(ui, theme, cx.avatars, group, rect);
             let state = copy::group_state(group);
-            let status = format!("{}: {state}", group.name);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &status));
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Image, true, copy::group_status(group))
+            });
             ui.label(RichText::new(group.name.as_ref()).color(theme.colors.text_primary));
             widgets::muted(ui, theme, &state);
         });
