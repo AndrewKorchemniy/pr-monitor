@@ -15,6 +15,7 @@ pub(crate) mod people_picker;
 pub(crate) mod pr_cards;
 pub(crate) mod pr_table;
 pub(crate) mod progress;
+pub(crate) mod required_groups;
 pub(crate) mod scope_picker;
 pub(crate) mod slider;
 pub(crate) mod status_bar;

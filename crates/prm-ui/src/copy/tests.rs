@@ -1,6 +1,11 @@
 use eframe::egui;
 use prm_domain::{
-    PrStatus, classify::VoteTally, diff::ChangeKind, model::VoteKind, testing::person,
+    PrStatus,
+    classify::VoteTally,
+    diff::ChangeKind,
+    model::VoteKind,
+    testing::person,
+    view::{GroupChip, GroupVoter},
 };
 
 use super::*;
@@ -38,6 +43,67 @@ fn reviewed_tooltip_lists_only_present_votes() {
         status_tooltip(PrStatus::ActiveComments, tally, 1),
         "1 open thread waiting on the author."
     );
+}
+
+fn group(vote: VoteKind, via: &[(&str, bool)]) -> GroupChip {
+    GroupChip {
+        name: "IPCO Repo Approver - CF".into(),
+        initials: "IR".into(),
+        avatar: prm_domain::AvatarKey::new(prm_domain::testing::org("contoso"), person(9, "G").id),
+        vote,
+        declined: false,
+        via: via
+            .iter()
+            .map(|(name, is_author)| GroupVoter {
+                name: (*name).into(),
+                is_author: *is_author,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn a_required_group_reads_by_its_vote_and_who_approved() {
+    let cases = [
+        (group(VoteKind::NoVote, &[]), "no review yet"),
+        (group(VoteKind::Approved, &[]), "approved"),
+        (
+            group(VoteKind::Approved, &[("Kevin Haro", false)]),
+            "approved via Kevin Haro",
+        ),
+        (
+            group(VoteKind::Approved, &[("Kevin Haro", true)]),
+            "approved via Kevin Haro (PR author)",
+        ),
+        (
+            group(
+                VoteKind::ApprovedWithSuggestions,
+                &[("A", false), ("B", false)],
+            ),
+            "approved with suggestions via A and B",
+        ),
+        (
+            group(
+                VoteKind::WaitingForAuthor,
+                &[("A", false), ("B", false), ("C", false)],
+            ),
+            "waiting for author via A, B and 1 more",
+        ),
+        (group(VoteKind::Rejected, &[("A", false)]), "rejected via A"),
+    ];
+    for (chip, expected) in cases {
+        assert_eq!(group_state(&chip), expected);
+    }
+    let chip = group(VoteKind::Approved, &[("Kevin Haro", false)]);
+    assert_eq!(
+        group_status(&chip),
+        "IPCO Repo Approver - CF: approved via Kevin Haro"
+    );
+    let declined = GroupChip {
+        declined: true,
+        ..group(VoteKind::NoVote, &[])
+    };
+    assert_eq!(group_state(&declined), "declined");
 }
 
 #[test]

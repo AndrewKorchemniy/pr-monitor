@@ -319,7 +319,7 @@ fn with_cards_the_checklist_reads_every_chosen_column_as_left_out() {
     h.run();
     let choices = h.state().dash.view.column_choices();
     for column in columns::listed() {
-        let expected = if column.key == "reviews" {
+        let expected = if column.key == "reviews" || column.key == "required" {
             ColumnCheck::Off
         } else {
             ColumnCheck::Squeezed

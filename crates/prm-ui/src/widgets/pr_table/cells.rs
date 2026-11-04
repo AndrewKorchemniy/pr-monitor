@@ -14,6 +14,7 @@ use crate::{
     view::columns::{ColumnId, ColumnSpec, FLAG_SLOT},
     widgets::{
         avatar::{AvatarFace, avatar},
+        required_groups::required_groups,
         status_pill::status_pill,
         vote_tally::vote_tally,
     },
@@ -54,6 +55,9 @@ pub(super) fn cell(
         ColumnId::Author => author_cell(ui, rcx, pr),
         ColumnId::Reviews => {
             vote_tally(ui, theme, rcx.frame.avatars, &pr.reviewers);
+        }
+        ColumnId::Required => {
+            required_groups(ui, theme, rcx.frame.avatars, &pr.required_groups);
         }
         ColumnId::Comments => comments_cell(ui, theme, pr),
         ColumnId::Age => {

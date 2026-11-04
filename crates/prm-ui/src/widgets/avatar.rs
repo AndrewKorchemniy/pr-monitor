@@ -3,7 +3,10 @@
 //! `paint_avatar` and `face`.
 
 use eframe::egui::{self, Align2, FontId, Pos2, Rect, Sense, Stroke, TextureId, vec2};
-use prm_domain::{avatar::AvatarKey, view::ReviewerChip};
+use prm_domain::{
+    avatar::AvatarKey,
+    view::{GroupChip, ReviewerChip},
+};
 
 use crate::{
     avatars::AvatarStore,
@@ -28,6 +31,15 @@ impl<'a> AvatarFace<'a> {
             key: &reviewer.avatar,
             initials: &reviewer.initials,
             name: &reviewer.name,
+        }
+    }
+
+    /// A required group's face.
+    pub(crate) fn of_group(group: &'a GroupChip) -> Self {
+        Self {
+            key: &group.avatar,
+            initials: &group.initials,
+            name: &group.name,
         }
     }
 }

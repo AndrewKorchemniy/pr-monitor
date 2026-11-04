@@ -160,6 +160,15 @@ impl PrBuilder {
         self.push_reviewer(who, vote, false, &[])
     }
 
+    /// A required team reviewer entry with its rolled-up vote.
+    pub fn required_group(mut self, who: Person, vote: i16) -> Self {
+        self = self.group_reviewer(who, vote);
+        if let Some(last) = self.pr.reviewers.last_mut() {
+            last.required = true;
+        }
+        self
+    }
+
     /// An individual whose vote rolls up into the given group ids.
     pub fn reviewer_for(self, who: Person, vote: i16, groups: &[u128]) -> Self {
         self.push_reviewer(who, vote, false, groups)

@@ -160,6 +160,13 @@ pub struct Reviewer {
     pub voted_for: Vec<Vsid>,
 }
 
+impl Reviewer {
+    /// Whether this reviewer's vote rolls up into `group`.
+    pub fn votes_for(&self, group: Vsid) -> bool {
+        self.voted_for.contains(&group)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullRequest {
     pub key: PrKey,

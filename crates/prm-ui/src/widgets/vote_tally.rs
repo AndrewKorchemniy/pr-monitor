@@ -54,7 +54,24 @@ pub(crate) fn vote_tally(
     avatars: &AvatarStore,
     reviewers: &[ReviewerChip],
 ) -> egui::Response {
-    let total = voters(reviewers).count();
+    let mut voted = voters(reviewers);
+    let response = marks(ui, theme, voters(reviewers).count(), |ui, face_rect| {
+        if let Some(reviewer) = voted.next() {
+            paint_avatar(ui, theme, avatars, &AvatarFace::of(reviewer), face_rect);
+            paint_vote_badge(ui.painter(), theme, face_rect, reviewer.vote);
+        }
+    });
+    describe(response, &tooltip(reviewers))
+}
+
+/// `total` avatar-sized marks in a row, as many as fit and at most `MAX_MARKS`, the rest as
+/// "+N". `paint` draws the next mark into the rect it is given, in order.
+pub(crate) fn marks(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    total: usize,
+    mut paint: impl FnMut(&egui::Ui, egui::Rect),
+) -> egui::Response {
     let extra_galley = |extra: usize| {
         ui.painter().layout_no_wrap(
             format!("+{extra}"),
@@ -75,12 +92,9 @@ pub(crate) fn vote_tally(
         ui.allocate_exact_size(vec2(width, ui.available_height()), Sense::hover());
     if ui.is_rect_visible(rect) {
         let mut x = rect.left();
-        for reviewer in voters(reviewers).take(shown) {
+        for _ in 0..shown {
             let at = egui::pos2(x, rect.center().y - AVATAR / 2.0);
-            let face = AvatarFace::of(reviewer);
-            let face_rect = egui::Rect::from_min_size(at, vec2(AVATAR, AVATAR));
-            paint_avatar(ui, theme, avatars, &face, face_rect);
-            paint_vote_badge(ui.painter(), theme, face_rect, reviewer.vote);
+            paint(ui, egui::Rect::from_min_size(at, vec2(AVATAR, AVATAR)));
             x += STEP;
         }
         if let Some(galley) = galley {
@@ -88,13 +102,17 @@ pub(crate) fn vote_tally(
             ui.painter().galley(pos, galley, theme.colors.text_muted);
         }
     }
-    let summary = tooltip(reviewers);
+    response
+}
+
+/// Explains `response` on hover and to screen readers; nothing when `summary` is empty.
+pub(crate) fn describe(response: egui::Response, summary: &str) -> egui::Response {
     let response = if summary.is_empty() {
         response
     } else {
-        response.on_hover_text(&summary)
+        response.on_hover_text(summary)
     };
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &summary));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, summary));
     response
 }
 
@@ -119,10 +137,24 @@ pub(crate) fn paint_vote_badge(
     let Some(icon) = vote_icon(vote) else {
         return;
     };
-    let center = rect.right_bottom() - vec2(BADGE_DISC, BADGE_DISC) / 2.0 + vec2(2.0, 2.0);
+    let center = badge_center(rect);
     painter.circle_filled(center, BADGE_DISC / 2.0, theme.colors.surface_canvas);
     let glyph = egui::Rect::from_center_size(center, vec2(BADGE, BADGE));
     crate::theme::icons::paint(painter, glyph, icon, vote_color(theme, vote));
+}
+
+/// An empty ring where the vote's glyph would go: no review yet.
+pub(crate) fn paint_pending_badge(painter: &egui::Painter, theme: &UiTheme, rect: egui::Rect) {
+    let center = badge_center(rect);
+    let radius = BADGE_DISC / 2.0;
+    painter.circle_filled(center, radius, theme.colors.surface_canvas);
+    let ring = egui::Stroke::new(1.0, theme.colors.vote_none);
+    painter.circle_stroke(center, radius - ring.width / 2.0, ring);
+}
+
+/// Where the badge sits: the bottom-right corner of an avatar's `rect`.
+fn badge_center(rect: egui::Rect) -> egui::Pos2 {
+    rect.right_bottom() - vec2(BADGE_DISC, BADGE_DISC) / 2.0 + vec2(2.0, 2.0)
 }
 
 /// "Ana: Approved · Ben: Waiting for author".

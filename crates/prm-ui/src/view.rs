@@ -21,7 +21,7 @@ use prm_domain::{
 
 use crate::view::{
     anchor::{AnchorResult, capture, restore},
-    columns::{Choices, ColumnId, Visibility},
+    columns::{Choices, ColumnId, Picks, Visibility},
     display::{DisplayList, DisplayRow, Pitch, build_display, group_id},
 };
 
@@ -60,6 +60,8 @@ pub(crate) struct DashboardView {
     pub keyboard_nav: bool,
     pub widths: BTreeMap<String, f32>,
     pub hidden_columns: Vec<String>,
+    /// Keys of columns that start hidden which the user turned on.
+    pub shown_columns: Vec<String>,
     pub offset_y: f32,
     pub top_visible: Option<usize>,
     /// How far apart the list drew its rows last frame (table rows, or cards and headers).
@@ -97,6 +99,7 @@ impl DashboardView {
             keyboard_nav: false,
             widths: ui.columns.clone(),
             hidden_columns: ui.hidden_columns.clone(),
+            shown_columns: ui.shown_columns.clone(),
             offset_y: 0.0,
             top_visible: None,
             pitch: Pitch::uniform(row_pitch),
@@ -226,17 +229,30 @@ impl DashboardView {
         if column.visibility() != Visibility::Optional {
             return;
         }
-        if let Some(at) = self.hidden_columns.iter().position(|k| k == column.key) {
-            self.hidden_columns.remove(at);
+        let changed = if column.default_visible {
+            &mut self.hidden_columns
         } else {
-            self.hidden_columns.push(column.key.to_owned());
+            &mut self.shown_columns
+        };
+        if let Some(at) = changed.iter().position(|k| k == column.key) {
+            changed.remove(at);
+        } else {
+            changed.push(column.key.to_owned());
+        }
+    }
+
+    /// What the user changed from the columns' defaults.
+    pub(crate) fn picks(&self) -> Picks<'_> {
+        Picks {
+            hidden: &self.hidden_columns,
+            shown: &self.shown_columns,
         }
     }
 
     /// What the column menu and the settings checklist show.
     pub(crate) fn column_choices(&self) -> Choices<'_> {
         Choices {
-            hidden: &self.hidden_columns,
+            picks: self.picks(),
             squeezed: &self.squeezed,
         }
     }
@@ -476,6 +492,7 @@ impl DashboardView {
     pub(crate) fn reset_columns(&mut self) {
         self.widths.clear();
         self.hidden_columns.clear();
+        self.shown_columns.clear();
         self.table_epoch = self.table_epoch.wrapping_add(1);
     }
 
@@ -488,6 +505,7 @@ impl DashboardView {
         ui.selected.clone_from(&self.selected);
         ui.columns.clone_from(&self.widths);
         ui.hidden_columns.clone_from(&self.hidden_columns);
+        ui.shown_columns.clone_from(&self.shown_columns);
     }
 
     /// Whether `write_ui_state` would change `ui`, compared in place (runs every frame).
@@ -499,6 +517,7 @@ impl DashboardView {
             || ui.selected != self.selected
             || ui.columns != self.widths
             || ui.hidden_columns != self.hidden_columns
+            || ui.shown_columns != self.shown_columns
     }
 }
 

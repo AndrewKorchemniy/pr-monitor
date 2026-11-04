@@ -130,6 +130,47 @@ fn toggling_a_column_hides_and_shows_it_but_never_a_locked_one() {
 }
 
 #[test]
+fn a_column_that_starts_hidden_is_recorded_in_its_own_list() {
+    let mut v = view(GroupBy::None);
+    v.toggle_column(ColumnId::Required);
+    assert_eq!(v.shown_columns, ["required"]);
+    assert_eq!(v.hidden_columns, Vec::<String>::new());
+    let mut ui = UiState::default();
+    v.write_ui_state(&mut ui);
+    assert_eq!(ui.shown_columns, ["required"]);
+    assert!(!v.differs_from(&ui));
+    v.toggle_column(ColumnId::Required);
+    assert_eq!(v.shown_columns, Vec::<String>::new());
+    assert!(v.differs_from(&ui));
+}
+
+#[test]
+fn resetting_the_columns_clears_both_lists() {
+    let mut v = view(GroupBy::None);
+    v.toggle_column(ColumnId::Required);
+    v.toggle_column(ColumnId::Author);
+    v.reset_columns();
+    assert!(v.shown_columns.is_empty() && v.hidden_columns.is_empty());
+}
+
+/// A `state.json` from before the Required column holds no `shown_columns`: its saved choices
+/// stay and the new column is off.
+#[test]
+fn saved_column_choices_from_an_older_state_file_carry_over() {
+    let ui = UiState {
+        hidden_columns: vec!["author".to_owned()],
+        ..UiState::default()
+    };
+    let v = DashboardView::new(&ui, sample_rows(), 1, 24.0);
+    assert_eq!(v.hidden_columns, ["author"]);
+    assert_eq!(v.shown_columns, Vec::<String>::new());
+    let chosen = |id| columns::chosen(&columns::column(id).unwrap(), v.picks());
+    assert!(!chosen(ColumnId::Author));
+    assert!(chosen(ColumnId::Reviews));
+    assert!(!chosen(ColumnId::Required));
+}
+
+#[test]
 fn a_dragged_width_stays_until_reset() {
     let mut v = view(GroupBy::None);
     v.set_column_width("repo", Some(210.0));

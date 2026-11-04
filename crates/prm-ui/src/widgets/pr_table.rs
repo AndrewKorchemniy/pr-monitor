@@ -135,7 +135,7 @@ fn column_layout(view: &DashboardView, show_org: bool) -> ColumnLayout<'_> {
     ColumnLayout {
         group: view.group,
         show_org,
-        hidden: &view.hidden_columns,
+        picks: view.picks(),
         widths: &view.widths,
     }
 }
@@ -149,9 +149,7 @@ fn table_columns(
 ) -> (Vec<ColumnSpec>, Room) {
     let room = table_room(ui.spacing(), theme, ui.available_width());
     let visible = visible_columns(room, &column_layout(view, show_org));
-    view.squeezed.clear();
-    view.squeezed
-        .extend(columns::squeezed(&visible, &view.hidden_columns));
+    view.squeezed = columns::squeezed(&visible, view.picks()).collect();
     (visible, room)
 }
 

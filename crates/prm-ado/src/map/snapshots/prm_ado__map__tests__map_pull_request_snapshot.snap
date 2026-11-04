@@ -86,6 +86,30 @@ expression: "prs()[0]"
       "declined": true,
       "flagged": false,
       "voted_for": []
+    },
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000060",
+        "name": "[Payments]\\Release Approvers",
+        "group": true
+      },
+      "vote": 0,
+      "required": true,
+      "declined": false,
+      "flagged": false,
+      "voted_for": []
+    },
+    {
+      "who": {
+        "id": "00000000-0000-4000-8000-000000000061",
+        "name": "[Payments]\\Security Reviewers",
+        "group": true
+      },
+      "vote": -5,
+      "required": true,
+      "declined": false,
+      "flagged": false,
+      "voted_for": []
     }
   ],
   "web_url": "https://dev.azure.com/contoso/Payments/_git/web%20app/pullrequest/22"

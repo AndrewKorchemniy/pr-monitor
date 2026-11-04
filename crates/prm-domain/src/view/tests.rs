@@ -1,8 +1,8 @@
 use super::*;
 use crate::{
     classify::PrStatus,
-    model::PrRecord,
-    testing::{BASE_TIME_SECS, PrBuilder, ThreadBuilder, key, person, record, rows, ts},
+    model::{PrRecord, PullRequest, VoteKind},
+    testing::{BASE_TIME_SECS, PrBuilder, ThreadBuilder, group, key, person, record, rows, ts},
 };
 
 const REVIEWER: u128 = 2;
@@ -324,4 +324,96 @@ fn build_rows_name_each_face_by_org_and_person() {
     assert_eq!(chip.avatar.id, crate::Vsid::from_u128(REVIEWER));
     assert_eq!(chip.avatar.org, row.key.org);
     assert_eq!(&*chip.initials, "R");
+}
+
+fn groups_of(pr: PullRequest) -> Vec<GroupChip> {
+    let rows = rows(&[record(pr, vec![])], &[]);
+    rows[0].required_groups.to_vec()
+}
+
+fn via(chip: &GroupChip) -> Vec<(&str, bool)> {
+    chip.via.iter().map(|v| (&*v.name, v.is_author)).collect()
+}
+
+const GROUP: u128 = 50;
+
+fn with_group(vote: i16) -> PrBuilder {
+    PrBuilder::new(key("contoso", 1, 1))
+        .author(person(1, "Ann Bell"))
+        .required_group(group(GROUP, "Repo Approvers"), vote)
+}
+
+#[test]
+fn required_groups_name_the_members_who_approved() {
+    let pr = with_group(10)
+        .reviewer_for(person(3, "Kevin Haro"), 10, &[GROUP])
+        .reviewer_for(person(4, "Abe Cole"), 10, &[GROUP])
+        .reviewer_for(person(5, "Zed Wu"), 10, &[GROUP + 1])
+        .build();
+    let chips = groups_of(pr);
+    assert_eq!(chips.len(), 1);
+    assert_eq!(&*chips[0].name, "Repo Approvers");
+    assert_eq!(chips[0].vote, VoteKind::Approved);
+    assert_eq!(via(&chips[0]), [("Abe Cole", false), ("Kevin Haro", false)]);
+}
+
+#[test]
+fn required_groups_without_a_vote_have_no_approvers() {
+    let pr = with_group(0)
+        .reviewer_for(person(3, "Kevin Haro"), 10, &[GROUP])
+        .build();
+    let chips = groups_of(pr);
+    assert_eq!(chips[0].vote, VoteKind::NoVote);
+    assert!(chips[0].via.is_empty());
+}
+
+#[test]
+fn required_groups_keep_waiting_votes_apart_from_approvals() {
+    let pr = with_group(-5)
+        .reviewer_for(person(3, "Kevin Haro"), 10, &[GROUP])
+        .reviewer_for(person(4, "Abe Cole"), -5, &[GROUP])
+        .build();
+    let chips = groups_of(pr);
+    assert_eq!(chips[0].vote, VoteKind::WaitingForAuthor);
+    assert_eq!(via(&chips[0]), [("Abe Cole", false)]);
+}
+
+#[test]
+fn required_groups_flag_the_author_as_a_voter() {
+    let pr = with_group(10)
+        .reviewer_for(person(1, "Ann Bell"), 10, &[GROUP])
+        .build();
+    assert_eq!(via(&groups_of(pr)[0]), [("Ann Bell", true)]);
+}
+
+#[test]
+fn required_groups_with_a_trimmed_reviewer_list_have_no_names() {
+    let chips = groups_of(with_group(10).build());
+    assert_eq!(chips[0].vote, VoteKind::Approved);
+    assert!(chips[0].via.is_empty());
+}
+
+#[test]
+fn required_groups_skip_declined_members_and_mark_a_declined_group() {
+    let pr = with_group(10).declined(person(3, "Kevin Haro"), 10).build();
+    assert!(groups_of(pr)[0].via.is_empty());
+    let mut pr = with_group(10).build();
+    pr.reviewers[0].declined = true;
+    let chips = groups_of(pr);
+    assert!(chips[0].declined);
+    assert_eq!(chips[0].vote, VoteKind::NoVote);
+}
+
+#[test]
+fn required_groups_skip_optional_groups_and_required_people_and_sort_by_name() {
+    let mut pr = PrBuilder::new(key("contoso", 1, 1))
+        .author(person(1, "Ann Bell"))
+        .group_reviewer(group(60, "Optional Team"), 10)
+        .required_group(group(61, "zeta"), 0)
+        .required_group(group(62, "Alpha"), 0)
+        .reviewer(person(3, "Required Person"), 10)
+        .build();
+    pr.reviewers[3].required = true;
+    let names: Vec<_> = groups_of(pr).iter().map(|g| g.name.to_string()).collect();
+    assert_eq!(names, ["Alpha", "zeta"]);
 }

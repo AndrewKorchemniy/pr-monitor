@@ -29,7 +29,11 @@ use crate::{
     testing::demo::demo_avatars,
     theme::{ThemeRuntime, fonts},
     ui_state::PeekLayout,
-    view::{DashboardView, changes::ChangeLog, columns::Choices},
+    view::{
+        DashboardView,
+        changes::ChangeLog,
+        columns::{Choices, Picks},
+    },
     widgets::{
         modal::ModalOutcome,
         palette_view::{PaletteOutcome, palette_view},
@@ -196,7 +200,7 @@ pub(crate) fn env() -> SettingsEnv<'static> {
         licenses: "Third-party license text.",
         renderer_line: "Using OpenGL on Test GPU",
         columns: Choices {
-            hidden: &[],
+            picks: Picks::default(),
             squeezed: &[],
         },
     }
