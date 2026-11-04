@@ -18,15 +18,15 @@ use crate::{
 };
 
 /// The combobox: its keys act first (so the field never sees them), then the field and its
-/// dropdown are drawn. A pick keeps keyboard focus in the field for the next name. Returns the
-/// open dropdown's bottom edge, so the caller can make room for it.
+/// dropdown are drawn. A pick keeps keyboard focus in the field for the next name. The dropdown
+/// floats over what is under the field and takes no room.
 pub(super) fn search(
     ui: &mut egui::Ui,
     cx: &mut FrameCx<'_>,
     picker: &mut PeoplePicker,
     org: &OrgId,
     people: &mut Vec<Person>,
-) -> Option<f32> {
+) {
     let theme = cx.theme.clone();
     let field_id = egui::Id::unique(("people", picker.id));
     let popup_id = field_id.with("matches");
@@ -53,27 +53,29 @@ pub(super) fn search(
         vec2(width, response.rect.height()),
     );
     let popup = (popup_id, anchor, &response);
-    let (picked, bottom) = dropdown(ui, &theme, picker, popup, people);
-    if let Some(candidate) = picked {
+    if let Some(candidate) = dropdown(ui, &theme, picker, popup, people) {
         add(cx, picker, (org, people), &candidate);
         ui.memory_mut(|m| m.request_focus(field_id));
     }
-    bottom
 }
 
 /// Draws the field so that pressing on its open dropdown does not take the field's focus (as
-/// egui's own completion popup does).
+/// egui's own completion popup does). egui reads the setting only in the frame of a press, so
+/// that is the only frame it is changed.
 fn keep_focus<R>(
     ui: &mut egui::Ui,
     (popup, open): (egui::Id, bool),
     draw: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     let ctx = ui.ctx().clone();
+    if !open || !ctx.input(|i| i.pointer.any_pressed()) {
+        return draw(ui);
+    }
     let layer = egui::LayerId::new(egui::Order::Foreground, popup);
     let pointer_layer = ctx
         .pointer_interact_pos()
         .and_then(|pos| ctx.layer_id_at(pos));
-    if !open || pointer_layer != Some(layer) {
+    if pointer_layer != Some(layer) {
         return draw(ui);
     }
     let before = ctx.options(|o| o.input_options.surrender_focus_on);
@@ -144,14 +146,14 @@ fn keyed(picker: &mut PeoplePicker, keys: Keys, people: &[Person]) -> Option<Per
 }
 
 /// The dropdown under the field, as wide as it; returns a clicked match. A click anywhere
-/// else (the field included) closes it, so it never ends up under the dialog it belongs to.
+/// else (the field included) closes it.
 fn dropdown(
     ui: &egui::Ui,
     theme: &UiTheme,
     picker: &mut PeoplePicker,
     (id, anchor, field): (egui::Id, Rect, &egui::Response),
     people: &[Person],
-) -> (Option<PersonCandidate>, Option<f32>) {
+) -> Option<PersonCandidate> {
     if !picker.has_rows() {
         picker.close();
     }
@@ -175,24 +177,20 @@ fn dropdown(
                 .show(ui, |ui| rows(ui, theme, picker, people))
                 .inner
         });
-    let Some(shown) = shown else {
-        return (None, None);
-    };
+    let shown = shown?;
     // why: egui closes the popup itself on Esc when the field does not have the key.
     if shown.response.clicked_elsewhere() || !egui::Popup::is_id_open(ui.ctx(), id) {
         picker.close();
     }
-    (shown.inner, Some(shown.response.rect.bottom()))
+    shown.inner
 }
 
-/// The tallest the dropdown may get: down to where a dialog's action bar sits when the dialog
-/// fills the window, and never less than two rows.
+/// The tallest the dropdown may get: down to the margin a dialog keeps at the foot of the
+/// window, and never less than two rows.
 fn list_room(ui: &egui::Ui, theme: &UiTheme, anchor: Rect) -> f32 {
-    let window = ui.ctx().content_rect();
-    let bar = crate::widgets::modal::action_bar_height(theme);
-    let margin = fit::window_margin(window.height());
-    let room = window.bottom() - margin - bar - anchor.bottom() - controls::MENU_GAP;
-    room.max(2.0 * theme.control_height())
+    let window = ui.ctx().content_rect().height();
+    let below = fit::room_below(window, anchor.bottom(), fit::window_margin(window));
+    (below - controls::MENU_GAP).max(2.0 * theme.control_height())
 }
 
 /// The dropdown's lines: "Adding…" or why a pick failed, then the hint, the matches and how

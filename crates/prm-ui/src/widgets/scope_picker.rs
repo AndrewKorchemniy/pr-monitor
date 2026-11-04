@@ -35,6 +35,19 @@ const LIST_SURROUND: f32 = 400.0;
 /// full and the dialog's body (or the first-run page) is the one thing that scrolls.
 const LIST_BOX_FROM: f32 = 560.0;
 
+/// How the project list is boxed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ListBox {
+    /// As tall as its rows up to `LIST_HEIGHT` in a tall window, laid out in full in a short one.
+    Auto,
+    /// Exactly the height left in the dialog (below the search field), so the list can change
+    /// without the dialog changing; laid out in full when less than `MIN_FILL` is left.
+    Fill,
+}
+
+/// The least height (points) a `ListBox::Fill` list gets its own scrolling box at.
+const MIN_FILL: f32 = 120.0;
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ScopeFilter {
     pub text: String,
@@ -67,9 +80,9 @@ impl<'a> CatalogState<'a> {
 pub(crate) fn scope_picker(
     ui: &mut egui::Ui,
     theme: &UiTheme,
-    filter: &mut ScopeFilter,
-    catalog: CatalogState<'_>,
+    (filter, catalog): (&mut ScopeFilter, CatalogState<'_>),
     scope: &mut ScopeSpec,
+    list: ListBox,
 ) -> bool {
     let reload = header(ui, theme, catalog, scope);
     let CatalogState::Ready(catalog) = catalog else {
@@ -84,21 +97,34 @@ pub(crate) fn scope_picker(
     fields::text_field(ui, theme, &mut filter.text, &Field::new(id, &hint));
     ui.add_space(theme.tokens.metrics.space.sm);
     let needle = filter.text.trim().to_lowercase();
-    let window = ui.ctx().content_rect().height();
-    let list_box = (window >= LIST_BOX_FROM).then(|| (window - LIST_SURROUND).min(LIST_HEIGHT));
+    let list_box = list_height(ui, list);
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = theme.tokens.metrics.space.xxs;
         match list_box {
             Some(height) => {
                 egui::ScrollArea::vertical()
                     .max_height(height)
-                    .auto_shrink([false, true])
+                    .auto_shrink([false, list == ListBox::Auto])
                     .show(ui, |ui| project_list(ui, theme, catalog, &needle, scope));
             }
             None => project_list(ui, theme, catalog, &needle, scope),
         }
     });
     reload
+}
+
+/// The height of the list's own scrolling box, or `None` to lay the list out in full.
+fn list_height(ui: &egui::Ui, list: ListBox) -> Option<f32> {
+    match list {
+        ListBox::Auto => {
+            let window = ui.ctx().content_rect().height();
+            (window >= LIST_BOX_FROM).then(|| (window - LIST_SURROUND).min(LIST_HEIGHT))
+        }
+        ListBox::Fill => {
+            let left = ui.available_height().floor();
+            (left >= MIN_FILL).then_some(left)
+        }
+    }
 }
 
 /// "Watch all projects" with the refresh button at the right, and how many repositories are

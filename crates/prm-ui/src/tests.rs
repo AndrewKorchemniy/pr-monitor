@@ -23,6 +23,7 @@ use crate::{
 
 mod cards;
 mod dashboard;
+mod dialogs;
 mod gallery;
 mod people;
 mod small_windows;

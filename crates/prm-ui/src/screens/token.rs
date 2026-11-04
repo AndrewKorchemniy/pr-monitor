@@ -22,13 +22,9 @@ pub(crate) fn token_dialog(
     (input, error): (&mut String, Option<&str>),
 ) -> (ModalOutcome, bool) {
     let spec = ModalSpec {
-        id: "pat",
-        title: copy::PAT_TITLE,
         subtitle: Some(org),
         buttons: &[copy::SAVE_TOKEN, copy::CANCEL],
-        danger: false,
-        width: widgets::modal::WIDTH,
-        ..ModalSpec::default()
+        ..ModalSpec::new("pat", copy::PAT_TITLE)
     };
     let mut docs = false;
     let outcome = modal(ctx, theme, &spec, |ui| {

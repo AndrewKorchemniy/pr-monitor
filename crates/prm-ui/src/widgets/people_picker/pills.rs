@@ -21,8 +21,41 @@ const REMOVE_WIDTH: f32 = PILL_HEIGHT;
 /// The cross inside the remove button, in points.
 const REMOVE_GLYPH: f32 = 9.0;
 
+/// The most lines of pills `scrolling_chips` shows before the rest scroll.
+const MAX_PILL_ROWS: f32 = 3.0;
+
+/// The chosen people as `chips`, in a box that stops growing after `MAX_PILL_ROWS` lines and
+/// scrolls for the rest, so adding people never makes a dialog taller. `salt` tells this
+/// picker's box from another's on the same page; `show_last` scrolls to the end (a person was
+/// just added).
+pub(crate) fn scrolling_chips(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    people: &mut Vec<Person>,
+    (salt, show_last): (&str, bool),
+) {
+    let gap = theme.tokens.metrics.space.xs;
+    let tallest = MAX_PILL_ROWS * PILL_HEIGHT + (MAX_PILL_ROWS - 1.0) * gap;
+    // why: an overlay scrollbar, so the pills keep their width (and their line breaks) when
+    // the box starts to scroll.
+    ui.scope(|ui| {
+        ui.spacing_mut().scroll = crate::theme::adapter::floating_scroll();
+        egui::ScrollArea::vertical()
+            .id_salt(("pills", salt))
+            .max_height(tallest)
+            .auto_shrink([false, true])
+            .show(ui, |ui| wrapped(ui, theme, people, show_last));
+    });
+}
+
 /// The chosen people as compact pills that wrap onto more lines.
 pub(crate) fn chips(ui: &mut egui::Ui, theme: &UiTheme, people: &mut Vec<Person>) {
+    wrapped(ui, theme, people, false);
+}
+
+/// `chips`; with `show_last` the newest pill is scrolled into view, in this box and in any
+/// scroll area around it (a dialog's body in a short window).
+fn wrapped(ui: &mut egui::Ui, theme: &UiTheme, people: &mut Vec<Person>, show_last: bool) {
     let gap = theme.tokens.metrics.space.xs;
     let mut remove = None;
     ui.scope(|ui| {
@@ -31,7 +64,7 @@ pub(crate) fn chips(ui: &mut egui::Ui, theme: &UiTheme, people: &mut Vec<Person>
         ui.spacing_mut().interact_size.y = PILL_HEIGHT;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(gap, gap);
-            remove = pill_line(ui, theme, people);
+            remove = pill_line(ui, theme, people, show_last);
         });
     });
     if let Some(index) = remove {
@@ -40,10 +73,16 @@ pub(crate) fn chips(ui: &mut egui::Ui, theme: &UiTheme, people: &mut Vec<Person>
 }
 
 /// Each person's pill in order; the index of the one whose remove button was clicked.
-fn pill_line(ui: &mut egui::Ui, theme: &UiTheme, people: &[Person]) -> Option<usize> {
+fn pill_line(
+    ui: &mut egui::Ui,
+    theme: &UiTheme,
+    people: &[Person],
+    show_last: bool,
+) -> Option<usize> {
     let mut remove = None;
     for (index, person) in people.iter().enumerate() {
-        if pill(ui, theme, person) {
+        let show = show_last && index + 1 == people.len();
+        if pill(ui, theme, person, show) {
             remove = Some(index);
         }
     }
@@ -51,8 +90,9 @@ fn pill_line(ui: &mut egui::Ui, theme: &UiTheme, people: &[Person]) -> Option<us
 }
 
 /// One person: the name (and a muted group tag), then a remove button flush to the pill's
-/// right edge at its full height. True when the remove button was clicked.
-fn pill(ui: &mut egui::Ui, theme: &UiTheme, person: &Person) -> bool {
+/// right edge at its full height, scrolled into view when `show`. True when the remove button
+/// was clicked.
+fn pill(ui: &mut egui::Ui, theme: &UiTheme, person: &Person, show: bool) -> bool {
     let m = &theme.tokens.metrics;
     let c = &theme.colors;
     let font = theme.fonts.label.clone();
@@ -65,6 +105,9 @@ fn pill(ui: &mut egui::Ui, theme: &UiTheme, person: &Person) -> bool {
     let text_w = name_g.size().x + tag_g.as_ref().map_or(0.0, |g| g.size().x);
     let size = vec2(PILL_PAD + text_w + m.space.xs + REMOVE_WIDTH, PILL_HEIGHT);
     let (rect, label) = ui.allocate_exact_size(size, Sense::hover());
+    if show {
+        label.scroll_to_me(None);
+    }
     let button_rect = Rect::from_min_max(pos2(rect.right() - REMOVE_WIDTH, rect.top()), rect.max);
     let button = ui.interact(button_rect, label.id.with("remove"), Sense::click());
     paint_pill(ui, theme, (rect, button_rect), &button);
