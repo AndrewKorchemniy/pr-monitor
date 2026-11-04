@@ -13,7 +13,7 @@
   5. Copies only this build's files into -OutDir and filters releases.<rid>.json to this version.
   6. Runs verify-package.ps1 on the result.
 
-  Output files in -OutDir (names are vpk's; <id> = PRMonitor):
+  Output files in -OutDir (names are vpk's; <id> = pr-monitor):
     <id>-win-<arch>-Setup.exe, <id>-win-<arch>-Portable.zip   (Windows)
     <id>-linux-<arch>.AppImage                                (Linux)
     <id>-<version>-win-<arch>-full.nupkg, <id>-<version>-win-<arch>-delta.nupkg (when there is a previous release),

@@ -76,16 +76,16 @@ version a release-plz PR is about to release.
 
 ## What a release contains
 
-Built with [Velopack](https://velopack.io) (`vpk`), package id `PRMonitor`, per architecture
+Built with [Velopack](https://velopack.io) (`vpk`), package id `pr-monitor`, per architecture
 (`x64`, `arm64`). `<rid>` is `win-<arch>` or `linux-<arch>`.
 
 | Asset | What it is |
 |---|---|
-| `PRMonitor-win-<arch>-Setup.exe` | Per-user installer into `%LOCALAPPDATA%\PRMonitor`, no admin rights. `--silent` installs silently. |
-| `PRMonitor-win-<arch>-Portable.zip` | `PR Monitor.exe` (launcher), `Update.exe`, `current\pr-monitor.exe` and the licence files. |
-| `PRMonitor-linux-<arch>.AppImage` | Linux (preview): self-updating AppImage; no installer, uninstall hook or zip. |
-| `PRMonitor-<version>-<rid>-full.nupkg` | The update package (on Linux it holds the AppImage). |
-| `PRMonitor-<version>-<rid>-delta.nupkg` | Patch from the previous published release (absent for the first release on a channel). |
+| `pr-monitor-win-<arch>-Setup.exe` | Per-user installer into `%LOCALAPPDATA%\pr-monitor`, no admin rights. `--silent` installs silently. |
+| `pr-monitor-win-<arch>-Portable.zip` | `PR Monitor.exe` (launcher), `Update.exe`, `current\pr-monitor.exe` and the licence files. |
+| `pr-monitor-linux-<arch>.AppImage` | Linux (preview): self-updating AppImage; no installer, uninstall hook or zip. |
+| `pr-monitor-<version>-<rid>-full.nupkg` | The update package (on Linux it holds the AppImage). |
+| `pr-monitor-<version>-<rid>-delta.nupkg` | Patch from the previous published release (absent for the first release on a channel). |
 | `releases.<rid>.json` | The update feed: this version's nupkgs only. |
 | `pr-monitor-<version>-windows-<arch>.pdb` | Crash symbols (Windows only). |
 | `pr-monitor-<os>-<arch>.cdx.json` | CycloneDX SBOM (`<os>` is `windows` or `linux`), attested to the Setup and Portable zip or the AppImage. |
@@ -94,11 +94,11 @@ Built with [Velopack](https://velopack.io) (`vpk`), package id `PRMonitor`, per 
 There is no bare exe (the app cannot update itself outside an install) and no macOS build
 (Gatekeeper blocks unsigned apps).
 
-**Uninstalling.** The install folder `%LOCALAPPDATA%\PRMonitor` is also the app's data folder.
-Velopack's uninstaller deletes the whole folder, so uninstalling removes settings and logs;
-sign-ins stay in Windows Credential Manager. `--unregister --purge` leaves Velopack's own
-entries (`current`, `packages`, `*.exe`, `sq.version`, `.portable`) alone. A Portable and an
-installed copy share the data folder and the single-instance key, so only one runs at a time.
+**Install and data folders.** The package id is `pr-monitor` (install folder
+`%LOCALAPPDATA%\pr-monitor`) and the app's data folder is `%LOCALAPPDATA%\PRMonitor`. They must
+differ: Velopack's installer treats a non-empty install folder as an existing install and replaces
+it, and its uninstaller deletes the whole folder. A Portable and an installed copy share the data
+folder and the single-instance key, so only one runs at a time.
 
 ## How the packages are built
 
@@ -148,7 +148,7 @@ On Linux pass the Linux rid, the binary and `-Version` (a Linux binary has no Pr
 delete the AppImage (`pr-monitor --unregister` removes the autostart entry first). Autostart
 uses `$APPIMAGE` (when `$APPDIR` confirms the binary is inside it), because `current_exe()`
 inside an AppImage points into a temporary mount. Velopack's log is
-`/tmp/velopack_PRMonitor.log`.
+`/tmp/velopack_pr-monitor.log`.
 
 ## winget
 
@@ -156,7 +156,7 @@ The first submission of `AndrewKorchemniy.PRMonitor` to winget-pkgs is manual (t
 only updates an existing package): run `wingetcreate new` with the `Setup.exe` URLs and set
 `InstallerType: exe`, `Scope: user` and `InstallerSwitches` `Silent` and `SilentWithProgress`
 to `--silent`. Install it once from a local manifest before enabling `WINGET_ENABLED`. The job
-then picks `PRMonitor-win-<arch>-Setup.exe` from each release.
+then picks `pr-monitor-win-<arch>-Setup.exe` from each release.
 
 ## When something fails
 
@@ -168,16 +168,16 @@ then picks `PRMonitor-win-<arch>-Setup.exe` from each release.
   version and release again.
 - **`release-current` says the release exists:** bump the version; a version is released once.
 - **An install or update misbehaves on a user's machine:** `Update.exe` logs to
-  `%LocalAppData%\velopack\velopack_PRMonitor.log`; the app's logs are in
+  `%LocalAppData%\velopack\velopack_pr-monitor.log`; the app's logs are in
   `%LOCALAPPDATA%\PRMonitor\logs`.
 
 ## Verifying a release
 
 ```powershell
 gh release download v0.1.0 -R AndrewKorchemniy/pr-monitor
-gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
-gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
-Get-FileHash -Algorithm SHA256 PRMonitor-win-*   # compare with SHA256SUMS.txt
+gh attestation verify pr-monitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
+gh attestation verify pr-monitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
+Get-FileHash -Algorithm SHA256 pr-monitor-win-*   # compare with SHA256SUMS.txt
 ```
 
 ## Settings

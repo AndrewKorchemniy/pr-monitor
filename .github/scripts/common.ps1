@@ -1,7 +1,7 @@
 # Helpers shared by the release scripts. Dot-source it: `. "$PSScriptRoot/common.ps1"`.
 
 # The Velopack package id; it names the release files and the install folder.
-$PackId = 'PRMonitor'
+$PackId = 'pr-monitor'
 
 # The Windows app identity for shortcuts and toasts. Must equal prm_domain::app::AUMID.
 $Aumid = 'AndrewKorchemniy.PRMonitor'

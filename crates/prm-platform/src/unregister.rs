@@ -105,54 +105,15 @@ pub fn unregister(spec: &UnregisterSpec<'_>) -> UnregisterReport {
     UnregisterReport { steps }
 }
 
-/// Velopack's own entries in the install folder, which is also the data root. `--purge` never
-/// deletes them: the app runs from `current`, and Velopack's uninstaller removes them.
-fn is_velopack_entry(name: &std::ffi::OsStr) -> bool {
-    let Some(name) = name.to_str() else {
-        return false;
-    };
-    let lower = name.to_ascii_lowercase();
-    matches!(
-        lower.as_str(),
-        "current" | "packages" | "sq.version" | ".portable"
-    ) || Path::new(&lower)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
-}
-
 fn purge(spec: &UnregisterSpec<'_>) -> Result<(), String> {
     if !safe_to_purge(spec.root, spec.scope, spec.user_home) {
         return Err("refusing to delete a folder that does not look like PR Monitor's".into());
     }
-    let entries = match std::fs::read_dir(spec.root) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.to_string()),
-    };
-    let mut kept_any = false;
-    let mut result = Ok(());
-    for entry in entries.flatten() {
-        if is_velopack_entry(&entry.file_name()) {
-            kept_any = true;
-            continue;
-        }
-        let path = entry.path();
-        let removed = if path.is_dir() {
-            std::fs::remove_dir_all(&path)
-        } else {
-            std::fs::remove_file(&path)
-        };
-        if let Err(error) = removed
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            result = Err(error.to_string());
-        }
+    match std::fs::remove_dir_all(spec.root) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
     }
-    // why: a folder that holds an install stays; otherwise the folder goes too.
-    if !kept_any && result.is_ok() {
-        let _ = std::fs::remove_dir(spec.root);
-    }
-    result
 }
 
 #[cfg(windows)]

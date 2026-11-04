@@ -25,16 +25,16 @@ each one is.
 Get one for your architecture (x64 or arm64) from the
 [latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest):
 
-- **Installer:** `PRMonitor-win-x64-Setup.exe` (or `-win-arm64`). Installs for your user into
-  `%LOCALAPPDATA%\PRMonitor`, with a Start menu entry and an Add/Remove Programs entry.
-- **Portable zip:** `PRMonitor-win-x64-Portable.zip` (or `-win-arm64`). Unzip anywhere, run
+- **Installer:** `pr-monitor-win-x64-Setup.exe` (or `-win-arm64`). Installs for your user into
+  `%LOCALAPPDATA%\pr-monitor`, with a Start menu entry and an Add/Remove Programs entry.
+- **Portable zip:** `pr-monitor-win-x64-Portable.zip` (or `-win-arm64`). Unzip anywhere, run
   `PR Monitor.exe` and keep the folder together: it updates itself in place.
 
 Direct links:
-[Setup x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-x64-Setup.exe),
-[Setup arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-arm64-Setup.exe),
-[Portable x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-x64-Portable.zip),
-[Portable arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/PRMonitor-win-arm64-Portable.zip).
+[Setup x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/pr-monitor-win-x64-Setup.exe),
+[Setup arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/pr-monitor-win-arm64-Setup.exe),
+[Portable x64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/pr-monitor-win-x64-Portable.zip),
+[Portable arm64](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest/download/pr-monitor-win-arm64-Portable.zip).
 
 Supported: Windows 10 1809 or later (x64) and Windows 11 (arm64).
 
@@ -42,9 +42,9 @@ Releases are built by GitHub Actions and are not signed. Verify a download (the 
 the Portable zip):
 
 ```powershell
-gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
-gh attestation verify PRMonitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
-Get-FileHash -Algorithm SHA256 PRMonitor-win-x64-Setup.exe   # compare with SHA256SUMS.txt
+gh attestation verify pr-monitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor
+gh attestation verify pr-monitor-win-x64-Setup.exe -R AndrewKorchemniy/pr-monitor --predicate-type https://cyclonedx.org/bom
+Get-FileHash -Algorithm SHA256 pr-monitor-win-x64-Setup.exe   # compare with SHA256SUMS.txt
 ```
 
 The first command checks build provenance, the second the CycloneDX SBOM.
@@ -52,12 +52,12 @@ The first command checks build provenance, the second the CycloneDX SBOM.
 ### Linux (preview)
 
 Linux builds are tested in CI but used less than the Windows ones. Download
-`PRMonitor-linux-x64.AppImage` (or `-linux-arm64`) from the
+`pr-monitor-linux-x64.AppImage` (or `-linux-arm64`) from the
 [latest release](https://github.com/AndrewKorchemniy/pr-monitor/releases/latest), then:
 
 ```sh
-chmod +x PRMonitor-linux-x64.AppImage
-./PRMonitor-linux-x64.AppImage
+chmod +x pr-monitor-linux-x64.AppImage
+./pr-monitor-linux-x64.AppImage
 ```
 
 - **It updates itself.** Keep the AppImage in a folder you can write to (for example
@@ -89,8 +89,8 @@ never contain tokens. PR Monitor talks only to Azure DevOps, Microsoft sign-in a
 update checks; turn that off in Settings > General).
 
 `pr-monitor --unregister --purge` removes what PR Monitor added to Windows and its data (not
-the installed program). The installer uses the same folder, so uninstalling removes the whole
-folder, including settings and logs; sign-ins stay in Windows Credential Manager.
+the installed program). Uninstalling from Add/Remove Programs removes only the program;
+delete the data folder to remove settings and logs.
 
 ## Command line
 

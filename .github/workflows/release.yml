@@ -360,7 +360,7 @@ jobs:
             -NoticesDir notices -NotesFile notes/release-notes.md -OutDir velopack-out
       - name: Smoke test the AppImage (--self-test)
         if: matrix.platform == 'linux'
-        run: ./.github/scripts/smoke-appimage.sh "velopack-out/PRMonitor-$RID.AppImage"
+        run: ./.github/scripts/smoke-appimage.sh "velopack-out/pr-monitor-$RID.AppImage"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: velopack-${{ matrix.rid }}
@@ -433,28 +433,28 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
-            dist/PRMonitor-win-x64-Setup.exe
-            dist/PRMonitor-win-x64-Portable.zip
+            dist/pr-monitor-win-x64-Setup.exe
+            dist/pr-monitor-win-x64-Portable.zip
           sbom-path: dist/pr-monitor-windows-x64.cdx.json
       - name: Attest SBOM (Windows arm64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
-            dist/PRMonitor-win-arm64-Setup.exe
-            dist/PRMonitor-win-arm64-Portable.zip
+            dist/pr-monitor-win-arm64-Setup.exe
+            dist/pr-monitor-win-arm64-Portable.zip
           sbom-path: dist/pr-monitor-windows-arm64.cdx.json
       - name: Attest SBOM (Linux x64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/PRMonitor-linux-x64.AppImage
+          subject-path: dist/pr-monitor-linux-x64.AppImage
           sbom-path: dist/pr-monitor-linux-x64.cdx.json
       - name: Attest SBOM (Linux arm64)
         if: needs.release.outputs.dry_run != 'true'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/PRMonitor-linux-arm64.AppImage
+          subject-path: dist/pr-monitor-linux-arm64.AppImage
           sbom-path: dist/pr-monitor-linux-arm64.cdx.json
       # why: the draft stays invisible to the app's update check until go-live publishes it; `vpk upload`
       # is not used because it refuses a draft that already holds the feed, which would break `recover`.
@@ -513,6 +513,6 @@ jobs:
         with:
           identifier: AndrewKorchemniy.PRMonitor
           release-tag: ${{ needs.release.outputs.tag }}
-          installers-regex: '^PRMonitor-win-(x64|arm64)-Setup\.exe$'
+          installers-regex: '^pr-monitor-win-(x64|arm64)-Setup\.exe$'
           max-versions-to-keep: 5
           token: ${{ secrets.WINGET_TOKEN }}   # classic PAT: public_repo + workflow
