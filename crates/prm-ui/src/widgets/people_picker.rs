@@ -83,6 +83,9 @@ pub(crate) struct PeoplePicker {
     highlight: usize,
     /// A person was just added: the list of pills scrolls to the end once.
     just_added: bool,
+    /// The search field takes the focus when it appears. Off for all but one of several pickers
+    /// shown together, so that one is not left with whichever drew last.
+    pub autofocus: bool,
 }
 
 impl PeoplePicker {
@@ -97,6 +100,7 @@ impl PeoplePicker {
             open: false,
             highlight: 0,
             just_added: false,
+            autofocus: true,
         }
     }
 

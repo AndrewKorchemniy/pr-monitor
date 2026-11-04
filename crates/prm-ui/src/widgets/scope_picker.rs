@@ -97,7 +97,12 @@ pub(crate) fn scope_picker(
     ui.add_space(theme.tokens.metrics.space.sm);
     let hint = copy::search_scope(catalog.projects.len(), catalog.repos.len());
     let id = egui::Id::unique("scope_search");
-    fields::text_field(ui, theme, &mut filter.text, &Field::new(id, &hint));
+    fields::text_field(
+        ui,
+        theme,
+        &mut filter.text,
+        &Field::new(id, &hint).autofocus(true),
+    );
     ui.add_space(theme.tokens.metrics.space.sm);
     let needle = filter.text.trim().to_lowercase();
     let list_box = list_height(ui, list);

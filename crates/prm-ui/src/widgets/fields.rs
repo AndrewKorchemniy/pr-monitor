@@ -18,6 +18,7 @@ pub(crate) const SEARCH_GLYPH_INSET: f32 = 2.0;
 /// What a bordered field shows besides its text.
 #[derive(Clone, Copy)]
 pub(crate) struct Field<'a> {
+    /// Stable from frame to frame: an `autofocus` field is told apart by it.
     pub id: egui::Id,
     pub hint: &'a str,
     /// Draws the border in the danger tone.
@@ -29,6 +30,9 @@ pub(crate) struct Field<'a> {
     pub keeps_escape: bool,
     /// Shows dots instead of the text (a token).
     pub password: bool,
+    /// Takes the keyboard focus when it first appears (a dialog opening, or the field showing
+    /// up later), so the user can type at once. It never takes it back after that.
+    pub autofocus: bool,
 }
 
 impl<'a> Field<'a> {
@@ -40,7 +44,13 @@ impl<'a> Field<'a> {
             width: None,
             keeps_escape: false,
             password: false,
+            autofocus: false,
         }
+    }
+
+    pub(crate) const fn autofocus(mut self, on: bool) -> Self {
+        self.autofocus = on;
+        self
     }
 
     pub(crate) const fn width(mut self, width: f32) -> Self {
@@ -68,6 +78,26 @@ fn field_width(ui: &egui::Ui, field: &Field<'_>) -> f32 {
     }
 }
 
+/// Asks for focus for an autofocus `field` the first frame it is drawn, or the first after a
+/// frame in which it was not (its dialog was closed, or it was not shown yet). The frame it was
+/// last drawn in is kept per field, and written on every draw so a field that stays never asks
+/// again, even when the user has clicked elsewhere.
+fn focus_on_appearance(ui: &egui::Ui, field: &Field<'_>, response: &egui::Response) {
+    if !field.autofocus {
+        return;
+    }
+    let frame = ui.ctx().cumulative_frame_nr();
+    let key = field.id.with("last_drawn");
+    let last = ui.data_mut(|d| {
+        let last = d.get_temp::<u64>(key);
+        d.insert_temp(key, frame);
+        last
+    });
+    if last.is_none_or(|last| last + 1 < frame) {
+        response.request_focus();
+    }
+}
+
 /// The app's standard single-line input: sunken fill, hairline border, accent border on focus.
 pub(crate) fn text_field(
     ui: &mut egui::Ui,
@@ -82,6 +112,7 @@ pub(crate) fn text_field(
         text_rect(theme, rect, rect.right()),
         edit(theme, text, field),
     );
+    focus_on_appearance(ui, field, &response);
     let border = field_border(theme, field.error, response.has_focus());
     let radius = CornerRadius::same(theme.tokens.metrics.radius.md);
     ui.painter().set(
@@ -164,6 +195,7 @@ pub(crate) fn action_field(
         text_rect(theme, rect, button_rect.left()),
         edit(theme, text, field),
     );
+    focus_on_appearance(ui, field, &response);
     let button = ui.interact(button_rect, field.id.with("action"), Sense::click());
     let ready = !text.trim().is_empty();
     let border = field_border(theme, field.error, response.has_focus());
@@ -220,9 +252,10 @@ pub(crate) fn search_field(
     ui: &mut egui::Ui,
     theme: &UiTheme,
     text: &mut String,
-    (id, hint): (egui::Id, &str),
+    field: &Field<'_>,
     (min_width, max_width): (f32, f32),
 ) -> egui::Response {
+    let Field { id, hint, .. } = *field;
     let m = &theme.tokens.metrics;
     let font = theme.fonts.body.clone();
     let measure = |s: &str| {
@@ -250,6 +283,7 @@ pub(crate) fn search_field(
     );
     let edit = bare_edit(theme, text, id, egui::Align2::LEFT_CENTER).hint_text(hint);
     let mut response = ui.put(text_rect, edit);
+    focus_on_appearance(ui, field, &response);
     if area.clicked() {
         response.request_focus();
     }
@@ -303,3 +337,6 @@ fn clear_button(ui: &mut egui::Ui, theme: &UiTheme, rect: Rect, id: egui::Id) ->
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     response.on_hover_text(name)
 }
+
+#[cfg(test)]
+mod tests;

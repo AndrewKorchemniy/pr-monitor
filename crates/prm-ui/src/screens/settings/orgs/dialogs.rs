@@ -166,7 +166,8 @@ fn add_org_dialog(
     let outcome = modal::modal(ctx, theme, &spec, |ui| {
         widgets::field_label(ui, theme, copy::ORG_URL_LABEL);
         ui.add_space(theme.tokens.metrics.space.xs);
-        let mut field = Field::new(egui::Id::unique("add_org_url"), copy::ORG_URL_HINT);
+        let mut field =
+            Field::new(egui::Id::unique("add_org_url"), copy::ORG_URL_HINT).autofocus(true);
         field.error = st.url_error;
         let action = (&field, copy::ADD_ORG, Icon::ArrowRight);
         if fields::action_field(ui, theme, &mut st.new_org_url, action)

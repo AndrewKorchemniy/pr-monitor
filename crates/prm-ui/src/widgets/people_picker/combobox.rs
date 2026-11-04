@@ -35,7 +35,9 @@ pub(super) fn search(
         add(cx, picker, (org, people), &candidate);
     }
     let (left, width) = (ui.cursor().left(), ui.available_width());
-    let field = Field::new(field_id, copy::ADD_PEOPLE).keeps_escape(picker.open);
+    let field = Field::new(field_id, copy::ADD_PEOPLE)
+        .keeps_escape(picker.open)
+        .autofocus(picker.autofocus);
     let response = keep_focus(ui, (popup_id, picker.open), |ui| {
         fields::text_field(ui, &theme, &mut picker.query, &field)
     });

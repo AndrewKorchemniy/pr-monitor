@@ -10,7 +10,11 @@ use crate::{
     copy,
     frame::FrameCx,
     theme::UiTheme,
-    widgets::{self, fields, fit},
+    widgets::{
+        self,
+        fields::{self, Field},
+        fit,
+    },
 };
 
 /// The palette's width in a roomy window, in points.
@@ -90,9 +94,9 @@ fn show(
     let mut clicked = None;
     let modal = widgets::modal::show_modal(ctx, id, frame, (width + chrome, top), |ui| {
         ui.set_width(width);
-        let field = (egui::Id::unique("palette_query"), copy::PALETTE_HINT);
-        let response = fields::search_field(ui, theme, &mut state.query, field, (width, width));
-        response.request_focus();
+        let field =
+            Field::new(egui::Id::unique("palette_query"), copy::PALETTE_HINT).autofocus(true);
+        let response = fields::search_field(ui, theme, &mut state.query, &field, (width, width));
         if response.changed() {
             state.selected = 0;
             state.revealed = None;

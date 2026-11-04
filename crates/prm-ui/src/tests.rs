@@ -21,6 +21,7 @@ use crate::{
     },
 };
 
+mod autofocus;
 mod cards;
 mod corners;
 mod dashboard;
