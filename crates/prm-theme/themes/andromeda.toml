@@ -1,0 +1,60 @@
+# PR Monitor theme. See graphite.toml for how to make your own.
+#
+# Andromeda is based on the "Andromeda italic bordered" VS Code theme by Eliver Lara
+# (https://github.com/EliverLara/Andromeda, themes/Andromeda-italic-color-theme-bordered.json,
+# commit d1abb48), used under the MIT License:
+#
+# Copyright (c) 2017 Eliver Lara
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+# and associated documentation files (the "Software"), to deal in the Software without
+# restriction, including without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or
+# substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+# BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+schema = 1
+id = "andromeda"
+name = "Andromeda"
+appearance = "dark"
+description = "Andromeda, after the VS Code theme by Eliver Lara: cool charcoal with a cyan accent."
+
+[seeds]
+base = "#23262E"                    # the chrome: sidebar, panel, status bar
+# The source ink is #D5CED9. It reads 6.91:1 on row.selected, which derives from the derived
+# sunken (the sunken override below does not feed it), so ink is lifted to reach 7:1.
+ink = "#D8D2DC"
+accent = "#00E8C6"                  # the cyan of the active tab and list selection
+contrast = 0.0
+
+[seeds.status]
+needs_review = "#FFE66D"
+active_comments = "#F92672"
+reviewed = "#96E072"
+
+[seeds.feedback]
+danger = "#FC644D"
+warning = "#FF9F2E"
+success = "#96E072"
+info = "#7CB7FF"
+
+[metrics]
+stripes = false
+
+[overrides]
+"surface.sunken" = "#262A33"        # the bordered editor tone
+"border.subtle" = "#1B1D23"         # the bordered seams
+# The control border derives against the derived sunken (the override above does not feed it)
+# and reads 2.86:1 on the lighter override, so it is set to clear 3:1.
+"border.control" = "#6E7482"
+# Hover and unfocused-selection tones, re-mixed on the sunken override; derived, they would
+# sit about 1:1 on it and vanish.
+"row.hover" = "#31343D"
+"row.selected_inactive" = "#343740"
