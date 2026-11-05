@@ -7,7 +7,7 @@ use crate::{
     builtin::builtin_sources,
     file::{ThemeFile, parse_theme},
     issue::{IssueLevel, ThemeId, ThemeIssue},
-    metrics::Corners,
+    metrics::{Corners, Look},
     scan::load_dir,
     tokens::{ThemeSource, Tokens},
 };
@@ -79,10 +79,10 @@ impl ThemeRegistry {
     }
 
     /// Built tokens plus every issue (parse and validation).
-    pub fn tokens(&self, id: &str, corners: Corners) -> Option<(Tokens, Vec<ThemeIssue>)> {
+    pub fn tokens(&self, id: &str, look: Look) -> Option<(Tokens, Vec<ThemeIssue>)> {
         let entry = self.get(id)?;
         let (tokens, mut issues) =
-            Tokens::build(&entry.file, &entry.src, entry.source.clone(), corners);
+            Tokens::build(&entry.file, &entry.src, entry.source.clone(), look);
         issues.splice(0..0, entry.issues.iter().cloned());
         Some((tokens, issues))
     }
@@ -99,6 +99,17 @@ pub struct ThemeSelection {
     pub light: String,
     /// The corner shape every theme is built with.
     pub corners: Corners,
+    /// Whether table rows and cards alternate a tint.
+    pub stripes: bool,
+}
+
+impl ThemeSelection {
+    pub const fn look(&self) -> Look {
+        Look {
+            corners: self.corners,
+            stripes: self.stripes,
+        }
+    }
 }
 
 /// The tokens to use now, for either OS appearance.
@@ -114,15 +125,9 @@ pub struct ThemeSet {
 /// back to the defaults with a Warning.
 pub fn resolve(registry: &ThemeRegistry, selection: &ThemeSelection) -> ThemeSet {
     let mut issues = Vec::new();
-    let corners = selection.corners;
+    let look = selection.look();
     let mut pick = |id: &str, fallback: &str| -> Arc<Tokens> {
-        Arc::new(load_or_fallback(
-            registry,
-            id,
-            fallback,
-            corners,
-            &mut issues,
-        ))
+        Arc::new(load_or_fallback(registry, id, fallback, look, &mut issues))
     };
     if selection.theme == SYSTEM {
         let dark = pick(&selection.dark, DEFAULT_DARK);
@@ -147,10 +152,10 @@ fn load_or_fallback(
     registry: &ThemeRegistry,
     id: &str,
     fallback: &str,
-    corners: Corners,
+    look: Look,
     issues: &mut Vec<ThemeIssue>,
 ) -> Tokens {
-    if let Some((tokens, found)) = registry.tokens(id, corners) {
+    if let Some((tokens, found)) = registry.tokens(id, look) {
         issues.extend(found);
         return tokens;
     }
@@ -160,8 +165,8 @@ fn load_or_fallback(
         format!("theme {id:?} not found; using {fallback:?}"),
     ));
     let (tokens, found) = registry
-        .tokens(fallback, corners)
-        .unwrap_or_else(|| last_resort(corners));
+        .tokens(fallback, look)
+        .unwrap_or_else(|| last_resort(look));
     issues.extend(found);
     tokens
 }
@@ -171,13 +176,13 @@ fn load_or_fallback(
     clippy::expect_used,
     reason = "built-ins are compiled in; builtin_themes_parse_without_issues covers both expects"
 )]
-fn last_resort(corners: Corners) -> (Tokens, Vec<ThemeIssue>) {
+fn last_resort(look: Look) -> (Tokens, Vec<ThemeIssue>) {
     let (stem, src) = builtin_sources()
         .first()
         .copied()
         .expect("at least one built-in theme");
     let (file, issues) = parse_theme(src, stem).expect("built-in themes parse");
-    let (tokens, mut built) = Tokens::build(&file, src, ThemeSource::Builtin, corners);
+    let (tokens, mut built) = Tokens::build(&file, src, ThemeSource::Builtin, look);
     built.extend(issues);
     (tokens, built)
 }

@@ -1,15 +1,15 @@
 # Theming
 
-Every colour comes from a theme. A theme is one TOML file of seed colours and a stripes switch.
+Every colour comes from a theme. A theme is one TOML file of seed colours and a few overrides.
 Sizes, spacing and motion are fixed in code (`prm-theme`'s metrics). Corner radii come from the
-Corners setting (see [Corners](#corners)). The five built-in themes are in
+Corners setting (see [Corners and stripes](#corners-and-stripes)). The five built-in themes are in
 `crates/prm-theme/themes/`:
 
 | Theme | Appearance | Character |
 |---|---|---|
 | Graphite | dark (default) | graphite pencil on a dark drafting table |
 | Vellum | light | drafting film; the default light theme |
-| Cyanotype | dark | a blueprint: Prussian field, white chalk, no stripes |
+| Cyanotype | dark | a blueprint: Prussian field, white chalk |
 | Paper | light | aged paper and fountain-pen ink: warm off-white, deep teal accent |
 | Andromeda | dark | cool charcoal with a cyan accent; after the [Andromeda](https://github.com/EliverLara/Andromeda) VS Code theme by Eliver Lara (MIT, `Andromeda-italic-color-theme-bordered.json` at commit d1abb48) |
 
@@ -40,9 +40,6 @@ needs_review = "#E7B551"
 active_comments = "#EF8467"
 reviewed = "#82C79D"
 
-[metrics]
-stripes = true
-
 [overrides]
 "row.selected" = "#1E2A36"     # any palette key
 ```
@@ -60,11 +57,15 @@ stripes = true
 - **Bad files.** A theme that fails to parse is listed in Settings › Appearance with its error and
   skipped. A theme never stops the app from starting.
 
-## Corners
+## Corners and stripes
 
-Rounded or square corners are a setting, not part of a theme. Settings › Appearance › **Corners**
-applies to every theme and to the window frame, and is stored as `ui.corners` (`"rounded"` or
-`"square"`) in `config.toml`. A theme's `[metrics] radius_scale` key is retired and ignored.
+Rounded or square corners, and striped table rows, are settings, not part of a theme.
+Settings › Appearance › **Corners** applies to every theme and to the window frame, and is stored
+as `ui.corners` (`"rounded"` or `"square"`) in `config.toml`. **Striped table rows** tints every
+other row of the table and the cards, and is stored as `ui.striped_rows` (default `true`). A
+theme's `[metrics]` keys `radius_scale` and `stripes` are retired and ignored. A theme that
+overrides `surface.sunken` should override `row.stripe` too, since derived tokens do not follow
+the override.
 
 ## Following Windows
 

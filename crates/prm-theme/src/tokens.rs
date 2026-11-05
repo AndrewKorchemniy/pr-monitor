@@ -6,7 +6,7 @@ use crate::{
     derive::derive_palette,
     file::{Appearance, ThemeFile},
     issue::{IssueLevel, ThemeId, ThemeIssue},
-    metrics::{Corners, Metrics},
+    metrics::{Look, Metrics},
     palette::Palette,
     validate::validate,
 };
@@ -37,7 +37,7 @@ impl Tokens {
         file: &ThemeFile,
         src: &str,
         source: ThemeSource,
-        corners: Corners,
+        look: Look,
     ) -> (Self, Vec<ThemeIssue>) {
         let id = ThemeId::new(&file.id);
         let mut palette = derive_palette(file);
@@ -56,7 +56,7 @@ impl Tokens {
             name: Arc::from(file.name.as_str()),
             description: Arc::from(file.description.as_str()),
             appearance: file.appearance,
-            metrics: Metrics::new(&file.metrics, corners),
+            metrics: Metrics::new(look),
             palette,
             source,
             file_toml: Arc::from(src),

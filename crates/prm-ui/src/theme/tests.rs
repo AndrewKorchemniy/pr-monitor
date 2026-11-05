@@ -1,4 +1,5 @@
 use prm_config::UiPrefs;
+use prm_theme::Corners;
 
 use super::*;
 
@@ -56,20 +57,26 @@ fn the_corner_preview_restyles_once_and_reverts_on_none() {
     let rounded = dark_radius(&runtime);
     let generation = runtime.generation;
 
-    runtime.set_corners_preview(Some(Corners::Square));
+    runtime.set_look_preview(Some(Look {
+        corners: Corners::Square,
+        ..Look::default()
+    }));
     assert_eq!(
         dark_radius(&runtime),
         prm_theme::metrics::Radius::new(Corners::Square)
     );
     assert_eq!(runtime.generation, generation + 1);
-    runtime.set_corners_preview(Some(Corners::Square));
+    runtime.set_look_preview(Some(Look {
+        corners: Corners::Square,
+        ..Look::default()
+    }));
     assert_eq!(
         runtime.generation,
         generation + 1,
         "same preview, no rebuild"
     );
 
-    runtime.set_corners_preview(None);
+    runtime.set_look_preview(None);
     assert_eq!(dark_radius(&runtime), rounded);
 }
 
@@ -86,14 +93,54 @@ fn saved_corners_apply_and_the_preview_wins_over_them() {
         dark_radius(&runtime),
         prm_theme::metrics::Radius::new(Corners::Square)
     );
-    runtime.set_corners_preview(Some(Corners::Rounded));
+    runtime.set_look_preview(Some(Look {
+        corners: Corners::Rounded,
+        ..Look::default()
+    }));
     assert_eq!(
         dark_radius(&runtime),
         prm_theme::metrics::Radius::new(Corners::Rounded)
     );
-    runtime.set_corners_preview(None);
+    runtime.set_look_preview(None);
     assert_eq!(
         dark_radius(&runtime),
         prm_theme::metrics::Radius::new(Corners::Square)
     );
+}
+
+fn dark_stripes(runtime: &ThemeRuntime) -> bool {
+    runtime.dark.tokens.metrics.stripes
+}
+
+#[test]
+fn stripes_are_on_by_default_and_the_preview_wins_over_the_saved_choice() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut runtime = ThemeRuntime::new(dir.path(), &UiPrefs::default(), POLICY);
+    assert!(dark_stripes(&runtime));
+    let generation = runtime.generation;
+
+    let off = Look {
+        stripes: false,
+        ..Look::default()
+    };
+    runtime.set_look_preview(Some(off));
+    assert!(!dark_stripes(&runtime));
+    runtime.set_look_preview(Some(off));
+    assert_eq!(
+        runtime.generation,
+        generation + 1,
+        "same preview, no rebuild"
+    );
+
+    runtime.set_look_preview(None);
+    assert!(dark_stripes(&runtime));
+
+    let prefs = UiPrefs {
+        striped_rows: false,
+        ..UiPrefs::default()
+    };
+    runtime.set_selection(selection_from(&prefs));
+    assert!(!dark_stripes(&runtime));
+    runtime.set_look_preview(Some(Look::default()));
+    assert!(dark_stripes(&runtime));
 }

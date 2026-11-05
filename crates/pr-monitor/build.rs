@@ -70,7 +70,7 @@ fn icons(assets: &Path, out: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let (tokens, _) = registry
         .tokens(
             prm_theme::registry::DEFAULT_DARK,
-            prm_theme::Corners::default(),
+            prm_theme::Look::default(),
         )
         .ok_or("the built-in dark theme is missing")?;
     let palette = &tokens.palette;

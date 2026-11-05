@@ -2,7 +2,10 @@ use super::*;
 
 #[test]
 fn row_metrics_are_fixed() {
-    let metrics = Metrics::new(&MetricTweaks::default(), Corners::Rounded);
+    let metrics = Metrics::new(Look {
+        corners: Corners::Rounded,
+        ..Look::default()
+    });
     assert_eq!(metrics.row, ROW);
     assert!((ROW.row_height - 30.0).abs() < f32::EPSILON);
     assert!((ROW.statusbar_height - 32.0).abs() < f32::EPSILON);
@@ -10,8 +13,10 @@ fn row_metrics_are_fixed() {
 
 #[test]
 fn square_corners_are_radius_zero_everywhere() {
-    let tweaks = MetricTweaks { stripes: false };
-    let metrics = Metrics::new(&tweaks, Corners::Square);
+    let metrics = Metrics::new(Look {
+        corners: Corners::Square,
+        stripes: false,
+    });
     assert_eq!(
         metrics.radius,
         Radius {
@@ -28,7 +33,10 @@ fn square_corners_are_radius_zero_everywhere() {
 
 #[test]
 fn rounded_corners_use_the_base_radii() {
-    let metrics = Metrics::new(&MetricTweaks::default(), Corners::Rounded);
+    let metrics = Metrics::new(Look {
+        corners: Corners::Rounded,
+        ..Look::default()
+    });
     assert_eq!(
         metrics.radius,
         Radius {

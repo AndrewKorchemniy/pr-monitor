@@ -27,7 +27,7 @@ use crate::{
         token::token_dialog,
     },
     testing::demo::demo_avatars,
-    theme::{ThemeRuntime, fonts},
+    theme::{ThemeRuntime, fonts, look_from},
     ui_state::PeekLayout,
     view::{
         DashboardView,
@@ -119,8 +119,8 @@ impl Fixture {
 
     pub(crate) fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        let draft = (self.shown == Shown::Settings).then_some(self.settings.draft.ui.corners);
-        self.theme.set_corners_preview(draft);
+        let draft = (self.shown == Shown::Settings).then(|| look_from(&self.settings.draft.ui));
+        self.theme.set_look_preview(draft);
         self.theme.apply(&ctx);
         for picture in self.pictures.drain(..) {
             self.avatars.insert(&ctx, &picture);

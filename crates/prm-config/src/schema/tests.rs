@@ -107,6 +107,24 @@ fn retired_density_key_still_loads() {
 }
 
 #[test]
+fn striped_rows_are_on_unless_the_config_says_otherwise() {
+    assert!(UiPrefs::default().striped_rows);
+    assert!(parse("[ui]\ntheme = \"graphite\"\n").ui.striped_rows);
+    assert!(parse("").ui.striped_rows);
+    assert!(!parse("[ui]\nstriped_rows = false\n").ui.striped_rows);
+    assert!(parse("[ui]\nstriped_rows = true\n").ui.striped_rows);
+}
+
+#[test]
+fn striped_rows_round_trip_through_toml() {
+    let mut config = Config::default();
+    config.ui.striped_rows = false;
+    let saved = toml::to_string_pretty(&config).unwrap();
+    assert!(saved.contains("striped_rows = false"), "{saved}");
+    assert!(!parse(&saved).ui.striped_rows);
+}
+
+#[test]
 fn unknown_enum_value_falls_back() {
     let config = parse("[ui]\nrenderer = \"vulkan\"\nshow_org_column = \"sometimes\"\n");
     assert_eq!(config.ui.renderer, RendererPref::Auto);

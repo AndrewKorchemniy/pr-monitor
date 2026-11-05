@@ -24,10 +24,6 @@ warning = "#E7B551"
 success = "#82C79D"
 # info = accent when omitted
 
-[metrics]
-# Corner shape is not part of a theme: Settings › Appearance › Corners sets it for every theme.
-stripes = true                      # alternating row tint
-
 [overrides]
 # Any palette key from Settings › Appearance › "Copy theme as TOML", e.g.
 # "row.selected" = "#25313A"

@@ -45,9 +45,6 @@ warning = "#FF9F2E"
 success = "#96E072"
 info = "#7CB7FF"
 
-[metrics]
-stripes = false
-
 [overrides]
 "surface.sunken" = "#262A33"        # the bordered editor tone
 "border.subtle" = "#1B1D23"         # the bordered seams
@@ -58,3 +55,5 @@ stripes = false
 # sit about 1:1 on it and vanish.
 "row.hover" = "#31343D"
 "row.selected_inactive" = "#343740"
+# Derived tokens do not follow the sunken override: derived, the stripe is darker than the sheet.
+"row.stripe" = "#2B2F39"

@@ -33,6 +33,7 @@ mod required_groups;
 mod sheet;
 mod small_windows;
 mod status_bar;
+mod stripes;
 mod table;
 mod tracking;
 

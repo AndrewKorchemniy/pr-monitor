@@ -35,6 +35,7 @@ theme = "system"
 theme_dark = "graphite"
 theme_light = "vellum"
 corners = "rounded"
+striped_rows = true
 font_scale = 1.0
 animations = "auto"
 renderer = "auto"

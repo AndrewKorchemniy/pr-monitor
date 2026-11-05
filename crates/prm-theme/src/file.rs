@@ -1,4 +1,4 @@
-//! The theme file format (`themes/*.toml`): a few seeds, metric tweaks and per-key overrides.
+//! The theme file format (`themes/*.toml`): a few seeds and per-key overrides.
 //! Unknown keys are ignored, like config.toml.
 
 use std::collections::BTreeMap;
@@ -15,6 +15,14 @@ pub const THEME_SCHEMA: u32 = 1;
 /// The Info issue for a theme that still sets the retired `radius_scale`.
 pub const RADIUS_SCALE_RETIRED: &str =
     "radius_scale is no longer used; use Settings › Appearance › Corners";
+/// The Info issue for a theme that still sets the retired `stripes`.
+pub const STRIPES_RETIRED: &str =
+    "stripes is no longer a theme setting; use Settings › Appearance › Striped table rows";
+/// Keys a theme's `[metrics]` table used to take, each with the Info issue it now raises.
+const RETIRED_METRICS_KEYS: [(&str, &str); 2] = [
+    ("radius_scale", RADIUS_SCALE_RETIRED),
+    ("stripes", STRIPES_RETIRED),
+];
 /// `contrast` is clamped to this range.
 pub const CONTRAST_RANGE: std::ops::RangeInclusive<f32> = -1.0..=1.0;
 
@@ -28,8 +36,6 @@ pub struct ThemeFile {
     #[serde(default)]
     pub description: String,
     pub seeds: Seeds,
-    #[serde(default)]
-    pub metrics: MetricTweaks,
     /// Palette key → color, applied after derivation.
     #[serde(default)]
     pub overrides: BTreeMap<String, Rgba8>,
@@ -70,19 +76,6 @@ pub struct FeedbackSeeds {
     pub info: Option<Rgba8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MetricTweaks {
-    /// Alternating row tint.
-    pub stripes: bool,
-}
-
-impl Default for MetricTweaks {
-    fn default() -> Self {
-        Self { stripes: true }
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Appearance {
@@ -97,15 +90,15 @@ pub enum ThemeError {
 }
 
 /// Parses one theme. The file stem wins over a mismatching `id` (Warning); a newer schema is
-/// read best-effort (Warning). A retired `radius_scale` is an Info. Out-of-range numbers are
-/// clamped.
+/// read best-effort (Warning). A retired key (`RETIRED_METRICS_KEYS`) is an Info each. Out-of-range
+/// numbers are clamped.
 pub fn parse_theme(src: &str, file_stem: &str) -> Result<(ThemeFile, Vec<ThemeIssue>), ThemeError> {
     let parse_error = |e: toml::de::Error| ThemeError::Parse {
         file: format!("{file_stem}.toml"),
         message: e.message().to_owned(),
     };
     let table: toml::Table = src.parse().map_err(parse_error)?;
-    let retired_radius_scale = has_retired_radius_scale(&table);
+    let retired = retired_keys_in(&table);
     let mut file: ThemeFile = table.try_into().map_err(parse_error)?;
     let theme = ThemeId::new(file_stem);
     let mut issues = Vec::new();
@@ -127,23 +120,24 @@ pub fn parse_theme(src: &str, file_stem: &str) -> Result<(ThemeFile, Vec<ThemeIs
             format!("written for a newer PR Monitor (schema {})", file.schema),
         ));
     }
-    if retired_radius_scale {
-        issues.push(ThemeIssue::new(
-            &theme,
-            IssueLevel::Info,
-            RADIUS_SCALE_RETIRED,
-        ));
+    for message in retired {
+        issues.push(ThemeIssue::new(&theme, IssueLevel::Info, message));
     }
     file.seeds.contrast = clamp(file.seeds.contrast, &CONTRAST_RANGE);
     Ok((file, issues))
 }
 
-/// serde ignores unknown keys, so the retired key is looked for in the raw table.
-fn has_retired_radius_scale(table: &toml::Table) -> bool {
-    table
-        .get("metrics")
-        .and_then(toml::Value::as_table)
-        .is_some_and(|metrics| metrics.contains_key("radius_scale"))
+/// serde ignores unknown keys, so retired keys are looked for in the raw table. Returns the
+/// issue message of each one found.
+fn retired_keys_in(table: &toml::Table) -> Vec<&'static str> {
+    let Some(metrics) = table.get("metrics").and_then(toml::Value::as_table) else {
+        return Vec::new();
+    };
+    RETIRED_METRICS_KEYS
+        .iter()
+        .filter(|(key, _)| metrics.contains_key(*key))
+        .map(|(_, message)| *message)
+        .collect()
 }
 
 fn clamp(value: f32, range: &std::ops::RangeInclusive<f32>) -> f32 {

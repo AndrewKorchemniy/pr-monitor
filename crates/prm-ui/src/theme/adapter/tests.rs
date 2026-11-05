@@ -105,6 +105,7 @@ fn avatar_text_reads_on_every_tint_of_every_builtin_theme() {
                 dark: id.as_str().into(),
                 light: id.as_str().into(),
                 corners: prm_theme::metrics::Corners::default(),
+                stripes: true,
             },
         );
         for tokens in [set.dark, set.light] {

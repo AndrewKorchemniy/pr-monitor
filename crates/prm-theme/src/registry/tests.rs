@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::metrics::Radius;
+use crate::metrics::{Look, Radius};
 
 const USER_GRAPHITE: &str = r##"
 id = "graphite"
@@ -29,6 +29,7 @@ fn selection(theme: &str) -> ThemeSelection {
         dark: DEFAULT_DARK.into(),
         light: DEFAULT_LIGHT.into(),
         corners: Corners::Rounded,
+        stripes: true,
     }
 }
 
@@ -124,12 +125,22 @@ fn corners_survive_the_fallback_to_a_default_theme() {
     };
     let set = resolve(&ThemeRegistry::builtin(), &picks);
     assert_eq!(set.dark.metrics.corners, Corners::Square);
-    assert_eq!(last_resort(Corners::Square).0.metrics.radius.lg, 0);
+    assert_eq!(
+        last_resort(Look {
+            corners: Corners::Square,
+            ..Look::default()
+        })
+        .0
+        .metrics
+        .radius
+        .lg,
+        0
+    );
 }
 
 #[test]
 fn last_resort_builds_first_builtin() {
-    let (tokens, issues) = last_resort(Corners::Rounded);
+    let (tokens, issues) = last_resort(Look::default());
     assert_eq!(tokens.id.as_str(), builtin_sources()[0].0);
     assert_eq!(issues, Vec::new());
 }

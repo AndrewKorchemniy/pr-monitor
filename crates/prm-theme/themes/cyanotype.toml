@@ -3,7 +3,7 @@ schema = 1
 id = "cyanotype"
 name = "Cyanotype"
 appearance = "dark"
-description = "A blueprint: Prussian field, white chalk, no stripes."
+description = "A blueprint: Prussian field, white chalk."
 
 [seeds]
 base = "#0E2C49"
@@ -20,6 +20,3 @@ reviewed = "#8FE3B4"
 danger = "#FF7A93"
 warning = "#FFD36E"
 success = "#8FE3B4"
-
-[metrics]
-stripes = false
