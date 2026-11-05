@@ -171,6 +171,24 @@ fn the_sort_menu_sorts_by_a_column_and_says_which_way() {
     );
 }
 
+/// Reviews and Required sort too, so the cards' sort menu offers them.
+#[test]
+fn the_sort_menu_offers_reviews_and_required() {
+    let mut h = cards(sample());
+    let name = copy::menu_value(copy::SORT, copy::COLUMN_STATUS);
+    h.get_by_role_and_label(Role::ComboBox, &name).click();
+    h.run();
+    h.get_by_role_and_label(Role::MenuItem, copy::COLUMN_REQUIRED);
+    h.get_by_role_and_label(Role::MenuItem, copy::REVIEWS)
+        .click();
+    h.run();
+    let actions = h.state_mut().take_actions();
+    assert!(
+        has(&actions, |a| matches!(a, UiAction::Sort(SortKey::Reviews))),
+        "{actions:?}"
+    );
+}
+
 /// The list's top and bottom: under the toolbar, above the status bar.
 fn list_span(h: &Harness<'_, Fixture>) -> (f32, f32) {
     let theme = crate::theme::fallback();

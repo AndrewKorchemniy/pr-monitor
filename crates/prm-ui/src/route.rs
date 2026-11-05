@@ -30,6 +30,8 @@ pub(crate) enum ModalKind {
 /// What Esc should do; the first match wins.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum EscapeTarget {
+    /// A column header is held: put it back where it was.
+    CancelColumnDrag,
     /// An egui popup is open: egui closes it.
     Popup,
     CloseOverlay,
@@ -45,6 +47,7 @@ pub(crate) enum EscapeTarget {
 /// The facts Esc depends on.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EscapeInputs {
+    pub column_drag: bool,
     pub popup_open: bool,
     pub overlay: Overlay,
     pub filter_focused: bool,
@@ -56,7 +59,9 @@ pub(crate) struct EscapeInputs {
 }
 
 pub(crate) fn escape_target(input: &EscapeInputs) -> EscapeTarget {
-    if input.popup_open {
+    if input.column_drag {
+        EscapeTarget::CancelColumnDrag
+    } else if input.popup_open {
         EscapeTarget::Popup
     } else if input.overlay != Overlay::None {
         EscapeTarget::CloseOverlay

@@ -51,6 +51,19 @@ fn escape_closes_the_innermost_thing_first() {
 }
 
 #[test]
+fn escape_puts_a_held_column_back_before_anything_else() {
+    let all = EscapeInputs {
+        column_drag: true,
+        popup_open: true,
+        filter_focused: true,
+        peek_open: true,
+        filters_active: true,
+        ..dashboard()
+    };
+    assert_eq!(escape_target(&all), EscapeTarget::CancelColumnDrag);
+}
+
+#[test]
 fn escape_leaves_settings_before_touching_dashboard_state() {
     let input = EscapeInputs {
         screen: Screen::Settings,

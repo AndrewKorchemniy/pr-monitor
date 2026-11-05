@@ -66,12 +66,6 @@ fn list_end(h: &Harness<'_, Fixture>) -> f32 {
     dashboard_right(h) - margin - style.spacing.scroll.allocated_width()
 }
 
-/// Half the gap between columns, which a header cell's target reaches into.
-fn half_gap() -> f32 {
-    let theme = theme::fallback();
-    adapter::style(&theme, theme.policy).spacing.item_spacing.x / 2.0
-}
-
 /// The narrowest dashboard that still shows the table (its peek closed), in points.
 fn breakpoint() -> f32 {
     let theme = theme::fallback();
@@ -95,7 +89,7 @@ fn assert_inside(h: &Harness<'_, Fixture>, width: f32, case: &str) {
     }
 }
 
-/// The table's rows and header both reach the list's right edge.
+/// The table's rows reach the end of its columns and the header the list's right edge.
 fn assert_fills(h: &Harness<'_, Fixture>, case: &str) {
     let end = list_end(h);
     // why: the newest demo PR is 3h old, and Age, right-aligned, is the last column.
@@ -107,10 +101,13 @@ fn assert_fills(h: &Harness<'_, Fixture>, case: &str) {
         (row - end).abs() <= 2.0,
         "{case}: rows end at {row}, the list at {end}"
     );
-    let header = header.right() - half_gap();
+    // The last header cell's target reaches past the rows, over the trailing margin and the
+    // scroll bar's lane, to the list's edge.
+    let edge = dashboard_right(h);
     assert!(
-        (header - end).abs() <= 2.0,
-        "{case}: header ends at {header}, not {end}"
+        (header.right() - edge).abs() <= 2.0,
+        "{case}: header ends at {}, not {edge}",
+        header.right()
     );
 }
 

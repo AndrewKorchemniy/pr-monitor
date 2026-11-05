@@ -22,6 +22,7 @@ fn layout<'a>(
             ..Picks::default()
         },
         widths,
+        order: &DEFAULT_ORDER,
     }
 }
 
@@ -334,10 +335,7 @@ fn grouped_by_status_the_status_column_is_its_glyph() {
     let none = BTreeMap::new();
     let columns = visible_columns(room(1400.0), &layout(GroupBy::Status, &[], &none));
     let status = columns.iter().find(|c| c.id == ColumnId::Status);
-    assert_eq!(
-        status.map(|c| (c.header, c.width, c.sort)),
-        Some(("", Width::Fixed(STATUS_GLYPH), None))
-    );
+    assert_eq!(status.map(|c| c.width), Some(Width::Fixed(STATUS_GLYPH)));
     let number = columns.iter().find(|c| c.id == ColumnId::Number);
     assert_eq!(number.map(|c| c.key), Some("number_left"));
 }
@@ -478,6 +476,201 @@ fn the_hash_changes_with_the_visible_set() {
     let at = |width| visible_columns(room(width), &layout(GroupBy::None, &[], &none));
     assert_ne!(columns_hash(&at(1400.0)), columns_hash(&at(700.0)));
     assert_eq!(columns_hash(&at(1400.0)), columns_hash(&at(1500.0)));
+}
+
+#[test]
+fn the_hash_ignores_the_order() {
+    let none = BTreeMap::new();
+    let by_default = layout(GroupBy::None, &[], &none);
+    let order = [ColumnUnit::Age, ColumnUnit::Pr, ColumnUnit::Title];
+    let moved = ColumnLayout {
+        order: &order,
+        ..by_default
+    };
+    let (a, b) = (
+        visible_columns(room(1400.0), &by_default),
+        visible_columns(room(1400.0), &moved),
+    );
+    assert_ne!(ids(&a), ids(&b));
+    assert_eq!(columns_hash(&a), columns_hash(&b));
+}
+
+fn units(keys: &[&str]) -> Vec<ColumnUnit> {
+    let saved: Vec<String> = keys.iter().map(|k| (*k).to_owned()).collect();
+    ordered(&saved)
+}
+
+#[test]
+fn no_saved_order_is_the_default_and_the_default_saves_as_nothing() {
+    assert_eq!(ordered(&[]), DEFAULT_ORDER);
+    assert_eq!(order_keys(&DEFAULT_ORDER), Vec::<String>::new());
+    let moved = units(&["title", "pr"]);
+    assert_eq!(order_keys(&moved).len(), UNITS);
+    assert_eq!(ordered(&order_keys(&moved)), moved);
+}
+
+#[test]
+fn a_saved_order_ignores_unknown_and_repeated_keys() {
+    let order = units(&["age", "bogus", "title", "age", "", "pr"]);
+    let at = |u| order.iter().position(|x| *x == u);
+    assert!(at(ColumnUnit::Age) < at(ColumnUnit::Title), "{order:?}");
+    assert!(at(ColumnUnit::Title) < at(ColumnUnit::Pr), "{order:?}");
+    let mut sorted: Vec<_> = order.iter().map(|u| u.key()).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), UNITS, "{order:?}");
+}
+
+#[test]
+fn units_missing_from_a_saved_order_take_their_default_place() {
+    // Reviews and Required were added after this order was saved: they follow Author.
+    let order = units(&["age", "author", "title", "pr", "repo", "comments", "org"]);
+    let at = |u| order.iter().position(|x| *x == u);
+    assert_eq!(
+        at(ColumnUnit::Reviews),
+        at(ColumnUnit::Author).map(|i| i + 1)
+    );
+    assert_eq!(
+        at(ColumnUnit::Required),
+        at(ColumnUnit::Reviews).map(|i| i + 1)
+    );
+    // A unit with no predecessor in the order goes first.
+    let order = units(&["title"]);
+    assert_eq!(order.first(), Some(&ColumnUnit::Pr));
+}
+
+#[test]
+fn columns_follow_the_order_with_the_margin_first_and_the_pr_group_whole() {
+    let none = BTreeMap::new();
+    let order = [
+        ColumnUnit::Title,
+        ColumnUnit::Pr,
+        ColumnUnit::Age,
+        ColumnUnit::Repo,
+    ];
+    let moved = ColumnLayout {
+        order: &order,
+        ..layout(GroupBy::None, &[], &none)
+    };
+    let got = ids(&visible_columns(room(1400.0), &moved));
+    assert_eq!(
+        got[..7],
+        [
+            ColumnId::Margin,
+            ColumnId::Title,
+            ColumnId::Status,
+            ColumnId::Number,
+            ColumnId::Flags,
+            ColumnId::Age,
+            ColumnId::Repo,
+        ]
+    );
+}
+
+#[test]
+fn a_hidden_column_keeps_its_place_in_the_order() {
+    let hidden = ["author".to_owned()];
+    let none = BTreeMap::new();
+    let order = placed(&DEFAULT_ORDER, ColumnUnit::Author, 0, all_shown);
+    let order = placed(&order, ColumnUnit::Title, 0, all_shown);
+    let moved = ColumnLayout {
+        order: &order,
+        ..layout(GroupBy::None, &hidden, &none)
+    };
+    let got = ids(&visible_columns(room(1400.0), &moved));
+    assert!(!got.contains(&ColumnId::Author));
+    assert_eq!(got.get(1), Some(&ColumnId::Title));
+    // Showing it again puts it back right after Title, ahead of PR.
+    let shown = ColumnLayout {
+        order: &order,
+        ..layout(GroupBy::None, &[], &none)
+    };
+    let got = ids(&visible_columns(room(1400.0), &shown));
+    assert_eq!(got.get(2), Some(&ColumnId::Author));
+    assert_eq!(got.get(3), Some(&ColumnId::Status));
+}
+
+#[test]
+fn squeezing_never_changes_the_order() {
+    let none = BTreeMap::new();
+    let order = units(&["org", "comments", "title", "pr"]);
+    let moved = ColumnLayout {
+        order: &order,
+        ..layout(GroupBy::None, &[], &none)
+    };
+    let wide = ids(&visible_columns(room(1400.0), &moved));
+    let narrow = ids(&visible_columns(room(760.0), &moved));
+    assert!(narrow.len() < wide.len());
+    let kept: Vec<_> = wide.into_iter().filter(|id| narrow.contains(id)).collect();
+    assert_eq!(kept, narrow);
+}
+
+fn all_shown(_: ColumnUnit) -> bool {
+    true
+}
+
+#[test]
+fn placing_a_unit_puts_it_after_that_many_of_the_others() {
+    let order = DEFAULT_ORDER;
+    let got = placed(&order, ColumnUnit::Pr, 2, all_shown);
+    assert_eq!(
+        &got[..3],
+        [ColumnUnit::Title, ColumnUnit::Repo, ColumnUnit::Pr]
+    );
+    assert_eq!(
+        placed(&order, ColumnUnit::Age, 0, all_shown)[0],
+        ColumnUnit::Age
+    );
+    assert_eq!(
+        placed(&order, ColumnUnit::Pr, 99, all_shown).last(),
+        Some(&ColumnUnit::Pr)
+    );
+    assert_eq!(placed(&order, ColumnUnit::Title, 1, all_shown), order);
+}
+
+#[test]
+fn placing_a_unit_leaves_hidden_ones_where_they_were() {
+    // Author is hidden: Pr moves "after Title, Repo", so before Reviews, past the hidden Author.
+    let order = DEFAULT_ORDER;
+    let shown = |u| u != ColumnUnit::Author;
+    let got = placed(&order, ColumnUnit::Pr, 2, shown);
+    let at = |u| got.iter().position(|x| *x == u);
+    assert!(at(ColumnUnit::Author) < at(ColumnUnit::Pr), "{got:?}");
+    assert_eq!(at(ColumnUnit::Pr).map(|i| i + 1), at(ColumnUnit::Reviews));
+    // Dropped last: after the last shown unit, not past trailing hidden ones.
+    let shown = |u| u != ColumnUnit::Org;
+    let got = placed(&order, ColumnUnit::Pr, 99, shown);
+    assert_eq!(got.get(UNITS - 2), Some(&ColumnUnit::Pr));
+    assert_eq!(got.last(), Some(&ColumnUnit::Org));
+}
+
+#[test]
+fn stepping_a_unit_moves_it_one_shown_place_and_stops_at_the_ends() {
+    let order = DEFAULT_ORDER;
+    let right = stepped(&order, (ColumnUnit::Pr, Step::Right), all_shown);
+    assert_eq!(right.map(|o| o[0]), Some(ColumnUnit::Title));
+    assert_eq!(
+        stepped(&order, (ColumnUnit::Pr, Step::Left), all_shown),
+        None
+    );
+    assert_eq!(
+        stepped(&order, (ColumnUnit::Org, Step::Right), all_shown),
+        None
+    );
+    let left = stepped(&order, (ColumnUnit::Org, Step::Left), all_shown).unwrap_or_default();
+    assert_eq!(left.get(UNITS - 2), Some(&ColumnUnit::Org));
+}
+
+#[test]
+fn every_column_but_the_margin_belongs_to_a_unit_and_a_unit_sorts_by_its_columns_key() {
+    for column in COLUMNS {
+        assert_eq!(column.id.unit().is_none(), column.id == ColumnId::Margin);
+    }
+    for unit in DEFAULT_ORDER {
+        assert_eq!(ColumnUnit::from_key(unit.key()), Some(unit));
+    }
+    let number = column(ColumnId::Number).and_then(|c| c.sort);
+    assert_eq!(Some(ColumnUnit::Pr.sort()), number);
 }
 
 #[test]

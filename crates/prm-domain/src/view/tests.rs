@@ -417,3 +417,76 @@ fn required_groups_skip_optional_groups_and_required_people_and_sort_by_name() {
     let names: Vec<_> = groups_of(pr).iter().map(|g| g.name.to_string()).collect();
     assert_eq!(names, ["Alpha", "zeta"]);
 }
+
+/// A pull request by Ann Bell with these reviewer votes (10 approved, 5 with suggestions,
+/// -5 waiting, -10 rejected) from listed reviewers, and these required groups' votes.
+fn voted(n: i32, votes: &[i16], groups: &[i16]) -> PrRecord {
+    let mut builder = PrBuilder::new(key("contoso", 1, n)).author(person(1, "Ann Bell"));
+    for (who, vote) in (2_u128..).zip(votes) {
+        builder = builder.reviewer(person(who, "Rev"), *vote);
+    }
+    for (who, vote) in (20_u128..).zip(groups) {
+        builder = builder.required_group(group(who, "Team"), *vote);
+    }
+    record(builder.build(), vec![])
+}
+
+fn order_by(rows: &[PrRow], key: SortKey, descending: bool) -> Vec<i32> {
+    let sort = Sort { key, descending };
+    let view = build_view(rows, &ViewQuery::default(), sort, GroupBy::None);
+    numbers(rows, &view)
+}
+
+#[test]
+fn sort_by_reviews_puts_the_least_reviewed_first_and_blocked_before_quiet() {
+    let rows = rows(
+        &[
+            voted(1, &[10, 10], &[]),
+            voted(2, &[], &[]),
+            voted(3, &[-10], &[]),
+            voted(4, &[-5], &[]),
+            voted(5, &[5, -5], &[]),
+        ],
+        &[2, 3],
+    );
+    // No approvals: rejected, then waiting, then none. Then one approval, then two.
+    assert_eq!(
+        order_by(&rows, SortKey::Reviews, false),
+        vec![3, 4, 2, 5, 1]
+    );
+    assert_eq!(order_by(&rows, SortKey::Reviews, true), vec![1, 5, 2, 4, 3]);
+}
+
+#[test]
+fn sort_by_required_puts_the_most_outstanding_groups_first() {
+    let rows = rows(
+        &[
+            voted(1, &[], &[10, 10]),
+            voted(2, &[], &[0, -5, 10]),
+            voted(3, &[], &[0]),
+            voted(4, &[], &[5, 0]),
+            voted(5, &[], &[]),
+        ],
+        &[],
+    );
+    let ascending = order_by(&rows, SortKey::Required, false);
+    let at = |list: &[i32], n| list.iter().position(|x| *x == n);
+    // Two outstanding (2), one (3, 4), none (1, 5).
+    assert_eq!(ascending.first(), Some(&2), "{ascending:?}");
+    assert!(at(&ascending, 3) < at(&ascending, 1), "{ascending:?}");
+    assert!(at(&ascending, 4) < at(&ascending, 5), "{ascending:?}");
+    let descending = order_by(&rows, SortKey::Required, true);
+    assert_eq!(descending.last(), Some(&2), "{descending:?}");
+}
+
+#[test]
+fn the_new_sort_keys_round_trip_and_unknown_keys_fall_back_to_status() {
+    for key in [SortKey::Reviews, SortKey::Required] {
+        let json = serde_json::to_string(&key).unwrap();
+        assert_eq!(serde_json::from_str::<SortKey>(&json).unwrap(), key);
+    }
+    assert_eq!(
+        serde_json::from_str::<SortKey>("\"sideways\"").unwrap(),
+        SortKey::Status
+    );
+}

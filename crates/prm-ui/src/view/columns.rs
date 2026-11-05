@@ -68,6 +68,212 @@ impl ColumnId {
     }
 }
 
+/// What the user moves as one: a header cell. The leading Status, Number and Flags columns share
+/// one cell, "PR"; every other column is its own. The change-bar margin belongs to none: it is
+/// pinned at the table's left edge.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ColumnUnit {
+    Pr,
+    Title,
+    Repo,
+    Author,
+    Reviews,
+    Required,
+    Comments,
+    Age,
+    Org,
+}
+
+/// How many units there are.
+pub(crate) const UNITS: usize = 9;
+
+/// The units' order until the user moves one.
+pub(crate) const DEFAULT_ORDER: [ColumnUnit; UNITS] = [
+    ColumnUnit::Pr,
+    ColumnUnit::Title,
+    ColumnUnit::Repo,
+    ColumnUnit::Author,
+    ColumnUnit::Reviews,
+    ColumnUnit::Required,
+    ColumnUnit::Comments,
+    ColumnUnit::Age,
+    ColumnUnit::Org,
+];
+
+/// Which way a unit moves one place.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Step {
+    Left,
+    Right,
+}
+
+impl ColumnUnit {
+    /// Persisted in `UiState.column_order`.
+    pub(crate) const fn key(self) -> &'static str {
+        match self {
+            Self::Pr => "pr",
+            Self::Title => "title",
+            Self::Repo => "repo",
+            Self::Author => "author",
+            Self::Reviews => "reviews",
+            Self::Required => "required",
+            Self::Comments => "comments",
+            Self::Age => "age",
+            Self::Org => "org",
+        }
+    }
+
+    /// The unit's place in `DEFAULT_ORDER`, for arrays with a slot per unit.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
+        DEFAULT_ORDER.into_iter().find(|u| u.key() == key)
+    }
+
+    /// The header's text and the unit's name for screen readers.
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Pr => copy::COLUMN_NUMBER,
+            Self::Title => copy::COLUMN_TITLE,
+            Self::Repo => copy::COLUMN_REPO,
+            Self::Author => copy::COLUMN_AUTHOR,
+            Self::Reviews => copy::REVIEWS,
+            Self::Required => copy::COLUMN_REQUIRED,
+            Self::Comments => copy::COLUMN_COMMENTS,
+            Self::Age => copy::COLUMN_AGE,
+            Self::Org => copy::ORGANIZATION,
+        }
+    }
+
+    /// What a click on the header sorts by: the PR cell sorts by number.
+    pub(crate) const fn sort(self) -> SortKey {
+        match self {
+            Self::Pr => SortKey::Number,
+            Self::Title => SortKey::Title,
+            Self::Repo => SortKey::Repo,
+            Self::Author => SortKey::Author,
+            Self::Reviews => SortKey::Reviews,
+            Self::Required => SortKey::Required,
+            Self::Comments => SortKey::Comments,
+            Self::Age => SortKey::Age,
+            Self::Org => SortKey::Org,
+        }
+    }
+
+    /// Whether the header's text sits at the cell's right edge, over right-aligned cells.
+    pub(crate) const fn align_right(self) -> bool {
+        match self {
+            Self::Comments | Self::Age => true,
+            Self::Pr
+            | Self::Title
+            | Self::Repo
+            | Self::Author
+            | Self::Reviews
+            | Self::Required
+            | Self::Org => false,
+        }
+    }
+}
+
+impl ColumnId {
+    /// The unit this column moves with; `None` for the pinned margin.
+    pub(crate) const fn unit(self) -> Option<ColumnUnit> {
+        match self {
+            Self::Margin => None,
+            Self::Status | Self::Number | Self::Flags => Some(ColumnUnit::Pr),
+            Self::Title => Some(ColumnUnit::Title),
+            Self::Repo => Some(ColumnUnit::Repo),
+            Self::Author => Some(ColumnUnit::Author),
+            Self::Reviews => Some(ColumnUnit::Reviews),
+            Self::Required => Some(ColumnUnit::Required),
+            Self::Comments => Some(ColumnUnit::Comments),
+            Self::Age => Some(ColumnUnit::Age),
+            Self::Org => Some(ColumnUnit::Org),
+        }
+    }
+}
+
+/// The units in the user's order: the saved keys (unknown and repeated ones ignored), then each
+/// unit they lack straight after the unit that precedes it by default, or first when none does.
+/// Hidden units are in it too, so they keep their place.
+pub(crate) fn ordered(saved: &[String]) -> Vec<ColumnUnit> {
+    let mut order: Vec<ColumnUnit> = Vec::with_capacity(UNITS);
+    for unit in saved.iter().filter_map(|key| ColumnUnit::from_key(key)) {
+        if !order.contains(&unit) {
+            order.push(unit);
+        }
+    }
+    let mut before = None;
+    for unit in DEFAULT_ORDER {
+        if !order.contains(&unit) {
+            let at = before
+                .and_then(|prev| order.iter().position(|u| *u == prev))
+                .map_or(0, |i| i + 1);
+            order.insert(at, unit);
+        }
+        before = Some(unit);
+    }
+    order
+}
+
+/// What to save for `order`: nothing while it is the default, so a unit added later takes its
+/// own default place for everyone who never moved one.
+pub(crate) fn order_keys(order: &[ColumnUnit]) -> Vec<String> {
+    if order == DEFAULT_ORDER {
+        return Vec::new();
+    }
+    order.iter().map(|u| u.key().to_owned()).collect()
+}
+
+/// `order` with `unit` moved to follow `among` of the other shown units (so `0` puts it first).
+/// Units `shown` says are not in the table keep their place: the moved one goes just before the
+/// shown unit it now precedes, or after the last shown one.
+pub(crate) fn placed(
+    order: &[ColumnUnit],
+    unit: ColumnUnit,
+    among: usize,
+    shown: impl Fn(ColumnUnit) -> bool,
+) -> Vec<ColumnUnit> {
+    let mut rest: Vec<ColumnUnit> = order.iter().copied().filter(|u| *u != unit).collect();
+    let mut seen = 0;
+    let mut at = None;
+    for (index, other) in rest.iter().enumerate() {
+        if !shown(*other) {
+            continue;
+        }
+        if seen == among {
+            at = Some(index);
+            break;
+        }
+        seen += 1;
+    }
+    let at = at.unwrap_or_else(|| {
+        rest.iter()
+            .rposition(|u| shown(*u))
+            .map_or(rest.len(), |last| last + 1)
+    });
+    rest.insert(at, unit);
+    rest
+}
+
+/// `order` with `unit` one shown place further `step`, or `None` at the end of the row.
+pub(crate) fn stepped(
+    order: &[ColumnUnit],
+    (unit, step): (ColumnUnit, Step),
+    shown: impl Fn(ColumnUnit) -> bool + Copy,
+) -> Option<Vec<ColumnUnit>> {
+    let row: Vec<ColumnUnit> = order.iter().copied().filter(|u| shown(*u)).collect();
+    let now = row.iter().position(|u| *u == unit)?;
+    let among = match step {
+        Step::Left => now.checked_sub(1)?,
+        Step::Right if now + 1 < row.len() => now + 1,
+        Step::Right => return None,
+    };
+    Some(placed(order, unit, among, shown))
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum Width {
     /// The margin, at the theme's margin width.
@@ -86,8 +292,6 @@ pub(crate) struct ColumnSpec {
     /// Persisted in `UiState.columns` and `hidden_columns` or `shown_columns` (see `Picks`);
     /// empty for the margin.
     pub key: &'static str,
-    /// What the header shows; may be empty when the cells explain themselves.
-    pub header: &'static str,
     /// The column's name in the column menu and for screen readers.
     pub name: &'static str,
     pub width: Width,
@@ -117,7 +321,7 @@ impl ColumnSpec {
 const fn spec(
     id: ColumnId,
     key: &'static str,
-    header: &'static str,
+    name: &'static str,
     width: Width,
     min: f32,
     sort: Option<SortKey>,
@@ -125,8 +329,7 @@ const fn spec(
     ColumnSpec {
         id,
         key,
-        header,
-        name: header,
+        name,
         width,
         min,
         sort,
@@ -143,12 +346,6 @@ const fn hidden_by_default(mut column: ColumnSpec) -> ColumnSpec {
 
 const fn right(mut column: ColumnSpec) -> ColumnSpec {
     column.align_right = true;
-    column
-}
-
-/// A column whose header stays blank; it keeps its name for the menu and screen readers.
-const fn blank_header(mut column: ColumnSpec) -> ColumnSpec {
-    column.header = "";
     column
 }
 
@@ -175,14 +372,14 @@ pub(crate) const COLUMNS: [ColumnSpec; 12] = [
         52.0,
         Some(SortKey::Number),
     )),
-    blank_header(spec(
+    spec(
         ColumnId::Flags,
         "flags",
         copy::COLUMN_FLAGS,
         Width::Fixed(FLAGS_WIDTH),
         FLAGS_WIDTH,
         None,
-    )),
+    ),
     spec(
         ColumnId::Title,
         "title",
@@ -213,7 +410,7 @@ pub(crate) const COLUMNS: [ColumnSpec; 12] = [
         copy::REVIEWS,
         Width::Initial(104.0),
         56.0,
-        None,
+        Some(SortKey::Reviews),
     ),
     hidden_by_default(spec(
         ColumnId::Required,
@@ -221,7 +418,7 @@ pub(crate) const COLUMNS: [ColumnSpec; 12] = [
         copy::COLUMN_REQUIRED,
         Width::Initial(120.0),
         56.0,
-        None,
+        Some(SortKey::Required),
     )),
     right(spec(
         ColumnId::Comments,
@@ -306,6 +503,8 @@ pub(crate) struct ColumnLayout<'a> {
     pub picks: Picks<'a>,
     /// Widths the user dragged, by key (points).
     pub widths: &'a BTreeMap<String, f32>,
+    /// The units' order (`ordered`).
+    pub order: &'a [ColumnUnit],
 }
 
 /// How far a resizable column may shrink to fit the window.
@@ -336,6 +535,13 @@ impl Span {
 }
 
 impl ColumnLayout<'_> {
+    /// Where a column goes: the margin first, then by its unit's place in the order.
+    fn rank(&self, column: &ColumnSpec) -> usize {
+        column.id.unit().map_or(0, |unit| {
+            1 + self.order.iter().position(|u| *u == unit).unwrap_or(UNITS)
+        })
+    }
+
     fn wants(&self, column: &ColumnSpec) -> bool {
         match column.visibility() {
             Visibility::BySetting => self.show_org,
@@ -438,6 +644,8 @@ pub(crate) fn visible_columns(room: Room, layout: &ColumnLayout<'_>) -> Vec<Colu
 /// The columns `visible_columns` keeps, at their default widths, and how far they give.
 fn pick_columns(room: Room, layout: &ColumnLayout<'_>) -> (Vec<ColumnSpec>, Give) {
     let mut columns: Vec<ColumnSpec> = COLUMNS.into_iter().filter(|c| layout.wants(c)).collect();
+    // why: a stable sort keeps a unit's columns in their own order, and the margin first.
+    columns.sort_by_key(|c| layout.rank(c));
     if layout.group == GroupBy::Status {
         compact_status(&mut columns);
     }
@@ -500,6 +708,7 @@ pub(crate) fn table_minimum(room: Room) -> f32 {
         show_org: false,
         picks: Picks::default(),
         widths: &defaults,
+        order: &DEFAULT_ORDER,
     };
     let last = SQUEEZE_ORDER.last().copied();
     let minimal = COLUMNS
@@ -513,10 +722,8 @@ fn compact_status(columns: &mut [ColumnSpec]) {
     for spec in columns.iter_mut() {
         match spec.id {
             ColumnId::Status => {
-                spec.header = "";
                 spec.width = Width::Fixed(STATUS_GLYPH);
                 spec.min = STATUS_GLYPH;
-                spec.sort = None;
             }
             ColumnId::Number => {
                 spec.key = "number_left";
@@ -579,10 +786,11 @@ impl Choices<'_> {
 }
 
 /// A stable id for the visible set, so `egui_extras` width state never mismatches the count.
+/// It ignores their order: moving a column must not make the table forget its scroll offset.
 pub(crate) fn columns_hash(columns: &[ColumnSpec]) -> u64 {
     columns
         .iter()
-        .fold(0_u64, |hash, c| hash.rotate_left(5) ^ (c.id as u64 + 1))
+        .fold(0_u64, |hash, c| hash | (1 << c.id as u64))
 }
 
 #[cfg(test)]
