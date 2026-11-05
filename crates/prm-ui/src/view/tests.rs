@@ -145,6 +145,30 @@ fn a_column_that_starts_hidden_is_recorded_in_its_own_list() {
 }
 
 #[test]
+fn a_moved_column_is_saved_restored_and_reset_with_the_others() {
+    let mut v = view(GroupBy::None);
+    let mut ui = UiState::default();
+    v.write_ui_state(&mut ui);
+    assert!(
+        ui.column_order.is_empty(),
+        "the default order saves as nothing"
+    );
+    assert!(!v.differs_from(&ui));
+    v.column_order = columns::placed(&v.column_order, ColumnUnit::Age, 0, |_| true);
+    assert!(v.differs_from(&ui));
+    v.write_ui_state(&mut ui);
+    assert_eq!(ui.column_order.first().map(String::as_str), Some("age"));
+    assert!(!v.differs_from(&ui));
+    let restored = DashboardView::new(&ui, sample_rows(), 1, 24.0);
+    assert_eq!(restored.column_order, v.column_order);
+    v.reset_columns();
+    assert_eq!(v.column_order, columns::DEFAULT_ORDER);
+    assert!(v.differs_from(&ui));
+    v.write_ui_state(&mut ui);
+    assert!(ui.column_order.is_empty());
+}
+
+#[test]
 fn resetting_the_columns_clears_both_lists() {
     let mut v = view(GroupBy::None);
     v.toggle_column(ColumnId::Required);

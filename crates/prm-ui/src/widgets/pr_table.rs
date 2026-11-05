@@ -137,6 +137,7 @@ fn column_layout(view: &DashboardView, show_org: bool) -> ColumnLayout<'_> {
         show_org,
         picks: view.picks(),
         widths: &view.widths,
+        order: &view.column_order,
     }
 }
 

@@ -55,6 +55,7 @@ expression: state
     "columns": {},
     "hidden_columns": [],
     "shown_columns": [],
+    "column_order": [],
     "sort": {
       "key": "status",
       "descending": false

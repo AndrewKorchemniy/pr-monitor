@@ -21,7 +21,7 @@ use prm_domain::{
 
 use crate::view::{
     anchor::{AnchorResult, capture, restore},
-    columns::{Choices, ColumnId, Picks, Visibility},
+    columns::{Choices, ColumnId, ColumnUnit, Picks, Visibility},
     display::{DisplayList, DisplayRow, Pitch, build_display, group_id},
 };
 
@@ -62,6 +62,8 @@ pub(crate) struct DashboardView {
     pub hidden_columns: Vec<String>,
     /// Keys of columns that start hidden which the user turned on.
     pub shown_columns: Vec<String>,
+    /// The column groups' order, hidden ones included (`columns::ordered`).
+    pub column_order: Vec<ColumnUnit>,
     pub offset_y: f32,
     pub top_visible: Option<usize>,
     /// How far apart the list drew its rows last frame (table rows, or cards and headers).
@@ -100,6 +102,7 @@ impl DashboardView {
             widths: ui.columns.clone(),
             hidden_columns: ui.hidden_columns.clone(),
             shown_columns: ui.shown_columns.clone(),
+            column_order: columns::ordered(&ui.column_order),
             offset_y: 0.0,
             top_visible: None,
             pitch: Pitch::uniform(row_pitch),
@@ -488,11 +491,12 @@ impl DashboardView {
         }
     }
 
-    /// Restores default column widths and visibility.
+    /// Restores default column widths, visibility and order.
     pub(crate) fn reset_columns(&mut self) {
         self.widths.clear();
         self.hidden_columns.clear();
         self.shown_columns.clear();
+        self.column_order = columns::ordered(&[]);
         self.table_epoch = self.table_epoch.wrapping_add(1);
     }
 
@@ -506,6 +510,7 @@ impl DashboardView {
         ui.columns.clone_from(&self.widths);
         ui.hidden_columns.clone_from(&self.hidden_columns);
         ui.shown_columns.clone_from(&self.shown_columns);
+        ui.column_order = columns::order_keys(&self.column_order);
     }
 
     /// Whether `write_ui_state` would change `ui`, compared in place (runs every frame).
@@ -518,6 +523,19 @@ impl DashboardView {
             || ui.columns != self.widths
             || ui.hidden_columns != self.hidden_columns
             || ui.shown_columns != self.shown_columns
+            || !self.order_is_saved(ui)
+    }
+
+    /// Whether `ui` holds this view's column order (a default order saves as nothing); compared
+    /// in place, since it runs every frame.
+    fn order_is_saved(&self, ui: &UiState) -> bool {
+        if self.column_order == columns::DEFAULT_ORDER {
+            return ui.column_order.is_empty();
+        }
+        ui.column_order
+            .iter()
+            .map(String::as_str)
+            .eq(self.column_order.iter().map(|u| u.key()))
     }
 }
 

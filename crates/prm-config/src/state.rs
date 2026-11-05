@@ -88,6 +88,10 @@ pub struct UiState {
     /// Keys of the columns the user turned on from those that start hidden. A list apart from
     /// `hidden_columns`, so files saved before such a column existed keep their choices.
     pub shown_columns: Vec<String>,
+    /// Keys of the table's column groups, left to right, once the user has moved one; empty
+    /// means the default order. Keys it lacks keep their default place, unknown keys are
+    /// ignored, and hidden columns keep theirs.
+    pub column_order: Vec<String>,
     pub sort: Sort,
     pub group: GroupBy,
     pub filter: ViewQuery,

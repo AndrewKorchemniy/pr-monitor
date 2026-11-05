@@ -365,6 +365,29 @@ fn state_without_shown_columns_keeps_its_hidden_columns() {
     assert_eq!(loaded.state.ui.shown_columns, Vec::<String>::new());
 }
 
+/// A file from before columns could move has no `column_order` (the default order); a saved
+/// one round-trips without a schema bump.
+#[test]
+fn state_remembers_the_column_order_and_older_files_lack_it() {
+    let (_dir, paths) = temp_paths();
+    std::fs::write(
+        &paths.state,
+        r#"{ "ui": { "hidden_columns": ["author"] } }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        load_state(&paths).state.ui.column_order,
+        Vec::<String>::new()
+    );
+    let mut state = sample_state();
+    state.ui.column_order = vec!["title".to_owned(), "pr".to_owned()];
+    FileRepo::new(paths.clone()).save_state(&state).unwrap();
+    let loaded = load_state(&paths);
+    assert_eq!(loaded.issue, None);
+    assert_eq!(loaded.state.ui.column_order, ["title", "pr"]);
+    assert_eq!(loaded.state.schema_version, STATE_SCHEMA);
+}
+
 #[test]
 fn state_prkey_keys_are_strings() {
     let json = serde_json::to_value(sample_state()).unwrap();
