@@ -113,6 +113,24 @@ pub struct PrRow {
     pub stale: bool,
 }
 
+impl PrRow {
+    /// Reviewers who approved, with or without suggestions.
+    pub fn approvals(&self) -> u16 {
+        u16::from(self.tally.approved) + u16::from(self.tally.suggestions)
+    }
+
+    /// Required reviewer groups that have not approved yet.
+    pub fn outstanding_groups(&self) -> usize {
+        let approved = |g: &&GroupChip| {
+            matches!(
+                g.vote,
+                VoteKind::Approved | VoteKind::ApprovedWithSuggestions
+            )
+        };
+        self.required_groups.len() - self.required_groups.iter().filter(approved).count()
+    }
+}
+
 /// One org's data for [`build_rows`].
 pub struct RowBuildInput<'a> {
     pub org: &'a OrgId,

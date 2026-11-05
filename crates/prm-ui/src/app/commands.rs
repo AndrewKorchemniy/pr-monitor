@@ -56,6 +56,8 @@ impl PrMonitorApp {
             C::SortAge => view.sort_by(SortKey::Age),
             C::SortActivity => view.sort_by(SortKey::Activity),
             C::SortComments => view.sort_by(SortKey::Comments),
+            C::SortReviews => view.sort_by(SortKey::Reviews),
+            C::SortRequired => view.sort_by(SortKey::Required),
             C::GroupNone => view.set_group(GroupBy::None),
             C::GroupStatus => view.set_group(GroupBy::Status),
             C::GroupAuthor => view.set_group(GroupBy::Author),

@@ -18,6 +18,10 @@ pub enum SortKey {
     Activity,
     Comments,
     Org,
+    /// Approvals; ascending puts the least reviewed first.
+    Reviews,
+    /// Required reviewer groups not yet approved; ascending puts the most outstanding first.
+    Required,
     /// Last because `#[serde(other)]` must be the final variant.
     #[default]
     #[serde(other)]
@@ -57,5 +61,13 @@ fn compare_key(a: &PrRow, b: &PrRow, key: SortKey) -> Ordering {
         SortKey::Activity => b.last_activity.cmp(&a.last_activity),
         SortKey::Comments => b.active_threads.cmp(&a.active_threads),
         SortKey::Org => a.org_key.cmp(&b.org_key),
+        // "Ascending" means what needs a reviewer first: fewest approvals, then the most
+        // rejections and waiting for the author.
+        SortKey::Reviews => a
+            .approvals()
+            .cmp(&b.approvals())
+            .then(b.tally.rejected.cmp(&a.tally.rejected))
+            .then(b.tally.waiting.cmp(&a.tally.waiting)),
+        SortKey::Required => b.outstanding_groups().cmp(&a.outstanding_groups()),
     }
 }

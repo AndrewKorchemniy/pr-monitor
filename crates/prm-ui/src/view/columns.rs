@@ -213,7 +213,7 @@ pub(crate) const COLUMNS: [ColumnSpec; 12] = [
         copy::REVIEWS,
         Width::Initial(104.0),
         56.0,
-        None,
+        Some(SortKey::Reviews),
     ),
     hidden_by_default(spec(
         ColumnId::Required,
@@ -221,7 +221,7 @@ pub(crate) const COLUMNS: [ColumnSpec; 12] = [
         copy::COLUMN_REQUIRED,
         Width::Initial(120.0),
         56.0,
-        None,
+        Some(SortKey::Required),
     )),
     right(spec(
         ColumnId::Comments,
