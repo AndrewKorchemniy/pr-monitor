@@ -94,6 +94,7 @@ impl PrMonitorApp {
     fn escape(&mut self, ctx: &egui::Context, text_input: bool) {
         let filter_focused = ctx.memory(|m| m.has_focus(filter_id()));
         let input = EscapeInputs {
+            column_drag: self.dash.view.reorder.is_some(),
             popup_open: esc_is_owned(ctx)
                 || self.settings.as_ref().is_some_and(|s| s.editing.is_some()),
             overlay: self.overlay.clone(),
@@ -112,6 +113,7 @@ impl PrMonitorApp {
         }
         match target {
             EscapeTarget::Popup | EscapeTarget::CloseOverlay | EscapeTarget::Nothing => {}
+            EscapeTarget::CancelColumnDrag => self.dash.view.cancel_column_drag(),
             EscapeTarget::ClearFilterText => self.set_filter_text(String::new()),
             EscapeTarget::BlurFilter => ctx.memory_mut(|m| m.surrender_focus(filter_id())),
             EscapeTarget::ClosePeek => self.dash.peek.open = false,

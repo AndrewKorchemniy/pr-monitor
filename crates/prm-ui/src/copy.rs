@@ -62,6 +62,20 @@ pub(crate) const COLUMN_LOCKED: &str = "Always shown";
 pub(crate) const COLUMN_SQUEEZED: &str = "Hidden while the table is this narrow";
 pub(crate) const AUTO_COMPLETE: &str = "Auto-complete is set";
 pub(crate) const COLUMNS: &str = "Columns";
+/// What a header cell tells screen readers beyond its name.
+pub(crate) const COLUMN_REORDER_HINT: &str = "Drag to move, or hold Alt and press an arrow key";
+/// The PR header's menu item: the cell sorts by number, so status sorting is here.
+pub(crate) const SORT_BY_STATUS: &str = "Sort by status";
+
+/// "Move Title left": a column menu item.
+pub(crate) fn move_column_left(column: &str) -> String {
+    format!("Move {column} left")
+}
+
+/// "Move Title right": a column menu item.
+pub(crate) fn move_column_right(column: &str) -> String {
+    format!("Move {column} right")
+}
 pub(crate) const COLUMNS_HELP: &str = "Status and Title always show. Changes apply right away, and you can also right-click a column header.";
 pub(crate) const SERVICE_STOPPED: &str =
     "PR Monitor's background service stopped. Restart the app.";
@@ -620,6 +634,8 @@ pub(crate) const ALL: &[&str] = &[
     CONFLICTS,
     AUTO_COMPLETE,
     COLUMN_SQUEEZED,
+    COLUMN_REORDER_HINT,
+    SORT_BY_STATUS,
     COLUMNS_HELP,
     REVIEWS,
     REQUIRED_GROUPS,

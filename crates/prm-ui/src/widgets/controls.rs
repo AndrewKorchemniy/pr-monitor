@@ -152,6 +152,46 @@ pub(crate) fn ghost_chrome(
     }
 }
 
+/// A faint wash of the text colour over `rect`, like a hovered ghost button's fill, to mark an
+/// area without hiding what is under it.
+pub(crate) fn wash(painter: &egui::Painter, theme: &UiTheme, rect: Rect) {
+    painter.rect_filled(rect, CornerRadius::ZERO, ghost_overlay(theme));
+}
+
+/// Why a flat cell shows its fill beyond hover.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Hold {
+    Free,
+    /// A menu opened from the cell is open.
+    MenuOpen,
+}
+
+/// A table header cell's chrome: the ghost fill over the whole cell, square so neighbouring
+/// cells meet edge to edge, held while its menu is open and deeper while pressed, and a focus
+/// ring inside the cell.
+pub(crate) fn flat_chrome(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    rect: Rect,
+    response: &egui::Response,
+    hold: Hold,
+) {
+    let square = CornerRadius::ZERO;
+    match hold {
+        Hold::MenuOpen => wash(ui.painter(), theme, rect),
+        Hold::Free => ghost_fill_corners(ui, theme, (rect, square), response),
+    }
+    if response.is_pointer_button_down_on() {
+        wash(ui.painter(), theme, rect);
+    }
+    if response.has_focus() {
+        let m = &theme.tokens.metrics;
+        let ring = Stroke::new(m.stroke.focus, theme.colors.border_focus);
+        ui.painter()
+            .rect_stroke(rect, square, ring, StrokeKind::Inside);
+    }
+}
+
 /// The cross in a close button (points).
 pub(crate) const CLOSE_GLYPH: f32 = 14.0;
 

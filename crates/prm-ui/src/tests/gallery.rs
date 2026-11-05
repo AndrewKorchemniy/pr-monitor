@@ -587,3 +587,110 @@ fn gallery() {
     }
     println!("gallery written to {}", dir.display());
 }
+
+/// The table header with the Required column on: sorted by reviews, the PR cell and the blank
+/// past Age hovered, and a column held mid-drag.
+fn header_scenes() -> Vec<(Scene, Option<Pointer>)> {
+    let setup: fn(&mut Fixture) = |f| {
+        f.dash.view.set_group(GroupBy::None);
+        f.dash.view.shown_columns.push("required".to_owned());
+        f.dash.view.sort_by(SortKey::Reviews);
+    };
+    let at = |name| scene(name, Shown::Dashboard, demo_state, setup);
+    vec![
+        (at("header-sorted"), None),
+        (at("header-pr-hover"), Some(hover_pr_margin as Pointer)),
+        (at("header-last-hover"), Some(hover_past_age as Pointer)),
+        (at("header-dragging"), Some(hold_repo_header as Pointer)),
+    ]
+}
+
+fn hover_pr_margin(h: &mut Harness<'_, Fixture>) {
+    let pr = h
+        .get_by_role_and_label(Role::Button, copy::COLUMN_NUMBER)
+        .rect();
+    h.hover_at(egui::pos2(pr.left() + 2.0, pr.center().y));
+}
+
+fn hover_past_age(h: &mut Harness<'_, Fixture>) {
+    let age = h
+        .get_by_role_and_label(Role::Button, copy::COLUMN_AGE)
+        .rect();
+    h.hover_at(egui::pos2(age.right() - 2.0, age.center().y));
+}
+
+/// Takes hold of the Repository header and carries it past Author and Reviews, still held.
+fn hold_repo_header(h: &mut Harness<'_, Fixture>) {
+    let from = h
+        .get_by_role_and_label(Role::Button, copy::COLUMN_REPO)
+        .rect()
+        .center();
+    let press = |pressed| egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    h.event(egui::Event::PointerMoved(from));
+    h.step();
+    h.event(press(true));
+    h.step();
+    for step in 1..=8 {
+        let to = from + egui::vec2(step as f32 * 30.0, 0.0);
+        h.event(egui::Event::PointerMoved(to));
+        h.step();
+    }
+}
+
+/// A frame partway through a column sliding into its new place, with animations on: Repository
+/// was dragged over Author and let go, and the frame is a fraction of the slide in.
+fn render_sliding(theme: &str, dir: &std::path::Path) {
+    let mut state = demo_state();
+    let mut config = (*state.config).clone();
+    config.ui.theme = theme.to_owned();
+    state.config = Arc::new(config);
+    let mut fixture = Fixture::new(Shown::Dashboard, state);
+    fixture.now = now();
+    fixture.dash.view.set_group(GroupBy::None);
+    fixture
+        .theme
+        .set_policy(crate::render::policy::RenderPolicy {
+            low_power: false,
+            animations: true,
+        });
+    let mut h = Harness::builder()
+        .with_size(WINDOW)
+        .with_pixels_per_point(1.25)
+        .with_step_dt(0.03)
+        .with_accessibility_check(false)
+        .with_context_setup(crate::theme::fonts::install)
+        .wgpu()
+        .build_ui_state(|ui, f: &mut Fixture| f.draw(ui), fixture);
+    h.run();
+    let step = (
+        crate::view::columns::ColumnUnit::Repo,
+        crate::view::columns::Step::Right,
+    );
+    h.state_mut().dash.view.step_column(step, |_| true);
+    h.step();
+    h.step();
+    let image = h.render().expect("render");
+    image
+        .save(dir.join(format!("header-sliding-{theme}.png")))
+        .expect("save");
+}
+
+#[test]
+#[ignore = "renders on the GPU and writes PNG files; run on demand for design review"]
+fn header_gallery() {
+    let dir = out_dir();
+    std::fs::create_dir_all(&dir).expect("gallery dir");
+    for (scene, pointer) in header_scenes() {
+        for theme in ["andromeda", "graphite"] {
+            render(&scene, theme, &dir, pointer);
+        }
+    }
+    for theme in ["andromeda", "graphite"] {
+        render_sliding(theme, &dir);
+    }
+}

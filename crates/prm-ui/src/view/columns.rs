@@ -123,6 +123,11 @@ impl ColumnUnit {
         }
     }
 
+    /// The unit's place in `DEFAULT_ORDER`, for arrays with a slot per unit.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
     pub(crate) fn from_key(key: &str) -> Option<Self> {
         DEFAULT_ORDER.into_iter().find(|u| u.key() == key)
     }
@@ -287,8 +292,6 @@ pub(crate) struct ColumnSpec {
     /// Persisted in `UiState.columns` and `hidden_columns` or `shown_columns` (see `Picks`);
     /// empty for the margin.
     pub key: &'static str,
-    /// What the header shows; may be empty when the cells explain themselves.
-    pub header: &'static str,
     /// The column's name in the column menu and for screen readers.
     pub name: &'static str,
     pub width: Width,
@@ -318,7 +321,7 @@ impl ColumnSpec {
 const fn spec(
     id: ColumnId,
     key: &'static str,
-    header: &'static str,
+    name: &'static str,
     width: Width,
     min: f32,
     sort: Option<SortKey>,
@@ -326,8 +329,7 @@ const fn spec(
     ColumnSpec {
         id,
         key,
-        header,
-        name: header,
+        name,
         width,
         min,
         sort,
@@ -344,12 +346,6 @@ const fn hidden_by_default(mut column: ColumnSpec) -> ColumnSpec {
 
 const fn right(mut column: ColumnSpec) -> ColumnSpec {
     column.align_right = true;
-    column
-}
-
-/// A column whose header stays blank; it keeps its name for the menu and screen readers.
-const fn blank_header(mut column: ColumnSpec) -> ColumnSpec {
-    column.header = "";
     column
 }
 
@@ -376,14 +372,14 @@ pub(crate) const COLUMNS: [ColumnSpec; 12] = [
         52.0,
         Some(SortKey::Number),
     )),
-    blank_header(spec(
+    spec(
         ColumnId::Flags,
         "flags",
         copy::COLUMN_FLAGS,
         Width::Fixed(FLAGS_WIDTH),
         FLAGS_WIDTH,
         None,
-    )),
+    ),
     spec(
         ColumnId::Title,
         "title",
@@ -726,10 +722,8 @@ fn compact_status(columns: &mut [ColumnSpec]) {
     for spec in columns.iter_mut() {
         match spec.id {
             ColumnId::Status => {
-                spec.header = "";
                 spec.width = Width::Fixed(STATUS_GLYPH);
                 spec.min = STATUS_GLYPH;
-                spec.sort = None;
             }
             ColumnId::Number => {
                 spec.key = "number_left";

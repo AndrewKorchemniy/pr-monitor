@@ -45,6 +45,17 @@ pub(crate) enum ScrollIntent {
     Offset(f32),
 }
 
+/// A column header lifted by the pointer. The table lays its columns out in `order` meanwhile,
+/// and a drop saves it.
+#[derive(Clone, Debug)]
+pub(crate) struct ColumnDrag {
+    pub unit: ColumnUnit,
+    /// How far right of the header's left edge the pointer took hold (points).
+    pub grab: f32,
+    /// The order the drop would save, hidden units included.
+    pub order: Vec<ColumnUnit>,
+}
+
 pub(crate) struct DashboardView {
     rows: Arc<[PrRow]>,
     rows_generation: u64,
@@ -64,6 +75,8 @@ pub(crate) struct DashboardView {
     pub shown_columns: Vec<String>,
     /// The column groups' order, hidden ones included (`columns::ordered`).
     pub column_order: Vec<ColumnUnit>,
+    /// The column header being dragged, if any (not persisted).
+    pub reorder: Option<ColumnDrag>,
     pub offset_y: f32,
     pub top_visible: Option<usize>,
     /// How far apart the list drew its rows last frame (table rows, or cards and headers).
@@ -103,6 +116,7 @@ impl DashboardView {
             hidden_columns: ui.hidden_columns.clone(),
             shown_columns: ui.shown_columns.clone(),
             column_order: columns::ordered(&ui.column_order),
+            reorder: None,
             offset_y: 0.0,
             top_visible: None,
             pitch: Pitch::uniform(row_pitch),
@@ -257,6 +271,52 @@ impl DashboardView {
         Choices {
             picks: self.picks(),
             squeezed: &self.squeezed,
+        }
+    }
+
+    /// The order the table lays its columns out in: the one being dragged to, else the saved one.
+    pub(crate) fn layout_order(&self) -> &[ColumnUnit] {
+        self.reorder
+            .as_ref()
+            .map_or(&self.column_order, |drag| &drag.order)
+    }
+
+    /// A header was lifted `grab` points right of its left edge.
+    pub(crate) fn lift_column(&mut self, unit: ColumnUnit, grab: f32) {
+        self.reorder = Some(ColumnDrag {
+            unit,
+            grab,
+            order: self.column_order.clone(),
+        });
+    }
+
+    /// The lifted header would now land after `among` of the other shown units.
+    pub(crate) fn retarget_column(&mut self, among: usize, shown: impl Fn(ColumnUnit) -> bool) {
+        if let Some(drag) = &mut self.reorder {
+            drag.order = columns::placed(&drag.order, drag.unit, among, shown);
+        }
+    }
+
+    /// The lifted header was let go: its order is kept.
+    pub(crate) fn drop_column(&mut self) {
+        if let Some(drag) = self.reorder.take() {
+            self.column_order = drag.order;
+        }
+    }
+
+    /// Escape: back to the order before the drag.
+    pub(crate) fn cancel_column_drag(&mut self) {
+        self.reorder = None;
+    }
+
+    /// Moves `unit` one shown place over, from the keyboard or the column menu.
+    pub(crate) fn step_column(
+        &mut self,
+        (unit, step): (ColumnUnit, columns::Step),
+        shown: impl Fn(ColumnUnit) -> bool + Copy,
+    ) {
+        if let Some(order) = columns::stepped(&self.column_order, (unit, step), shown) {
+            self.column_order = order;
         }
     }
 
@@ -497,6 +557,7 @@ impl DashboardView {
         self.hidden_columns.clear();
         self.shown_columns.clear();
         self.column_order = columns::ordered(&[]);
+        self.reorder = None;
         self.table_epoch = self.table_epoch.wrapping_add(1);
     }
 

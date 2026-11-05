@@ -209,6 +209,8 @@ pub struct Motion {
     pub reveal: f32,
     /// The change bar retracting.
     pub retract: f32,
+    /// Table columns sliding aside for a dragged header.
+    pub reorder: f32,
 }
 
 pub const MOTION: Motion = Motion {
@@ -216,6 +218,7 @@ pub const MOTION: Motion = Motion {
     standard: 0.167,
     reveal: 0.180,
     retract: 0.120,
+    reorder: 0.140,
 };
 
 #[derive(Clone, Debug, PartialEq)]

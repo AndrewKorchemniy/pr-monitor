@@ -4,11 +4,12 @@
 
 pub(crate) mod cells;
 mod header;
+mod reorder;
 pub(crate) mod rows;
 
 use eframe::egui::{self, Align, Layout, Sense};
 use egui_extras::{Column, TableBody, TableBuilder, TableRow};
-use prm_domain::view::age::AgeCache;
+use prm_domain::view::{PrRow, age::AgeCache};
 
 use crate::{
     actions::UiAction,
@@ -19,14 +20,15 @@ use crate::{
     view::{
         DashboardView,
         columns::{
-            self, ColumnCheck, ColumnLayout, ColumnSpec, Room, Visibility, Width, columns_hash,
-            dragged_widths, visible_columns,
+            self, COLUMNS, ColumnCheck, ColumnLayout, ColumnSpec, Room, Visibility, Width,
+            columns_hash, dragged_widths, visible_columns,
         },
         display::{DisplayRow, Pitch},
     },
-    widgets::controls::Check,
+    widgets::controls::{self, Check},
 };
-use header::{HeaderCx, Resize, header_row};
+use header::{HeaderCx, HeaderOut, Reorder, Resize, header_row};
+use reorder::{Slide, slide_in};
 use rows::{RowCx, answer_row, group_row, mark_selected, record_scroll, rows_rect, scroll_request};
 
 pub(crate) struct TableInputs<'a> {
@@ -97,7 +99,7 @@ pub(crate) fn pr_table(
     let pitch = table_pitch(ui.spacing(), &theme);
     let builder = table_builder(ui, &theme, &columns, view);
     let mut pending = Vec::new();
-    let mut resize = None;
+    let mut found = HeaderOut::default();
     let output = builder
         .header(metrics.header_height, |mut header| {
             let hcx = HeaderCx {
@@ -106,7 +108,7 @@ pub(crate) fn pr_table(
                 columns: &columns,
                 view,
             };
-            resize = header_row(&mut header, &hcx, &mut pending);
+            found = header_row(&mut header, &hcx, &mut pending);
         })
         .body(|body| {
             let rcx = RowCx {
@@ -116,17 +118,62 @@ pub(crate) fn pr_table(
                 frame: cx,
                 label_x: rows::TABLE_LABEL_X,
             };
-            table_body(body, &rcx, &columns, &mut pending);
+            table_body(body, &rcx, (&columns, &found.slide), &mut pending);
         });
     for action in pending {
         cx.push(action);
     }
-    if let Some(resize) = resize {
-        resize_column(view, (room, input.show_org), &resize);
+    if let Some(resize) = &found.resize {
+        resize_column(view, (room, input.show_org), resize);
     }
+    let moves = Moves {
+        event: found.reorder.take(),
+        landing: found.landing,
+        rows: output.inner_rect,
+    };
+    reorder_columns(ui, &theme, view, (&columns, moves));
     let scrolled = (output.inner_rect, output.state.clamped_offset().y);
     TableOut {
         geometry: record_scroll(ui, view, scrolled, pitch),
+    }
+}
+
+/// What the header found about moving a column, and where the table's rows lie.
+struct Moves {
+    event: Option<Reorder>,
+    /// Where the lifted header will land.
+    landing: Option<egui::Rangef>,
+    rows: egui::Rect,
+}
+
+/// Does what the header asked for about moving a column: picks one up, follows it, drops it or
+/// steps it a place, and washes the rows' column it will land in (`landing`).
+fn reorder_columns(
+    ui: &egui::Ui,
+    theme: &UiTheme,
+    view: &mut DashboardView,
+    (columns, moves): (&[ColumnSpec], Moves),
+) {
+    let Moves {
+        event,
+        landing,
+        rows,
+    } = moves;
+    let shown = |unit| columns.iter().any(|c| c.id.unit() == Some(unit));
+    // why: a window resize can squeeze the lifted column out; there is nothing left to drop.
+    if view.reorder.as_ref().is_some_and(|drag| !shown(drag.unit)) {
+        view.cancel_column_drag();
+    }
+    match event {
+        Some(Reorder::Lift { unit, grab }) => view.lift_column(unit, grab),
+        Some(Reorder::Retarget { among }) => view.retarget_column(among, shown),
+        Some(Reorder::Drop) => view.drop_column(),
+        Some(Reorder::Step(unit, step)) => view.step_column((unit, step), shown),
+        None => {}
+    }
+    if let Some(x) = landing {
+        let rect = egui::Rect::from_x_y_ranges(x, rows.y_range());
+        controls::wash(&ui.painter_at(rows), theme, rect);
     }
 }
 
@@ -137,7 +184,7 @@ fn column_layout(view: &DashboardView, show_org: bool) -> ColumnLayout<'_> {
         show_org,
         picks: view.picks(),
         widths: &view.widths,
-        order: &view.column_order,
+        order: view.layout_order(),
     }
 }
 
@@ -254,7 +301,7 @@ fn table_builder<'a>(
 fn table_body(
     mut body: TableBody<'_>,
     rcx: &RowCx<'_, '_>,
-    columns: &[ColumnSpec],
+    (columns, slide): (&[ColumnSpec], &Slide),
     pending: &mut Vec<UiAction>,
 ) {
     let full = body.max_rect();
@@ -274,7 +321,9 @@ fn table_body(
                     pending,
                 );
             }
-            Some(DisplayRow::Pr(_)) => pr_row(&mut row, rcx, (columns, list), pending),
+            Some(DisplayRow::Pr(_)) => {
+                pr_row(&mut row, rcx, (columns, (slide, clip), list), pending);
+            }
             None => {}
         }
     });
@@ -284,7 +333,7 @@ fn table_body(
 fn pr_row(
     row: &mut TableRow<'_, '_>,
     rcx: &RowCx<'_, '_>,
-    (columns, list): (&[ColumnSpec], egui::Rect),
+    (columns, slide, list): (&[ColumnSpec], (&Slide, egui::Rect), egui::Rect),
     pending: &mut Vec<UiAction>,
 ) {
     let index = row.index();
@@ -292,9 +341,32 @@ fn pr_row(
         return;
     };
     let selected = mark_selected(row, rcx, pr);
-    for spec in columns {
-        row.col(|ui| cells::cell(ui, rcx, spec, pr, index));
+    let mut slots = [egui::Rect::NOTHING; COLUMNS.len()];
+    for (spec, slot) in columns.iter().zip(&mut slots) {
+        row.col(|ui| {
+            *slot = ui.max_rect();
+            if !slide.0.sliding(spec.id) {
+                cells::cell(ui, rcx, spec, pr, index);
+            }
+        });
     }
-    row.col(|_| {});
+    // why: the trailing margin's cell comes last, so what slides is drawn over every fill.
+    row.col(|ui| sliding_cells(ui, rcx, (columns, &slots, slide), (pr, index)));
     answer_row(&row.response(), rcx, (pr, selected), list, pending);
+}
+
+/// The cells of the columns that are sliding, each drawn where its slide puts it.
+fn sliding_cells(
+    ui: &mut egui::Ui,
+    rcx: &RowCx<'_, '_>,
+    (columns, slots, slide): (&[ColumnSpec], &[egui::Rect], (&Slide, egui::Rect)),
+    (pr, index): (&PrRow, usize),
+) {
+    for (spec, slot) in columns.iter().zip(slots) {
+        if slide.0.sliding(spec.id) {
+            slide_in(ui, slide, (spec.id, *slot), |ui| {
+                cells::cell(ui, rcx, spec, pr, index);
+            });
+        }
+    }
 }

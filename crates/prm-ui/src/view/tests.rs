@@ -149,8 +149,9 @@ fn a_moved_column_is_saved_restored_and_reset_with_the_others() {
     let mut v = view(GroupBy::None);
     let mut ui = UiState::default();
     v.write_ui_state(&mut ui);
-    assert!(
-        ui.column_order.is_empty(),
+    assert_eq!(
+        ui.column_order,
+        Vec::<String>::new(),
         "the default order saves as nothing"
     );
     assert!(!v.differs_from(&ui));
@@ -165,7 +166,7 @@ fn a_moved_column_is_saved_restored_and_reset_with_the_others() {
     assert_eq!(v.column_order, columns::DEFAULT_ORDER);
     assert!(v.differs_from(&ui));
     v.write_ui_state(&mut ui);
-    assert!(ui.column_order.is_empty());
+    assert_eq!(ui.column_order, Vec::<String>::new());
 }
 
 #[test]

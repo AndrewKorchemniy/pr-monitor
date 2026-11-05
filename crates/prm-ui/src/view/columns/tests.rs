@@ -335,10 +335,7 @@ fn grouped_by_status_the_status_column_is_its_glyph() {
     let none = BTreeMap::new();
     let columns = visible_columns(room(1400.0), &layout(GroupBy::Status, &[], &none));
     let status = columns.iter().find(|c| c.id == ColumnId::Status);
-    assert_eq!(
-        status.map(|c| (c.header, c.width, c.sort)),
-        Some(("", Width::Fixed(STATUS_GLYPH), None))
-    );
+    assert_eq!(status.map(|c| c.width), Some(Width::Fixed(STATUS_GLYPH)));
     let number = columns.iter().find(|c| c.id == ColumnId::Number);
     assert_eq!(number.map(|c| c.key), Some("number_left"));
 }
@@ -506,7 +503,7 @@ fn units(keys: &[&str]) -> Vec<ColumnUnit> {
 #[test]
 fn no_saved_order_is_the_default_and_the_default_saves_as_nothing() {
     assert_eq!(ordered(&[]), DEFAULT_ORDER);
-    assert!(order_keys(&DEFAULT_ORDER).is_empty());
+    assert_eq!(order_keys(&DEFAULT_ORDER), Vec::<String>::new());
     let moved = units(&["title", "pr"]);
     assert_eq!(order_keys(&moved).len(), UNITS);
     assert_eq!(ordered(&order_keys(&moved)), moved);

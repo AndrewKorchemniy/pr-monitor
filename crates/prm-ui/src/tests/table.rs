@@ -8,6 +8,8 @@ use egui_kittest::{
 };
 use prm_domain::view::{GroupBy, SortKey};
 
+mod reorder;
+
 use super::signed_out;
 use crate::{
     actions::UiAction,
@@ -176,6 +178,19 @@ fn header_rect(h: &Harness<'_, Fixture>, label: &str) -> egui::Rect {
     h.get_by_role_and_label(Role::Button, label).rect()
 }
 
+/// The divider after the Status column inside the PR cell: the margin, a gap, the column's
+/// 140 points and half a gap in from the cell's left edge.
+fn status_divider(h: &Harness<'_, Fixture>) -> egui::Pos2 {
+    let theme = crate::theme::fallback();
+    let gap = crate::theme::adapter::style(&theme, theme.policy)
+        .spacing
+        .item_spacing
+        .x;
+    let pr = header_rect(h, copy::COLUMN_NUMBER);
+    let x = pr.left() + theme.tokens.metrics.row.margin_col + gap + 140.0 + gap / 2.0;
+    egui::pos2(x, pr.center().y)
+}
+
 /// Widths were measured from each frame's cell, whose left edge moved as Title gave up room,
 /// so a column right of Title kept growing while the pointer held still; the last column had
 /// no divider to drag at all.
@@ -187,16 +202,11 @@ fn dragging_a_divider_follows_the_pointer_and_holds_still() {
     h.run();
     // Status sits left of Title, so its strip is its right divider; the others sit right of
     // Title and drag from their left divider. A header's target reaches the divider middles.
-    let status = header_rect(&h, copy::COLUMN_STATUS);
+    let status = status_divider(&h);
     let repo = header_rect(&h, copy::COLUMN_REPO);
     let age = header_rect(&h, copy::COLUMN_AGE);
     let cases = [
-        (
-            "status",
-            egui::pos2(status.right(), status.center().y),
-            20.0,
-            160.0,
-        ),
+        ("status", status, 20.0, 160.0),
         (
             "repo",
             egui::pos2(repo.left(), repo.center().y),
