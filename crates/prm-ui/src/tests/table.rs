@@ -232,6 +232,17 @@ fn cursor_at(h: &mut Harness<'_, Fixture>, pos: egui::Pos2) -> egui::CursorIcon 
     h.output().platform_output.cursor_icon
 }
 
+/// Hovering a header cell keeps the normal cursor: most clicks there sort, they do not move.
+#[test]
+fn a_header_cell_keeps_the_normal_cursor() {
+    let mut fixture = Fixture::new(Shown::Dashboard, state_with(sample_rows()));
+    fixture.dash.view.set_group(GroupBy::None);
+    let mut h = harness(fixture);
+    h.run();
+    let cell = header_rect(&h, copy::COLUMN_REPO).center();
+    assert_eq!(cursor_at(&mut h, cell), egui::CursorIcon::Default);
+}
+
 /// Resize grabbers ran down every row, so a column grew or shrank while the pointer was on a
 /// data row; only the header row may resize.
 #[test]

@@ -257,14 +257,6 @@ fn unit_events(
     if response.secondary_clicked() {
         ui.ctx().data_mut(|d| d.insert_temp(menu_id(), unit));
     }
-    if response.hovered() || response.dragged() {
-        let icon = if response.dragged() {
-            CursorIcon::Grabbing
-        } else {
-            CursorIcon::Grab
-        };
-        ui.ctx().set_cursor_icon(icon);
-    }
     if response.drag_started() {
         let press = ui.input(|i| i.pointer.press_origin());
         let grab = press.map_or(0.0, |p| p.x - cell.slot.left());
